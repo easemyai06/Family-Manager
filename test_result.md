@@ -526,3 +526,56 @@ frontend_batch7:
 agent_communication_batch7:
     -agent: "main"
     -message: "Batch #7 complete. TEST BACKEND: /api/rewards (leaderboard+streak+badges), /api/home family_streak, albums CRUD incl. creator-only add-photos 403. TEST FRONTEND: (1) More > Family Rewards (already screenshot-verified) + Home 'home-streak' chip opens it; (2) More > Family Albums -> FAB create album -> opens detail -> as creator 'Add Photos' visible (web image pick may fail -> expected); open the seeded 'Goa Getaway' album to see its 3 photos; (3) Our Family Story -> type in memory-search-input (e.g. 'Kerala' or a person name) -> list filters instantly. Use rewardtester@fam.com / secret123 (seeded: leaderboard data, 'Goa Getaway' album w/ 3 photos, 8 memories across places). Push/voice remain native-only."
+
+# ============ Feature Batch #8 (Weekly Winner / Star of the Week + Search Everywhere) ============
+backend_batch8:
+  - task: "Star of the Week (compute_weekly_stars) — last-7-day star points incl. child chores; surfaced in /api/rewards + /api/highlights/week"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "compute_weekly_stars(fid) tallies last-7-day points per member: post 10 / love 5 / memory 15 / wish 5 / chore 8 (chore_completions in last 7 days -> children earn stars). Returns week_leaderboard (sorted) + star_of_week (top, only if >0). /api/rewards now returns week_leaderboard + star_of_week; /api/highlights/week returns star_of_week. Verified via curl on fresh seed: star_of_week=Raj 125, week_leaderboard len 5 (Raj 125, Aarav 36 incl chores, Anaya 18)."
+  - task: "Global search (/api/search?q=) across people, memories, posts, chats"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Case-insensitive regex search scoped to caller's family. members(name/relationship), timeline(title/location, hydrated), posts(caption, w/ author+cover), chats(caller's chats filtered by display_name). Verified via curl: q=Priya -> 1 member + 1 chat (direct); q=family -> 2 memories + 1 post + Family Chat."
+
+frontend_batch8:
+  - task: "Global Search screen (/search) + Home header search entry point"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/search/index.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Home header search icon (testID home-search) opens /search. Debounced input (global-search-input, clear via global-search-clear) hits /search; renders People (search-member-<id> -> member profile), Memories (search-memory-<id> -> timeline detail), Posts (search-post-<id> -> post detail), Chats (search-chat-<id> -> chat). Empty + no-results states."
+  - task: "Star of the Week card on Rewards + Weekly Highlights + Home (Sunday)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/rewards/index.tsx, frontend/app/highlights/index.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Rewards shows a 👑 gold crown 'STAR OF THE WEEK' card (name + weekly stars + avatar) when star_of_week present. Highlights shows a 'STAR OF THE WEEK' card. Home Sunday-highlights card path unchanged. Star only appears when a member earned >0 stars in last 7 days."
+
+agent_communication_batch8:
+    -agent: "main"
+    -message: "Batch #8 complete (Weekly Winner + Search Everywhere). TEST BACKEND: (1) /api/rewards -> week_leaderboard (sorted desc) + star_of_week (top member, points>0); confirm a CHILD who completed chores appears in weekly points. (2) /api/highlights/week -> star_of_week present. (3) /api/search?q= across members/memories/posts/chats (case-insensitive, scoped to caller family; empty q returns empty lists). TEST FRONTEND: (1) Home header search icon (home-search) -> /search; type 'Priya' -> People + Chats sections render, tap a person -> member profile, tap a chat -> conversation; type a memory word -> Memories section -> tap -> timeline detail; clear button resets. (2) More > Family Rewards -> gold 👑 Star of the Week card + star leaderboard; (3) More > Weekly Highlights -> Star of the Week card + stat cards. Fresh seeded account: winner1786918036@fam.com / secret123 (Raj=Star of Week 125, Aarav child 36 incl chores). Or register fresh + Explore Sharma Family. Push/voice remain native-only (don't fail on web)."

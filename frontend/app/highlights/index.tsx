@@ -72,15 +72,23 @@ export default function Highlights() {
           ))}
         </View>
 
-        {data.top_poster ? (
+        {data.star_of_week ? (
           <View style={[styles.topCard, { backgroundColor: c.brandTertiary }]}>
-            <Avatar uri={data.top_poster.photo_url} name={data.top_poster.name} size={48} color={data.top_poster.color} ring />
+            <Avatar uri={data.star_of_week.member?.photo_url} name={data.star_of_week.member?.name} size={48} color={data.star_of_week.member?.color} ring />
             <View style={{ flex: 1 }}>
               <AppText size={12} weight="bold" color={c.brand}>
-                MOST ACTIVE THIS WEEK
+                ⭐ STAR OF THE WEEK
               </AppText>
               <AppText family="display" weight="bold" size={17}>
-                {data.top_poster.name} 🌟
+                {data.star_of_week.member?.name} 👑
+              </AppText>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <AppText family="display" weight="bold" size={20} color={c.brand}>
+                {data.star_of_week.points}
+              </AppText>
+              <AppText size={11} color={c.onSurfaceTertiary}>
+                stars
               </AppText>
             </View>
           </View>

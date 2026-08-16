@@ -1641,6 +1641,38 @@ async def add_wish(member_id: str, body: WishIn, user: dict = Depends(get_curren
 # ---------------------------------------------------------------------------
 # This Week's Highlights
 # ---------------------------------------------------------------------------
+# Star points awarded per action (used by Rewards + weekly Star of the Week).
+POINTS = {"post": 10, "love": 5, "memory": 15, "wish": 5, "chore": 8}
+
+
+async def compute_weekly_stars(fid: str):
+    """Per-member star points earned in the last 7 days + the current Star of the Week."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=7)).isoformat()
+    cutoff_date = (date.today() - timedelta(days=7)).isoformat()
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    scores = {m["member_id"]: {"member": m, "points": 0} for m in members}
+
+    def add(mid, pts):
+        if mid in scores:
+            scores[mid]["points"] += pts
+
+    for p in await db.posts.find({"family_id": fid, "created_at": {"$gte": cutoff}}, {"author_member_id": 1, "_id": 0}).to_list(5000):
+        add(p.get("author_member_id"), POINTS["post"])
+    for a in await db.affections.find({"family_id": fid, "created_at": {"$gte": cutoff}}, {"from_member_id": 1, "_id": 0}).to_list(20000):
+        add(a.get("from_member_id"), POINTS["love"])
+    for t in await db.timeline.find({"family_id": fid, "created_at": {"$gte": cutoff}}, {"created_by": 1, "_id": 0}).to_list(5000):
+        add(t.get("created_by"), POINTS["memory"])
+    for w in await db.wishes.find({"family_id": fid, "created_at": {"$gte": cutoff}}, {"from_member_id": 1, "_id": 0}).to_list(5000):
+        add(w.get("from_member_id"), POINTS["wish"])
+    for cc in await db.chore_completions.find({"family_id": fid, "date": {"$gte": cutoff_date}}, {"member_id": 1, "_id": 0}).to_list(20000):
+        add(cc.get("member_id"), POINTS["chore"])
+
+    board = sorted(scores.values(), key=lambda x: x["points"], reverse=True)
+    star = board[0] if board and board[0]["points"] > 0 else None
+    return board, star
+
+
 @api.get("/highlights/week")
 async def weekly_highlights(user: dict = Depends(get_current_user)):
     fid = require_family(user)
@@ -1655,14 +1687,7 @@ async def weekly_highlights(user: dict = Depends(get_current_user)):
         {"family_id": fid, "created_at": {"$gte": cutoff}}, {"_id": 0}).to_list(1000)
     loves = await db.affections.count_documents({"family_id": fid, "created_at": {"$gte": cutoff}})
 
-    # most active member by posts
-    top_poster = None
-    counts: dict = {}
-    for p in posts:
-        counts[p.get("author_member_id")] = counts.get(p.get("author_member_id"), 0) + 1
-    if counts:
-        top_id = max(counts, key=counts.get)
-        top_poster = await db.members.find_one({"member_id": top_id}, {"_id": 0})
+    _, star_of_week = await compute_weekly_stars(fid)
 
     def _mini(p):
         return {"id": p.get("post_id"), "caption": p.get("caption"),
@@ -1674,7 +1699,7 @@ async def weekly_highlights(user: dict = Depends(get_current_user)):
             "posts": len(posts), "memories": len(memories),
             "wishes": len(wishes), "loves": loves,
         },
-        "top_poster": top_poster,
+        "star_of_week": star_of_week,
         "posts": [_mini(p) for p in posts[:6]],
         "memories": [{"id": m["timeline_id"], "title": m["title"], "date": m["date"],
                       "cover": (m.get("media") or [{}])[0].get("url") if m.get("media") else None}
@@ -1768,8 +1793,6 @@ async def delete_capsule(capsule_id: str, user: dict = Depends(get_current_user)
 # ---------------------------------------------------------------------------
 # Rewards — star points, family streak, badges
 # ---------------------------------------------------------------------------
-POINTS = {"post": 10, "love": 5, "memory": 15, "wish": 5, "chore": 8}
-
 BADGE_DEFS = [
     {"key": "first_post", "label": "First Post", "emoji": "📸", "metric": "posts", "target": 1},
     {"key": "storyteller", "label": "Storyteller", "emoji": "📖", "metric": "memories", "target": 5},
@@ -1822,7 +1845,9 @@ async def rewards(user: dict = Depends(get_current_user)):
         current = totals.get(b["metric"], 0)
         badges.append({**b, "current": min(current, b["target"]), "earned": current >= b["target"]})
 
-    return {"leaderboard": leaderboard, "streak": streak, "totals": totals, "badges": badges}
+    week_board, star_of_week = await compute_weekly_stars(fid)
+    return {"leaderboard": leaderboard, "streak": streak, "totals": totals, "badges": badges,
+            "week_leaderboard": week_board, "star_of_week": star_of_week}
 
 
 # ---------------------------------------------------------------------------
@@ -1908,6 +1933,47 @@ async def delete_album(album_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Only the album creator can delete this album")
     await db.albums.delete_one({"album_id": album_id})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Global search — people, memories, posts, chats
+# ---------------------------------------------------------------------------
+@api.get("/search")
+async def global_search(q: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    ql = (q or "").strip()
+    if len(ql) < 1:
+        return {"query": ql, "members": [], "memories": [], "posts": [], "chats": []}
+    rx = {"$regex": re.escape(ql), "$options": "i"}
+
+    members = await db.members.find(
+        {"family_id": fid, "$or": [{"name": rx}, {"relationship": rx}]}, {"_id": 0}).to_list(50)
+
+    mem_docs = await db.timeline.find(
+        {"family_id": fid, "$or": [{"title": rx}, {"location": rx}]}, {"_id": 0}).sort("date", -1).to_list(30)
+    memories = [await hydrate_timeline(m, mine["member_id"] if mine else None) for m in mem_docs]
+
+    post_docs = await db.posts.find({"family_id": fid, "caption": rx}, {"_id": 0}).sort("created_at", -1).to_list(30)
+    posts = []
+    for p in post_docs:
+        author = await db.members.find_one({"member_id": p["author_member_id"]}, {"_id": 0})
+        posts.append({
+            "post_id": p["post_id"], "caption": p.get("caption"), "author": author,
+            "cover": (p.get("media") or [{}])[0].get("url") if p.get("media") else None,
+            "created_at": p.get("created_at"),
+        })
+
+    chats = []
+    if mine:
+        chat_docs = await db.chats.find({"family_id": fid, "member_ids": mine["member_id"]}, {"_id": 0}).to_list(200)
+        for ch in chat_docs:
+            h = await hydrate_chat(ch, mine)
+            if ql.lower() in (h.get("display_name") or "").lower():
+                chats.append(h)
+
+    return {"query": ql, "members": members, "memories": memories, "posts": posts, "chats": chats[:20]}
+
 
 
 

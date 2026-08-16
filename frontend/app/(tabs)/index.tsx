@@ -146,6 +146,9 @@ export default function Home() {
             </Pressable>
           ) : null}
         </View>
+        <Pressable onPress={() => router.push("/search")} hitSlop={8} style={[styles.searchBtn, { backgroundColor: c.surfaceSecondary }]} testID="home-search">
+          <Ionicons name="search" size={22} color={c.onSurface} />
+        </Pressable>
         <Pressable onPress={() => me && router.push(`/member/${me.member_id}`)} testID="home-avatar">
           <Avatar uri={me?.photo_url} name={me?.name} size={52} color={me?.color} ring />
         </Pressable>
@@ -388,6 +391,7 @@ const styles = StyleSheet.create({
   nudge: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
   headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
   streakChip: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", backgroundColor: "#FFF0DB", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  searchBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   quickRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
   quickPill: {
     flexDirection: "row",

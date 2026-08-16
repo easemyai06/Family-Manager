@@ -72,13 +72,19 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   (consecutive active days), unlockable badges + a confetti celebration for kids; Home streak chip.
 - Family Albums: shared photo albums; creator-only photo adds; grid + detail + create.
 - Memory Search: instant search on Our Family Story by title, place or person.
+- Star of the Week (Weekly Winner): most stars earned in the last 7 days wins (posts/love/
+  memories/wishes + child chore completions count 8⭐ each); 👑 crown card on Rewards, a
+  Star of the Week card on Weekly Highlights, and week_leaderboard exposed via /api/rewards.
+- Search Everywhere: global search screen (Home header search icon) across people, memories,
+  posts and chats (case-insensitive, scoped to the caller's family) via GET /api/search?q=.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
   Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
   birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
   EMERGENT_PUSH_KEY is a deploy-injected placeholder.
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
   + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places)
-  + 17/17 (rewards+albums+search) backend tests pass; frontend flows verified.
+  + 17/17 (rewards+albums+search) + 10/10 (weekly-winner+search-everywhere) backend tests pass;
+  frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)

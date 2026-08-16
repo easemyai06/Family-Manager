@@ -63,6 +63,27 @@ export default function Rewards() {
           </AppText>
         </LinearGradient>
 
+        {/* star of the week */}
+        {data.star_of_week ? (
+          <View style={styles.section}>
+            <LinearGradient colors={["#FFD98A", "#FFB84D"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.crownCard}>
+              <AppText size={40}>👑</AppText>
+              <View style={{ flex: 1 }}>
+                <AppText size={12} weight="bold" color="#7A4E10">
+                  STAR OF THE WEEK
+                </AppText>
+                <AppText family="display" weight="bold" size={20} color="#4A2E06">
+                  {data.star_of_week.member?.name}
+                </AppText>
+                <AppText size={12} color="#7A4E10">
+                  {data.star_of_week.points} ⭐ earned this week
+                </AppText>
+              </View>
+              <Avatar uri={data.star_of_week.member?.photo_url} name={data.star_of_week.member?.name} size={56} color={data.star_of_week.member?.color} ring />
+            </LinearGradient>
+          </View>
+        ) : null}
+
         {/* leaderboard */}
         <View style={styles.section}>
           <AppText family="display" weight="bold" size={18} style={{ marginBottom: spacing.md }}>
@@ -134,6 +155,7 @@ const styles = StyleSheet.create({
   back: { position: "absolute", left: spacing.lg, width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(0,0,0,0.2)", alignItems: "center", justifyContent: "center" },
   streakBig: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginVertical: spacing.md },
   section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+  crownCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.lg },
   lbRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1.5, padding: spacing.md, marginBottom: spacing.sm },
   bar: { height: 6, borderRadius: 3, marginTop: 6, overflow: "hidden" },
   barFill: { height: 6, borderRadius: 3 },
