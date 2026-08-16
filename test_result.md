@@ -101,3 +101,106 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+user_problem_statement: "FamilyHome — finish in-progress feature batch: (1) Voice Notes in chat (tap-and-hold), (2) Our Family Story timeline + Add Memory + Memory Detail + Memory Vault, (3) Message Reactions in chat, (4) On This Day on Home. Also chat regression."
+
+backend:
+  - task: "Timeline CRUD (/api/timeline GET/POST/GET{id}/DELETE) + On This Day (/api/timeline/on-this-day) + Home on_this_day"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Backend verified via curl on fresh demo family: /timeline returns 8 seeded memories, on-this-day returns 1 event (Kerala trip, 7 yrs ago), home.on_this_day populated. Any member can create a memory."
+  - task: "Chat message reactions (/api/messages/{id}/react toggle)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Reaction toggle endpoint present; messages hydrate reactions summary + my_reaction. Needs runtime UI verification."
+  - task: "Voice note upload (/api/upload kind=audio) + voice message send (type=voice)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Upload supports kind=audio (audio/m4a). send_message supports type=voice with duration + media. Recording itself is native-only."
+
+frontend:
+  - task: "Our Family Story timeline screen + Add Memory + Memory Detail + Memory Vault (grouped by year)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/timeline/index.tsx, create.tsx, [id].tsx, vault.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Built 3 missing screens. Timeline list (filters, year groups), Add Memory (photos/date/category/people/importance, any member), Memory Detail (carousel + delete), Memory Vault (3-col photo grid grouped by year). Reachable from More > Our Family Story, member profile Story button, and Home On This Day."
+  - task: "On This Day card on Home dashboard"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Horizontal On This Day card section renders home.on_this_day items with X years ago + tap to memory detail; 'Family Story' link to /timeline. Confirmed present in DOM on smoke screenshot."
+  - task: "Chat message reactions UI (long-press picker, reaction chips)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Long-press message opens action sheet with emoji reactions (❤️😂👍😮😢🎉) + Reply. Reaction chips render under bubble with counts; my_reaction highlighted."
+  - task: "Voice notes in chat (tap-and-hold mic, waveform playback)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx, frontend/src/components/VoiceMessage.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "expo-audio (SDK54). Press-and-hold mic records, release sends; permission flow: check->request->Open Settings if blocked. VoiceMessage plays with waveform + duration. Recording is NATIVE-ONLY (may not work on web preview/Expo Go)."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.1"
+  test_sequence: 2
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Our Family Story timeline screen + Add Memory + Memory Detail + Memory Vault (grouped by year)"
+    - "On This Day card on Home dashboard"
+    - "Chat message reactions UI (long-press picker, reaction chips)"
+    - "Timeline CRUD + On This Day backend"
+    - "Chat message reactions backend"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+    -message: "Completed in-progress feature batch. Please test BACKEND (timeline CRUD, on-this-day, message reactions, audio upload) and FRONTEND flows (Our Family Story: open from More, add a memory with photo, view detail, open vault; On This Day card on Home; chat message reactions via long-press). Voice recording is native-only — do NOT fail the build if web recording is unavailable, just verify the mic button + permission handling render. Use fresh account register+seed to get timeline data (the older testdad@fam.com family predates timeline seed). Seeded test account: storytester@fam.com / secret123 (already has 8 memories)."

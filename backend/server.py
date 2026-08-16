@@ -1005,6 +1005,16 @@ async def home(user: dict = Depends(get_current_user)):
         for ch in my_chats:
             unread_messages += await _unread_count(ch["chat_id"], mine["member_id"])
 
+    mmdd = f"-{t[5:7]}-{t[8:10]}"
+    otd = await db.timeline.find({"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(20)
+    on_this_day = []
+    for e in otd:
+        try:
+            e["years_ago"] = date.today().year - int(e["date"][:4])
+        except ValueError:
+            e["years_ago"] = 0
+        on_this_day.append(await hydrate_timeline(e))
+
     return {
         "family": fam,
         "me": mine,
@@ -1016,6 +1026,7 @@ async def home(user: dict = Depends(get_current_user)):
         "recent_posts": recent_posts,
         "shopping_pending": shopping_pending,
         "unread_messages": unread_messages,
+        "on_this_day": on_this_day,
     }
 
 
@@ -1032,8 +1043,13 @@ class MessageIn(BaseModel):
     text: Optional[str] = None
     media: List[MediaItem] = []
     reply_to: Optional[str] = None
-    type: str = "text"             # text | image | affection
+    type: str = "text"             # text | image | affection | voice
     affection_key: Optional[str] = None
+    duration: Optional[int] = None  # ms, for voice notes
+
+
+class MsgReactIn(BaseModel):
+    emoji: str
 
 
 async def get_last_read(chat_id: str, member_id: str) -> Optional[str]:
@@ -1155,8 +1171,20 @@ async def get_messages(chat_id: str, user: dict = Depends(get_current_user)):
     mine = await member_for_user(user)
     await _require_chat(chat_id, fid, mine)
     msgs = await db.messages.find({"chat_id": chat_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    ids = [m["message_id"] for m in msgs]
+    rx: dict = {}
+    async for r in db.msg_reactions.find({"message_id": {"$in": ids}}, {"_id": 0}):
+        rx.setdefault(r["message_id"], []).append(r)
     for m in msgs:
         m["sender"] = await db.members.find_one({"member_id": m["sender_member_id"]}, {"_id": 0})
+        summary: dict = {}
+        my = None
+        for r in rx.get(m["message_id"], []):
+            summary[r["emoji"]] = summary.get(r["emoji"], 0) + 1
+            if r["member_id"] == mine["member_id"]:
+                my = r["emoji"]
+        m["reactions"] = summary
+        m["my_reaction"] = my
     reads = {}
     async for r in db.chat_reads.find({"chat_id": chat_id}, {"_id": 0}):
         reads[r["member_id"]] = r["last_read_at"]
@@ -1188,12 +1216,14 @@ async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_c
         "message_id": new_id("msg_"), "chat_id": chat_id, "family_id": fid,
         "sender_member_id": mine["member_id"], "text": body.text, "media": [m.dict() for m in body.media],
         "type": body.type, "affection_key": body.affection_key, "reply_to": body.reply_to,
-        "reply_preview": reply_preview, "created_at": now_iso(),
+        "reply_preview": reply_preview, "duration": body.duration, "created_at": now_iso(),
     }
     await db.messages.insert_one(msg)
 
     if body.type == "affection" and body.affection_key:
         preview = AFFECTION_LABELS.get(body.affection_key, "❤️")
+    elif body.type == "voice":
+        preview = "🎤 Voice message"
     elif body.media:
         preview = body.text or "📷 Photo"
     else:
@@ -1246,15 +1276,126 @@ async def set_typing(chat_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.post("/messages/{message_id}/react")
+async def react_message(message_id: str, body: MsgReactIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    msg = await db.messages.find_one({"message_id": message_id, "family_id": fid}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    existing = await db.msg_reactions.find_one({"message_id": message_id, "member_id": mine["member_id"]}, {"_id": 0})
+    if existing and existing["emoji"] == body.emoji:
+        await db.msg_reactions.delete_one({"message_id": message_id, "member_id": mine["member_id"]})
+    else:
+        await db.msg_reactions.update_one(
+            {"message_id": message_id, "member_id": mine["member_id"]},
+            {"$set": {"emoji": body.emoji, "family_id": fid, "created_at": now_iso()}}, upsert=True)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Our Family Story — timeline & memory vault
+# ---------------------------------------------------------------------------
+class TimelineIn(BaseModel):
+    title: str
+    date: str                       # YYYY-MM-DD
+    category: Optional[str] = "📸 Everyday Memories"
+    location: Optional[str] = None
+    description: Optional[str] = None
+    people: List[str] = []
+    media: List[MediaItem] = []
+    importance: bool = False
+
+
+async def hydrate_timeline(t: dict) -> dict:
+    t = clean(dict(t))
+    people = []
+    for pid in t.get("people", []):
+        m = await db.members.find_one({"member_id": pid}, {"_id": 0})
+        if m:
+            people.append(m)
+    t["people_members"] = people
+    return t
+
+
+@api.get("/timeline")
+async def list_timeline(user: dict = Depends(get_current_user), member_id: Optional[str] = None,
+                        category: Optional[str] = None):
+    fid = require_family(user)
+    q = {"family_id": fid}
+    if member_id:
+        q["people"] = member_id
+    if category:
+        q["category"] = category
+    events = await db.timeline.find(q, {"_id": 0}).sort("date", -1).to_list(1000)
+    return [await hydrate_timeline(e) for e in events]
+
+
+@api.post("/timeline")
+async def create_timeline(body: TimelineIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    t = {
+        "timeline_id": new_id("tl_"), "family_id": fid, "title": body.title.strip(),
+        "date": body.date, "category": body.category, "location": body.location,
+        "description": body.description, "people": body.people, "media": [m.dict() for m in body.media],
+        "importance": body.importance, "created_by": mine["member_id"] if mine else None,
+        "created_at": now_iso(),
+    }
+    await db.timeline.insert_one(t)
+    return await hydrate_timeline(t)
+
+
+@api.get("/timeline/on-this-day")
+async def on_this_day(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    today = date.today()
+    mmdd = f"-{today.month:02d}-{today.day:02d}"
+    events = await db.timeline.find(
+        {"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(100)
+    out = []
+    for e in events:
+        try:
+            yr = int(e["date"][:4])
+            e["years_ago"] = today.year - yr
+        except ValueError:
+            e["years_ago"] = 0
+        out.append(await hydrate_timeline(e))
+    # birthdays today
+    birthdays = []
+    for m in await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200):
+        if m.get("birthday") and m["birthday"].endswith(mmdd):
+            birthdays.append(m)
+    return {"events": out, "birthdays": birthdays}
+
+
+@api.get("/timeline/{timeline_id}")
+async def get_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    t = await db.timeline.find_one({"timeline_id": timeline_id, "family_id": fid}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return await hydrate_timeline(t)
+
+
+@api.delete("/timeline/{timeline_id}")
+async def delete_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    await db.timeline.delete_one({"timeline_id": timeline_id, "family_id": fid})
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Media upload / serve
 # ---------------------------------------------------------------------------
 @api.post("/upload")
 async def upload(file: UploadFile = File(...), kind: str = Form("image"), user: dict = Depends(get_current_user)):
     data = await file.read()
-    ext = (file.filename or "file").split(".")[-1].lower() if "." in (file.filename or "") else "jpg"
+    default_ext = {"video": "mp4", "audio": "m4a"}.get(kind, "jpg")
+    ext = (file.filename or "file").split(".")[-1].lower() if "." in (file.filename or "") else default_ext
     path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4().hex}.{ext}"
-    ct = file.content_type or ("video/mp4" if kind == "video" else "image/jpeg")
+    default_ct = {"video": "video/mp4", "audio": "audio/m4a"}.get(kind, "image/jpeg")
+    ct = file.content_type or default_ct
     try:
         result = await run_in_threadpool(_put_object, path, data, ct)
     except Exception as e:
@@ -1473,6 +1614,26 @@ async def seed_demo(user: dict = Depends(get_current_user)):
             "affection_id": new_id("aff_"), "family_id": fid, "from_member_id": mem_ids[frm],
             "to_member_id": mem_ids[to], "type": typ, "message": None, "is_family": False,
             "seen": True, "created_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+        })
+
+    # ---- family timeline / Our Family Story ----
+    otd_date = date(2019, today.month, today.day).isoformat()
+    timeline_def = [
+        ("👶 Aarav Was Born", "2016-08-12", "👶 Births", "Delhi", "Our little scientist arrived and changed our world forever.", ["Raj", "Priya", "Aarav"], True, None),
+        ("👶 Anaya Was Born", "2019-11-03", "👶 Births", "Delhi", "Our girl joined the family ❤️", ["Raj", "Priya", "Anaya"], True, None),
+        ("🏠 We Moved Into Our New Home", "2020-01-10", "🏠 New Homes", "Gurgaon", "First photograph outside the new house.", ["Raj", "Priya", "Aarav", "Anaya"], True, None),
+        ("✈️ First Family Trip Abroad", "2022-06-15", "✈️ Vacations", "Dubai", "Five magical days together.", ["Raj", "Priya", "Aarav", "Anaya", "Meera"], False, IMG["post4"]),
+        ("🏅 Aarav's First Football Trophy", "2024-03-21", "🏅 Sports", "Community Ground", "So proud of you ❤️", ["Aarav", "Raj"], False, None),
+        ("🎂 Grandma's 70th Birthday", "2025-06-04", "🎂 Birthdays", "Home", "A wonderful family celebration.", ["Meera", "Raj", "Priya", "Aarav", "Anaya"], True, IMG["post5"]),
+        ("🏆 Aarav Won School Science Competition", (today - timedelta(days=2)).isoformat(), "🏆 Achievements", "Delhi Public School", "First place in the science fair!", ["Aarav", "Priya", "Raj"], True, IMG["post1"]),
+        ("✈️ Family Trip to Kerala", otd_date, "✈️ Vacations", "Kerala", "Backwaters, boats and so much fun.", ["Raj", "Priya", "Aarav", "Anaya"], False, IMG["post2"]),
+    ]
+    for title, d, cat, loc, desc, ppl, imp, img in timeline_def:
+        await db.timeline.insert_one({
+            "timeline_id": new_id("tl_"), "family_id": fid, "title": title, "date": d,
+            "category": cat, "location": loc, "description": desc,
+            "people": [mem_ids[p] for p in ppl], "media": [{"url": img, "type": "image"}] if img else [],
+            "importance": imp, "created_by": mem_ids["Raj"], "created_at": now_iso(),
         })
 
     # ---- chats ----

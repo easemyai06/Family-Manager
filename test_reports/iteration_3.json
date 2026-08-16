@@ -1,0 +1,36 @@
+{
+  "summary": "Backend + frontend testing of feature batch #3: Our Family Story (timeline + vault + On This Day), Message Reactions, and Voice-note upload. Backend: created /app/backend/tests/test_story_and_reactions_api.py — 11/11 tests PASSED (Timeline CRUD, list, filter by member, GET 404, On This Day shape + /home embedding with years_ago and today's MM-DD match against seeded 'Family Trip to Kerala', message reactions add/toggle/switch/404, audio upload via multipart with kind=audio + voice message creation on chat with duration + last_message preview 'Voice message'). Frontend (mobile viewport 390x844) exercised end-to-end via Playwright with storytester@fam.com/secret123: Home dashboard renders 'On This Day ✨' section with OTD card (otd-<id>) and 'Family Story' link (otd-see-all); tapping OTD card opens Memory Detail (memory-detail-back present). More tab → 'Our Family Story' row (more-timeline) opens timeline showing 8 seeded memories grouped by year 2016/2019/2020/2022/2024/2025/2026 with 21 filter chips, vault icon (open-vault) opens Memory Vault with 4 photos in 3-col grid grouped by year, FAB (fab-add-memory) opens Add Memory screen — title/category/person chips work, save-memory-btn creates 'TEST_PW_memory_6841' and it appears in list (9 memories preserved), memory-<id> tap opens Memory Detail with memory-delete button. Member profile > 'member-view-story' opens 'Raj Story' with 9 filtered memories. Chat: long-press on a message reveals action sheet with all 6 emoji reactions (❤️😂👍😮😢🎉) + Reply (action-reply); tapping ❤️ closes sheet and renders a heart reaction chip under Priya's message bubble; mic button (chat-mic-btn) is visible when input is empty; press-and-hold reveals the recording bar 'Recording… 1s / Release to send' as required (web mic recording is expected to be limited — UI rendered correctly). Text send + typing indicator regression still works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "pointerEvents JSX prop", "issue": "Still emits 'props.pointerEvents is deprecated. Use style.pointerEvents' on RN Web (carried over from iterations 1 & 2). Non-blocking but should be migrated."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_story_and_reactions_api.py",
+    "/app/test_reports/pytest/pytest_story_results.xml"
+  ],
+  "action_items": [
+    "Migrate pointerEvents JSX prop -> style.pointerEvents across the codebase to clear the RN Web deprecation warning (also flagged in iterations 1 & 2).",
+    "Optional: expose a dedicated testID (e.g. chat-row-<chat_id>) on the chat list rows in /(tabs)/chat — currently there is no chat-row-* selector so tests navigate by tapping the tab which happens to open the last-opened family chat directly. Not a functional bug, purely testability."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1726 lines — even further past the 700-line guideline. Recommend extracting timeline/on-this-day/reactions/upload into their own routers before adding more surface area.",
+    "GET /api/timeline has no server-side pagination (to_list(1000)); fine at family scale but will grow unbounded as memories accumulate — consider a limit/offset or cursor.",
+    "MsgReactIn.emoji accepts any string. Consider whitelisting to the 6 known emojis (Literal) so unrelated emojis can't be persisted from a modified client."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_story_and_reactions_api.py (new — 11 tests: timeline CRUD/filter, on-this-day incl. /home, reaction add/toggle/switch/404, audio upload + voice message)",
+    "/app/test_reports/pytest/pytest_story_results.xml (new — junit output)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11 new tests; prior 13 chat + 32 core tests still available in test_chat_api.py + test_familyhome_api.py)", "frontend": "100% of the feature-batch flows exercised (OTD home card + tap-to-detail, More→timeline, filter chips render, vault open + grid, FAB→create memory→appears in list, memory detail with back+delete, member profile→member story filtered timeline, chat long-press action sheet with all 6 emojis + Reply, reaction chip renders, mic-btn visible + Recording bar on press-and-hold, text send regression)"},
+  "seed_data_creation": "Backend tests register a fresh TEST_story_* user per session and seed a full Sharma demo via /api/seed/demo (8 timeline memories including OTD event dated 2019-<todayMMDD>). Playwright run adds 1 timeline memory ('TEST_PW_memory_6841' dated today) + 1 heart reaction + 1 text message to the storytester@fam.com account. Not cleaned up (no delete-account endpoint).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For Our Family Story / On This Day tests use storytester@fam.com/secret123 (has full seed including the today-MMDD memory). Do NOT use testdad@fam.com — that family predates the timeline seed and returns empty. The seeded OTD event is 'Family Trip to Kerala' dated 2019-<today MM-DD> so on-this-day always yields >=1 event for today. Voice recording on web preview is expected to be unavailable; the UI still shows the Recording bar via useAudioRecorder from expo-audio. Chat list rows currently lack chat-row-* testIDs; open a chat by tapping the tab or the row text. Key testIDs referenced by main agent all verified present in the DOM: more-timeline, fab-add-memory, open-vault, memory-<id>, memory-detail-back, memory-delete, save-memory-btn, otd-<id>, otd-see-all, member-view-story, msg-react-<emoji>, action-reply, chat-mic-btn.",
+  "rca_of_issue": "N/A — no functional issues found in this feature batch. Only lingering warning is the RN Web pointerEvents deprecation which was already reported in iterations 1 and 2."
+}

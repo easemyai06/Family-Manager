@@ -59,10 +59,11 @@ export function mediaUrl(url: string | null | undefined): string | undefined {
   return url;
 }
 
-// Upload a local file (image/video) via multipart, returns { url, path, type }.
-export async function uploadMedia(uri: string, kind: "image" | "video" = "image") {
-  const name = uri.split("/").pop() || `upload.${kind === "video" ? "mp4" : "jpg"}`;
-  const type = kind === "video" ? "video/mp4" : "image/jpeg";
+// Upload a local file (image/video/audio) via multipart, returns { url, path, type }.
+export async function uploadMedia(uri: string, kind: "image" | "video" | "audio" = "image") {
+  const extFallback = kind === "video" ? "mp4" : kind === "audio" ? "m4a" : "jpg";
+  const name = uri.split("/").pop() || `upload.${extFallback}`;
+  const type = kind === "video" ? "video/mp4" : kind === "audio" ? "audio/m4a" : "image/jpeg";
   const form = new FormData();
   if (Platform.OS === "web") {
     const blob = await (await fetch(uri)).blob();

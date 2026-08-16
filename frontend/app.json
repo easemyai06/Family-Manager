@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.emergent.ourstory.ff6oeh",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Share family photos in posts and profiles",
-        "NSCameraUsageDescription": "Capture family moments to share"
+        "NSCameraUsageDescription": "Capture family moments to share",
+        "NSMicrophoneUsageDescription": "Record voice messages for your family"
       }
     },
     "android": {
@@ -23,7 +24,12 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.ourstory.ff6oeh",
-      "permissions": ["READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "CAMERA"]
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -45,6 +51,12 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#FF6B6B"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record voice messages for your family"
         }
       ]
     ],

@@ -38,8 +38,7 @@ export const REACTION_MAP: Record<string, string> = Object.fromEntries(
   REACTIONS.map((r) => [r.key, r.emoji])
 );
 
-export const EVENT_CATEGORIES = [
-  { key: "family", label: "Family", icon: "people" },
+export const EVENT_CATEGORIES = [  { key: "family", label: "Family", icon: "people" },
   { key: "school", label: "School", icon: "school" },
   { key: "sports", label: "Sports", icon: "football" },
   { key: "birthday", label: "Birthday", icon: "gift" },
@@ -51,4 +50,13 @@ export const EVENT_CATEGORIES = [
 export const POST_CATEGORIES = [
   "📸 Everyday", "🏆 Achievement", "🏅 Sports", "✈️ Vacation",
   "🎂 Birthday", "🎉 Celebration", "🎨 Artwork", "📚 School",
+];
+
+export const MSG_REACTIONS = ["❤️", "😂", "👍", "😮", "😢", "🎉"];
+
+export const TIMELINE_CATEGORIES = [
+  "🎂 Birthdays", "👶 Births", "💍 Weddings", "❤️ Anniversaries", "🎓 Education",
+  "🏆 Achievements", "🏠 New Homes", "💼 Careers", "✈️ Vacations", "🚗 Road Trips",
+  "🎉 Celebrations", "🏅 Sports", "🎭 Performances", "📚 School Events", "🐶 Pets",
+  "🌍 Relocations", "👨‍👩‍👧 Gatherings", "🎄 Festivals", "📸 Everyday Memories",
 ];

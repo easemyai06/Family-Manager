@@ -81,8 +81,14 @@ export default function MemberProfile() {
           ) : null}
         </View>
 
-        <View style={{ paddingHorizontal: spacing.lg }}>
+        <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
           <Button label="Send Some Love ❤️" onPress={() => router.push(`/affection/send?member=${member.member_id}`)} testID="member-send-love" />
+          <Button
+            label={`${member.name}'s Story 📖`}
+            variant="secondary"
+            onPress={() => router.push(`/timeline?member=${member.member_id}&name=${encodeURIComponent(member.name)}`)}
+            testID="member-view-story"
+          />
         </View>
 
         {details.length ? (

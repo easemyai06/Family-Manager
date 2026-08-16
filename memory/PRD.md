@@ -49,13 +49,18 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   conversations; text, photo, reply, and affection-in-chat messages; typing indicators; read
   receipts (Sent/Seen/Seen by N); near-real-time via polling; Chat→Affection link (chat love shows
   in Love timeline + recipient overlay); unread_messages surfaced on Home.
-- Tested: 32/32 (v1) + 13/13 (chat) backend tests pass; frontend flows verified.
+- Chat additions: voice notes (tap-and-hold mic, waveform playback via expo-audio; native-only
+  recording) + message reactions (long-press picker ❤️😂👍😮😢🎉, toggle, reaction chips w/ counts).
+- Our Family Story: family timeline (year groups + category filters), individual member stories
+  (from member profile), Add Memory (photos/date/category/people/importance — any member), Memory
+  Detail (photo carousel + delete), Memory Vault (3-col photo grid grouped by year). On This Day
+  card on Home ("X years ago today", tap → memory).
+- Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) backend tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
-- Our Family Story: family timeline + individual life timelines + milestones + memory vault + On This Day.
 - Family Tree (interactive) + generational timeline.
-- Chat additions: voice notes (needs native build), message reactions, pinned messages, group management.
+- Chat additions: pinned messages, group management (rename/add/remove members).
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.
