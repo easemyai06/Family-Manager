@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { View, StyleSheet, Pressable, FlatList, TextInput, Platform, Linking, Modal } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -63,13 +63,10 @@ export default function Conversation() {
     } catch {}
   }, [id]);
 
-  useEffect(() => {
-    loadChat();
-  }, [loadChat]);
-
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      loadChat();
       loadMsgs();
       const iv = setInterval(() => {
         if (active) loadMsgs();
@@ -78,7 +75,7 @@ export default function Conversation() {
         active = false;
         clearInterval(iv);
       };
-    }, [loadMsgs])
+    }, [loadChat, loadMsgs])
   );
 
   const flash = (m: string) => {
@@ -202,6 +199,28 @@ export default function Conversation() {
     } catch {}
   };
 
+  const pin = async (msg: any) => {
+    setActionMsg(null);
+    try {
+      await api(`/chats/${id}/pin`, { method: "POST", body: { message_id: msg.message_id } });
+      loadChat();
+    } catch {}
+  };
+
+  const unpin = async () => {
+    setActionMsg(null);
+    try {
+      await api(`/chats/${id}/unpin`, { method: "POST" });
+      loadChat();
+    } catch {}
+  };
+
+  const msgPreview = (m: any) =>
+    m?.text ||
+    (m?.type === "affection" ? AFFECTION_MAP[m.affection_key]?.label : m?.type === "voice" ? "🎤 Voice message" : "📷 Photo");
+
+  const actionPinned = !!actionMsg && chat?.pinned_message?.message_id === actionMsg?.message_id;
+
   const otherMembers = (chat?.members || []).filter((m: any) => m.member_id !== me?.member_id);
   const lastMineId = [...messages].reverse().find((m) => m.sender_member_id === me?.member_id)?.message_id;
 
@@ -321,7 +340,27 @@ export default function Conversation() {
             {chat?.type === "direct" ? "Direct message" : `${chat?.members?.length || 0} members`}
           </AppText>
         </View>
+        {chat?.type === "group" ? (
+          <Pressable onPress={() => router.push(`/chat/manage?id=${id}`)} hitSlop={10} testID="chat-manage-btn">
+            <Ionicons name="settings-outline" size={22} color={c.onSurface} />
+          </Pressable>
+        ) : null}
       </View>
+
+      {chat?.pinned_message ? (
+        <Pressable onPress={unpin} style={[styles.pinBar, { backgroundColor: c.brandTertiary, borderBottomColor: c.border }]} testID="pinned-bar">
+          <Ionicons name="pin" size={16} color={c.brand} />
+          <View style={{ flex: 1 }}>
+            <AppText size={11} weight="bold" color={c.brand}>
+              Pinned by {chat.pinned_message.sender?.name || "family"}
+            </AppText>
+            <AppText size={13} color={c.onSurface} numberOfLines={1}>
+              {msgPreview(chat.pinned_message)}
+            </AppText>
+          </View>
+          <Ionicons name="close" size={16} color={c.brand} />
+        </Pressable>
+      ) : null}
 
       <KeyboardAvoidingView behavior="translate-with-padding" keyboardVerticalOffset={0} style={{ flex: 1 }}>
         <FlatList
@@ -437,6 +476,16 @@ export default function Conversation() {
                 Reply
               </AppText>
             </Pressable>
+            <Pressable
+              onPress={() => (actionPinned ? unpin() : pin(actionMsg))}
+              style={[styles.actionBtn, { backgroundColor: c.surfaceSecondary }]}
+              testID="action-pin"
+            >
+              <Ionicons name={actionPinned ? "remove-circle-outline" : "pin"} size={18} color={c.onSurface} />
+              <AppText size={15} weight="semibold">
+                {actionPinned ? "Unpin message" : "Pin message"}
+              </AppText>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -455,6 +504,7 @@ export default function Conversation() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
+  pinBar: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1 },
   groupAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   bubble: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 60 },

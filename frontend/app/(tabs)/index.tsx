@@ -13,6 +13,7 @@ import { AffectionAnimation } from "@/src/components/AffectionAnimation";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { storage } from "@/src/utils/storage";
 import { greeting } from "@/src/lib/time";
 import { AFFECTION_MAP } from "@/src/lib/constants";
 
@@ -32,6 +33,7 @@ export default function Home() {
   const [stories, setStories] = useState<StoryGroup[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [incoming, setIncoming] = useState<any>(null);
+  const [nudge, setNudge] = useState<any>(null);
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +47,11 @@ export default function Home() {
       setPosts(p);
       setStories(s);
       if (inbox?.unseen?.length) setIncoming(inbox.unseen[0]);
+      if (h?.on_this_day?.length) {
+        const key = `otdNudge:${new Date().toISOString().slice(0, 10)}`;
+        const seen = await storage.getItem<boolean>(key, false);
+        if (!seen) setNudge(h.on_this_day[0]);
+      }
     } catch {}
   }, []);
 
@@ -81,12 +88,43 @@ export default function Home() {
     if (to) router.push(`/affection/send?member=${to}`);
   };
 
+  const dismissNudge = async () => {
+    const key = `otdNudge:${new Date().toISOString().slice(0, 10)}`;
+    await storage.setItem(key, true);
+    setNudge(null);
+  };
+
+  const openNudge = async () => {
+    const tid = nudge?.timeline_id;
+    await dismissNudge();
+    if (tid) router.push(`/timeline/${tid}`);
+  };
+
   const me = home?.me;
   const eventsToday = home?.events_today || [];
   const birthdays = home?.upcoming_birthdays || [];
 
   const Header = (
     <View>
+      {nudge ? (
+        <Pressable onPress={openNudge} style={styles.nudgeWrap} testID="otd-nudge">
+          <LinearGradient colors={["#FFE7B3", "#FFD166"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.nudge}>
+            <AppText size={22}>🌅</AppText>
+            <View style={{ flex: 1 }}>
+              <AppText family="display" weight="bold" size={14} color="#2C2C28" numberOfLines={2}>
+                On this day {nudge.years_ago > 0 ? `${nudge.years_ago} year${nudge.years_ago > 1 ? "s" : ""} ago` : "today"}: {nudge.title}
+              </AppText>
+              <AppText size={12} color="rgba(44,44,40,0.72)">
+                Tap to relive this memory ✨
+              </AppText>
+            </View>
+            <Pressable onPress={dismissNudge} hitSlop={12} testID="otd-nudge-dismiss">
+              <Ionicons name="close" size={18} color="#2C2C28" />
+            </Pressable>
+          </LinearGradient>
+        </Pressable>
+      ) : null}
+
       {/* greeting header */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
@@ -320,6 +358,8 @@ function ageNext(birthday?: string) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  nudgeWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  nudge: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
   headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
   quickRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
   quickPill: {

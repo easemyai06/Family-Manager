@@ -50,17 +50,22 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   receipts (Sent/Seen/Seen by N); near-real-time via polling; Chat→Affection link (chat love shows
   in Love timeline + recipient overlay); unread_messages surfaced on Home.
 - Chat additions: voice notes (tap-and-hold mic, waveform playback via expo-audio; native-only
-  recording) + message reactions (long-press picker ❤️😂👍😮😢🎉, toggle, reaction chips w/ counts).
+  recording) + message reactions (long-press picker ❤️😂👍😮😢🎉, toggle, reaction chips w/ counts)
+  + pin one message per conversation (pinned bar) + group management (rename, add/remove members —
+  custom groups only).
 - Our Family Story: family timeline (year groups + category filters), individual member stories
   (from member profile), Add Memory (photos/date/category/people/importance — any member), Memory
-  Detail (photo carousel + delete), Memory Vault (3-col photo grid grouped by year). On This Day
-  card on Home ("X years ago today", tap → memory).
-- Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) backend tests pass; frontend flows verified.
+  Detail (photo carousel + delete), Memory Vault (3-col photo grid grouped by year), Family Yearbook
+  (on-screen scrollable per-year cover + memory pages). On This Day card on Home + a once-a-day
+  in-app morning reminder banner.
+- Push notifications (Emergent-managed relay): device token registration (native), morning "On This
+  Day" reminder (daily 08:00 UTC loop, deduped) + new-message push. Requires user to add Firebase
+  google-services.json and Publish+build to work; EMERGENT_PUSH_KEY is a deploy-injected placeholder.
+- Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push) backend tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
 - Family Tree (interactive) + generational timeline.
-- Chat additions: pinned messages, group management (rename/add/remove members).
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.

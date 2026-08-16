@@ -204,3 +204,100 @@ test_plan:
 agent_communication:
     -agent: "main"
     -message: "Completed in-progress feature batch. Please test BACKEND (timeline CRUD, on-this-day, message reactions, audio upload) and FRONTEND flows (Our Family Story: open from More, add a memory with photo, view detail, open vault; On This Day card on Home; chat message reactions via long-press). Voice recording is native-only — do NOT fail the build if web recording is unavailable, just verify the mic button + permission handling render. Use fresh account register+seed to get timeline data (the older testdad@fam.com family predates timeline seed). Seeded test account: storytester@fam.com / secret123 (already has 8 memories)."
+
+# ============ Feature Batch #4 (Pin / Group mgmt / Yearbook / Memory Reminders + Push) ============
+backend_batch4:
+  - task: "Pin/unpin a chat message (single pin per conversation)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/chats/{id}/pin {message_id} sets single pinned_message_id; POST /api/chats/{id}/unpin clears; hydrate_chat returns pinned_message w/ sender. Verified via curl."
+  - task: "Group chat management (rename, add/remove members) — custom groups only"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "PATCH /api/chats/{id} {name, add_member_ids, remove_member_ids}. Rejects type=family/direct (400). Keeps caller in group; min 2 members. Verified via curl (rename+add+remove ok; family chat 400)."
+  - task: "Push notifications: register-push + send_push + morning On This Day reminder loop + new-message push"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/register-push relays to Emergent (returns 500 with placeholder key in preview — EXPECTED, real key injected at deploy). send_push helper; morning_reminder_loop scheduled daily 08:00 UTC (deduped via push_log); push on new chat message to offline members; POST /api/push/test-reminder for manual trigger. Verified endpoints exist and respond; actual delivery only works after Publish+build."
+
+frontend_batch4:
+  - task: "Pin message UI (long-press Pin/Unpin, pinned banner at top of conversation)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Long-press action sheet has Pin/Unpin (testID action-pin). Pinned banner (testID pinned-bar) shows below header w/ tap-to-unpin. Single pin replaces older."
+  - task: "Group management screen (rename + add/remove members)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/manage.tsx, frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Gear button (testID chat-manage-btn) shows only for type=group, opens /chat/manage?id=. Rename input + member checklist (self locked). Save applies add/remove diff via PATCH."
+  - task: "Family Yearbook on-screen scroll view (year selector + cover + memory pages)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/timeline/yearbook.tsx, frontend/app/timeline/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Book icon in timeline header (testID open-yearbook) opens Yearbook. Year chips, gradient cover w/ counts, per-memory 'pages' with photo/date/title/desc/people; tap page opens memory detail. Confirmed timeline header renders book+vault buttons via screenshot."
+  - task: "In-app morning memory reminder banner on Home (once/day, dismissible)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Banner (testID otd-nudge) shows at top of Home when on_this_day exists and not dismissed today (storage key otdNudge:YYYY-MM-DD). Tap opens memory; X (otd-nudge-dismiss) dismisses for the day."
+  - task: "Push registration wiring in _layout (native only)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/_layout.tsx, frontend/src/lib/push.ts"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Module-scope setNotificationHandler + Android channel; useEffect tap handlers (warm+cold) route via action_url; denied weekly nudge w/ Open Settings; registerForPush on user. NATIVE-ONLY — web early-returns; do not fail on web."
+
+agent_communication_batch4:
+    -agent: "main"
+    -message: "Batch #4 complete. TEST BACKEND: pin/unpin, PATCH group (rename/add/remove; family+direct must 400), register-push (expect 500 w/ placeholder key = OK), push/test-reminder. TEST FRONTEND: chat long-press Pin -> pinned banner appears -> tap banner unpins; group gear button opens manage screen (rename + toggle members + save); timeline 'open-yearbook' opens Yearbook w/ year chips + pages; Home morning banner 'otd-nudge' appears once/day and dismisses. Push delivery + voice recording are NATIVE-ONLY (need Publish+build) — verify UI/permission handling only, do NOT fail on web. Account with data: storytester@fam.com / secret123 (also has 9 memories now). To test group mgmt, create a custom group first (New chat -> select 2+ people -> name it)."

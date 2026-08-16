@@ -67,9 +67,14 @@ export default function Timeline() {
             </AppText>
           </View>
           {!params.member ? (
-            <Pressable onPress={() => router.push("/timeline/vault")} hitSlop={10} style={[styles.vaultBtn, { backgroundColor: c.brandTertiary }]} testID="open-vault">
-              <Ionicons name="albums" size={18} color={c.brand} />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <Pressable onPress={() => router.push("/timeline/yearbook")} hitSlop={10} style={[styles.vaultBtn, { backgroundColor: c.brandTertiary }]} testID="open-yearbook">
+                <Ionicons name="book" size={18} color={c.brand} />
+              </Pressable>
+              <Pressable onPress={() => router.push("/timeline/vault")} hitSlop={10} style={[styles.vaultBtn, { backgroundColor: c.brandTertiary }]} testID="open-vault">
+                <Ionicons name="albums" size={18} color={c.brand} />
+              </Pressable>
+            </View>
           ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>

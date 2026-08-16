@@ -1,0 +1,41 @@
+{
+  "summary": "Backend + frontend testing of batch #4 (Pin messages, Custom Group management, Family Yearbook, Memory Reminders + Push). Backend: 11/11 tests PASSED in /app/backend/tests/test_pin_group_push_api.py — Pin (POST /chats/{id}/pin, GET /chats/{id} returns pinned_message with sender, second pin replaces first, POST /chats/{id}/unpin clears, pin of unknown msg -> 404), Group mgmt (PATCH family chat -> 400 'Only custom groups can be edited', PATCH direct chat -> 400 same message, custom group rename + add + remove members works, caller silently kept when trying to remove self, group with <2 members -> 400 'A group needs at least 2 people'), Push (register-push -> 500 with placeholder EMERGENT_PUSH_KEY as documented, /push/test-reminder -> {recipients=1, push_ok=false} as expected in preview). Frontend (mobile viewport 390x844, storytester@fam.com/secret123): OTD nudge (otd-nudge) visible on Home with today's memory, tapping otd-nudge-dismiss hides it and it stays hidden. Yearbook: More -> more-timeline -> open-yearbook opens the yearbook, 7 year chips rendered (yearbook-year-<year>), cover shows year + family name + '2 memories · 1 photo' counts, memory pages (yearbook-page-<id>) render for the active year, tapping a page opens Memory Detail (memory-detail-back visible). Chat pin: long-press on a message opens the action sheet, action-pin button visible, tapping it renders the pinned-bar under the header showing 'Pinned by <sender>' + message preview; tapping the pinned-bar unpins and clears the bar. Group management: created a custom group via new-chat-btn -> select 2 members -> group-name-input='TEST_PW_group' -> create-chat-btn; chat-manage-btn (gear) is visible on the custom group, opens Manage screen showing group-rename-input and 5 manage-toggle-<id> rows (self locked), Save (save-group-btn) succeeds. chat-manage-btn is correctly ABSENT on both the main Family chat and on 1-on-1 direct chats. Regression: text send + reactions still work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "chat/[id].tsx", "issue": "Parent chat screen holds stale `chat` state after returning from Manage. `loadChat` is called only in useEffect on mount, not in useFocusEffect, so after renaming a group and popping back from /chat/manage the header keeps showing the previous name/member count until the screen is remounted. Compare loadMsgs (in useFocusEffect) vs loadChat (only in useEffect). Reference: /app/frontend/app/chat/[id].tsx:66-82", "testID": "chat-manage-btn", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "pointerEvents JSX prop", "issue": "Console still emits 'props.pointerEvents is deprecated. Use style.pointerEvents' on RN Web (carried over from iterations 1/2/3). Non-blocking."},
+      {"component": "expo-notifications on web", "issue": "Warning 'Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' — expected because push is native-only; _layout push code is meant to early-return on web. Not a bug, informational only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pin_group_push_api.py",
+    "/app/test_reports/pytest/pytest_batch4_results.xml"
+  ],
+  "action_items": [
+    "chat/[id].tsx: move `loadChat` into the same useFocusEffect (or a second one) so the chat header refreshes when returning from /chat/manage — currently a fresh group rename is only visible after remount. One-line change: call `loadChat()` inside the existing useFocusEffect callback alongside `loadMsgs()`.",
+    "Optional: whitelist emoji in MsgReactIn (Literal of the 6 known reactions) and add server-side pagination to /timeline (still to_list(1000)) — from iteration 3.",
+    "Optional: migrate pointerEvents JSX prop -> style.pointerEvents to clear the RN Web deprecation warning (also flagged in iterations 1, 2 and 3)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1922 lines — still well over the 700-line guideline. Timeline / on-this-day / push / seed all live in one file. Splitting into routers is overdue.",
+    "PATCH /chats/{id}: caller trying to remove themselves is silently kept (line 1369 `ids.add(mine.member_id)`) instead of returning a 400 like the spec implies. Behaviour is safe but could confuse callers — consider explicit 400 'You can't remove yourself from the group'.",
+    "PinIn has no length/format validation and pin_message returns {'ok': True} instead of the updated pinned message; the client has to re-GET /chats/{id} which is what it already does. Minor.",
+    "run_morning_reminders schedules the next tick against UTC 08:00 which won't match users' local morning — acceptable for MVP but worth noting for the roadmap."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pin_group_push_api.py (new — 11 tests for pin/unpin, custom-group PATCH, push register + test-reminder)",
+    "/app/test_reports/pytest/pytest_batch4_results.xml (new — junit output)",
+    "/app/test_reports/iteration_4.json (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11 new tests; prior 32 core + 13 chat + 11 story/reactions still available)", "frontend": "100% of the batch #4 flows exercised — only a minor stale-header issue after group rename (parent chat needs to reload chat on focus)."},
+  "seed_data_creation": "Backend tests register a fresh TEST_batch4_* user per session and seed the Sharma demo (5 members, family chat, OTD memory dated today). Playwright run reused storytester@fam.com and added: 1 message 'TEST_pin_target_msg' (pinned then unpinned), 1 regression text 'TEST_regression_send', 1 custom group 'TEST_PW_group' (rename attempt to 'TEST_PW_grp_renamed'). Not cleaned up (no delete-account endpoint).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All new testIDs verified present and functional: otd-nudge, otd-nudge-dismiss, open-yearbook, yearbook-year-<year>, yearbook-page-<id>, yearbook-back, action-pin, pinned-bar, chat-manage-btn (group-only), group-rename-input, manage-toggle-<id>, save-group-btn, group-name-input, create-chat-btn, select-<id>, direct-<id>, new-chat-btn. LOGIN FLOW NOTE: the welcome screen requires clicking testID `login-link-btn` to reveal login-email-input / login-password-input / login-submit-btn (not signin-tab/signin-btn as some prior reports assumed). Chats tab is `tab-chat` (not `chats`). Inside a nested screen (e.g. yearbook, chat) the bottom tab bar has display:none, so use in-app back or `element.click()` via JS to hop tabs — plain page.goto('/chat') will log you out in this preview. Push register-push in preview correctly returns 500 (placeholder key) and /push/test-reminder returns push_ok=false — these are NOT bugs.",
+  "rca_of_issue": "Stale group header after rename — /chat/[id].tsx loads `chat` in useEffect(mount only) but only re-loads messages via useFocusEffect. When manage.tsx pops back after PATCH /chats/{id}, the parent screen refetches messages but keeps the old chat object (with the old name & member count). Fix: call loadChat() from the existing useFocusEffect callback (already receives loadMsgs) — one line addition."
+}

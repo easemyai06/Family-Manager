@@ -6,6 +6,7 @@ demo-family seeder and Emergent Object Storage media upload/serving.
 """
 import os
 import uuid
+import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta, date
@@ -47,6 +48,11 @@ STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "familyhome"
 _storage_key = None
+
+# Emergent-managed push notifications (SuprSend relay).
+PUSH_BASE_URL = "https://integrations.emergentagent.com"
+PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
+_push_client = httpx.AsyncClient(base_url=PUSH_BASE_URL, headers={"X-Push-Key": PUSH_KEY}, timeout=10.0)
 
 app = FastAPI(title="FamilyHome API")
 api = APIRouter(prefix="/api")
@@ -1052,6 +1058,16 @@ class MsgReactIn(BaseModel):
     emoji: str
 
 
+class PinIn(BaseModel):
+    message_id: str
+
+
+class ChatPatch(BaseModel):
+    name: Optional[str] = None
+    add_member_ids: List[str] = []
+    remove_member_ids: List[str] = []
+
+
 async def get_last_read(chat_id: str, member_id: str) -> Optional[str]:
     r = await db.chat_reads.find_one({"chat_id": chat_id, "member_id": member_id}, {"_id": 0})
     return r["last_read_at"] if r else None
@@ -1090,6 +1106,13 @@ async def hydrate_chat(chat: dict, mine: dict) -> dict:
     out["avatar"] = avatar
     out["color"] = color
     out["unread"] = await _unread_count(chat["chat_id"], mine["member_id"])
+    out["pinned_message"] = None
+    pid = chat.get("pinned_message_id")
+    if pid:
+        pm = await db.messages.find_one({"message_id": pid, "chat_id": chat["chat_id"]}, {"_id": 0})
+        if pm:
+            pm["sender"] = await db.members.find_one({"member_id": pm["sender_member_id"]}, {"_id": 0})
+            out["pinned_message"] = pm
     return out
 
 
@@ -1237,6 +1260,17 @@ async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_c
         {"chat_id": chat_id, "member_id": mine["member_id"]},
         {"$set": {"last_read_at": msg["created_at"]}}, upsert=True)
 
+    # Push notify the other members (recipients are likely offline).
+    try:
+        others = [mid for mid in chat.get("member_ids", []) if mid != mine["member_id"]]
+        recipients = await _member_user_ids(fid, others, exclude_user=user["user_id"])
+        chat_title = chat.get("name") or ("Family Chat" if chat["type"] == "family" else mine["name"])
+        push_title = mine["name"] if chat["type"] == "direct" else f"{mine['name']} · {chat_title}"
+        await send_push(recipients, {"title": push_title, "message": preview or "New message",
+                                     "action_url": f"/chat/{chat_id}"})
+    except Exception as e:
+        logger.warning(f"message push failed (non-blocking): {e}")
+
     # Chat → Affection: also record affection for recipients so it shows in the
     # Love timeline and triggers their received-love overlay.
     if body.type == "affection" and body.affection_key:
@@ -1293,9 +1327,52 @@ async def react_message(message_id: str, body: MsgReactIn, user: dict = Depends(
     return {"ok": True}
 
 
-# ---------------------------------------------------------------------------
-# Our Family Story — timeline & memory vault
-# ---------------------------------------------------------------------------
+@api.post("/chats/{chat_id}/pin")
+async def pin_message(chat_id: str, body: PinIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    msg = await db.messages.find_one({"message_id": body.message_id, "chat_id": chat_id}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    # single pin per conversation — newest replaces the older one
+    await db.chats.update_one({"chat_id": chat_id}, {"$set": {"pinned_message_id": body.message_id}})
+    return {"ok": True}
+
+
+@api.post("/chats/{chat_id}/unpin")
+async def unpin_message(chat_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    await db.chats.update_one({"chat_id": chat_id}, {"$set": {"pinned_message_id": None}})
+    return {"ok": True}
+
+
+@api.patch("/chats/{chat_id}")
+async def update_chat(chat_id: str, body: ChatPatch, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    chat = await _require_chat(chat_id, fid, mine)
+    if chat["type"] != "group":
+        raise HTTPException(status_code=400, detail="Only custom groups can be edited")
+    updates: dict = {}
+    if body.name is not None and body.name.strip():
+        updates["name"] = body.name.strip()
+    ids = set(chat.get("member_ids", []))
+    for mid in body.add_member_ids:
+        m = await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0})
+        if m:
+            ids.add(mid)
+    for mid in body.remove_member_ids:
+        ids.discard(mid)
+    ids.add(mine["member_id"])  # keep the current user in the group
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="A group needs at least 2 people")
+    updates["member_ids"] = sorted(ids)
+    await db.chats.update_one({"chat_id": chat_id}, {"$set": updates})
+    chat = await db.chats.find_one({"chat_id": chat_id}, {"_id": 0})
+    return await hydrate_chat(chat, mine)
 class TimelineIn(BaseModel):
     title: str
     date: str                       # YYYY-MM-DD
@@ -1419,6 +1496,123 @@ async def serve_file(path: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="File not found")
     return Response(content=content, media_type=ct,
                     headers={"Cache-Control": "private, max-age=86400"})
+
+
+# ---------------------------------------------------------------------------
+# Push notifications (Emergent managed relay)
+# ---------------------------------------------------------------------------
+class RegisterPushBody(BaseModel):
+    user_id: str
+    platform: str          # "android" | "ios"
+    device_token: str
+
+
+@api.post("/register-push", status_code=201)
+async def register_push(body: RegisterPushBody):
+    resp = await _push_client.post("/api/v1/push/users/register", json=body.model_dump())
+    if resp.status_code == 401:
+        raise HTTPException(500, "EMERGENT_PUSH_KEY missing or invalid")
+    if resp.status_code >= 500:
+        raise HTTPException(502, "Push provider unavailable")
+    resp.raise_for_status()
+    return {"status": "registered"}
+
+
+async def send_push(recipients: list, data: dict, idempotency_key: Optional[str] = None) -> None:
+    """Relay a push to Emergent's managed service. recipients = list of user_ids."""
+    if not recipients:
+        return
+    if "title" not in data or "message" not in data:
+        raise ValueError("data must include title and message")
+    for i in range(0, len(recipients), 100):
+        chunk = recipients[i:i + 100]
+        payload: dict = {"recipients": chunk, "data": data}
+        if idempotency_key:
+            payload["$idempotency_key"] = f"{idempotency_key}:{i}"
+        resp = await _push_client.post("/api/v1/push/trigger", json=payload)
+        resp.raise_for_status()
+
+
+async def _member_user_ids(fid: str, member_ids: list, exclude_user: Optional[str] = None) -> list:
+    """Resolve family member_ids -> linked user_ids (only members with accounts)."""
+    out = []
+    for mid in member_ids:
+        m = await db.members.find_one({"member_id": mid}, {"_id": 0})
+        if m and m.get("linked_user_id") and m["linked_user_id"] != exclude_user:
+            out.append(m["linked_user_id"])
+    return out
+
+
+async def run_morning_reminders():
+    """Send an 'On This Day' push once per day to families that have a memory today."""
+    today = date.today()
+    mmdd = f"-{today.month:02d}-{today.day:02d}"
+    families = await db.families.find({}, {"_id": 0}).to_list(5000)
+    for fam in families:
+        fid = fam["family_id"]
+        log_key = f"otd:{fid}:{today.isoformat()}"
+        if await db.push_log.find_one({"key": log_key}):
+            continue
+        events = await db.timeline.find(
+            {"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(20)
+        if not events:
+            continue
+        top = events[0]
+        try:
+            yrs = today.year - int(top["date"][:4])
+        except ValueError:
+            yrs = 0
+        members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+        recipients = [m["linked_user_id"] for m in members if m.get("linked_user_id")]
+        when = f"{yrs} year{'s' if yrs != 1 else ''} ago today" if yrs > 0 else "today"
+        title = "On This Day ✨"
+        extra = f" (+{len(events) - 1} more)" if len(events) > 1 else ""
+        message = f"{when}: {top['title']}{extra}. Tap to relive this memory."
+        try:
+            await send_push(recipients, {"title": title, "message": message,
+                                         "action_url": f"/timeline/{top['timeline_id']}"},
+                            idempotency_key=log_key)
+        except Exception as e:
+            logger.warning(f"morning reminder push failed for {fid} (non-blocking): {e}")
+        await db.push_log.insert_one({"key": log_key, "created_at": now_iso()})
+
+
+async def morning_reminder_loop():
+    while True:
+        now = datetime.now(timezone.utc)
+        target = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        await asyncio.sleep(max(60, (target - now).total_seconds()))
+        try:
+            await run_morning_reminders()
+        except Exception:
+            logger.exception("morning reminders loop error")
+
+
+@api.post("/push/test-reminder")
+async def push_test_reminder(user: dict = Depends(get_current_user)):
+    """Manually trigger the On This Day push for the caller's family (for testing)."""
+    fid = require_family(user)
+    today = date.today()
+    mmdd = f"-{today.month:02d}-{today.day:02d}"
+    events = await db.timeline.find(
+        {"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(20)
+    if not events:
+        return {"sent": 0, "detail": "No memory for today"}
+    top = events[0]
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    recipients = [m["linked_user_id"] for m in members if m.get("linked_user_id")]
+    ok = True
+    try:
+        await send_push(recipients, {"title": "On This Day ✨",
+                                     "message": f"Remember: {top['title']}. Tap to relive it.",
+                                     "action_url": f"/timeline/{top['timeline_id']}"})
+    except Exception as e:
+        ok = False
+        logger.warning(f"test reminder push failed (expected in preview): {e}")
+    return {"recipients": len(recipients), "push_ok": ok}
+
 
 
 # ---------------------------------------------------------------------------
@@ -1718,8 +1912,10 @@ async def startup():
         logger.info("storage initialized")
     except Exception as e:
         logger.warning(f"storage init deferred: {e}")
+    asyncio.create_task(morning_reminder_loop())
 
 
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
+    await _push_client.aclose()

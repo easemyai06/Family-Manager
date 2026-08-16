@@ -58,6 +58,12 @@
         {
           "microphonePermission": "Record voice messages for your family"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#FF6B6B"
+        }
       ]
     ],
     "experiments": {
