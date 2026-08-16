@@ -327,6 +327,8 @@ export default function Conversation() {
         </Pressable>
         {chat?.type === "direct" ? (
           <Avatar uri={chat?.avatar} name={chat?.display_name} size={38} color={chat?.color} />
+        ) : chat?.avatar ? (
+          <SmartImage uri={chat.avatar} style={styles.groupAvatar} />
         ) : (
           <View style={[styles.groupAvatar, { backgroundColor: chat?.color || c.brand }]}>
             <Ionicons name={chat?.type === "family" ? "heart" : "people"} size={18} color="#fff" />

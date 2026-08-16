@@ -301,3 +301,89 @@ frontend_batch4:
 agent_communication_batch4:
     -agent: "main"
     -message: "Batch #4 complete. TEST BACKEND: pin/unpin, PATCH group (rename/add/remove; family+direct must 400), register-push (expect 500 w/ placeholder key = OK), push/test-reminder. TEST FRONTEND: chat long-press Pin -> pinned banner appears -> tap banner unpins; group gear button opens manage screen (rename + toggle members + save); timeline 'open-yearbook' opens Yearbook w/ year chips + pages; Home morning banner 'otd-nudge' appears once/day and dismisses. Push delivery + voice recording are NATIVE-ONLY (need Publish+build) — verify UI/permission handling only, do NOT fail on web. Account with data: storytester@fam.com / secret123 (also has 9 memories now). To test group mgmt, create a custom group first (New chat -> select 2+ people -> name it)."
+
+# ============ Feature Batch #5 (Family Tree / Birthday Wishes / Memory Reactions+Notes / Group Photo) ============
+backend_batch5:
+  - task: "Memory reactions (love toggle) + memory comments (notes)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/timeline/{id}/react toggles a love (timeline_reactions); GET/POST /api/timeline/{id}/comments; hydrate_timeline returns love_count, comment_count, my_love. delete_timeline also cleans reactions+comments. Verified via curl (love_count=1 my_love=true; comment added+listed)."
+  - task: "Birthday wishes (send + list per member/year) + push to birthday person"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/birthdays/{member_id}/wishes?year= returns {member, year, wishes(hydrated from)}; POST adds a wish {message, emoji} for current year + non-blocking push to birthday person. Verified via curl."
+  - task: "Group cover photo (ChatPatch.photo_url) + avatar in hydrate_chat for groups"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "PATCH /api/chats/{id} now accepts photo_url; hydrate_chat sets avatar=photo_url for group type. Verified via curl (avatar set true)."
+
+frontend_batch5:
+  - task: "Family Tree screen (auto generation grouping, tap-through to profile/story)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/tree/index.tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More tab > Family Tree (route /tree, no longer 'soon'). Auto-buckets members into Grandparents/Parents/Children by role+relationship, connector spine, each node (testID tree-node-<id>) taps to member profile."
+  - task: "Birthday Wishes screen (celebration header + wish feed + emoji composer)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/birthday/[id].tsx, frontend/app/(tabs)/index.tsx, frontend/app/member/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Opened from Home birthday banner (testID birthday-banner) and member profile 'Birthday Wishes' (testID member-birthday-wishes). Emoji picker (wish-emoji-<e>) + message (wish-input) + send (wish-send); wishes stack in feed."
+  - task: "Reactions + notes on a memory (memory detail)"
+    implemented: true
+    working: true
+    file: "frontend/app/timeline/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-confirmed: memory detail shows love button (testID memory-love) with count, note count, comment list (memory-comment-<id>), and 'Leave a note' composer (memory-comment-input / memory-comment-send). Needs full interaction retest."
+  - task: "Group photo picker in manage screen + shown in chat list & conversation header"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/manage.tsx, frontend/app/(tabs)/chat.tsx, frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Group manage screen has a photo picker (testID group-photo-picker) that uploads + PATCHes photo_url; chat list and conversation header show the group photo when set (else icon)."
+
+agent_communication_batch5:
+    -agent: "main"
+    -message: "Batch #5 complete. TEST BACKEND: memory react toggle + comments; birthday wishes GET/POST; group PATCH photo_url. TEST FRONTEND: (1) More > Family Tree renders generations, tap a node -> member profile; (2) member profile 'Birthday Wishes' + Home birthday banner -> birthday screen, pick emoji + send a wish -> appears in feed; (3) memory detail love toggle + add a note (already screenshot-verified, please retest interaction); (4) create/open a custom group -> gear -> manage -> set a group photo -> save -> photo shows in chat list + header. Account: storytester@fam.com / secret123 (has 9 memories + members Raj/Priya/Aarav/Anaya/Meera). Note: Home birthday banner only appears if a birthday is within the upcoming window; use member profile button to reach Birthday Wishes reliably. Push/voice remain native-only (don't fail on web)."

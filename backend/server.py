@@ -1064,6 +1064,7 @@ class PinIn(BaseModel):
 
 class ChatPatch(BaseModel):
     name: Optional[str] = None
+    photo_url: Optional[str] = None
     add_member_ids: List[str] = []
     remove_member_ids: List[str] = []
 
@@ -1100,6 +1101,7 @@ async def hydrate_chat(chat: dict, mine: dict) -> dict:
         color = "#FF6B6B"
     else:
         display_name = display_name or "Group"
+        avatar = chat.get("photo_url")
     out = clean(dict(chat))
     out["members"] = members
     out["display_name"] = display_name
@@ -1359,6 +1361,8 @@ async def update_chat(chat_id: str, body: ChatPatch, user: dict = Depends(get_cu
     updates: dict = {}
     if body.name is not None and body.name.strip():
         updates["name"] = body.name.strip()
+    if body.photo_url is not None:
+        updates["photo_url"] = body.photo_url or None
     ids = set(chat.get("member_ids", []))
     for mid in body.add_member_ids:
         m = await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0})
@@ -1373,6 +1377,8 @@ async def update_chat(chat_id: str, body: ChatPatch, user: dict = Depends(get_cu
     await db.chats.update_one({"chat_id": chat_id}, {"$set": updates})
     chat = await db.chats.find_one({"chat_id": chat_id}, {"_id": 0})
     return await hydrate_chat(chat, mine)
+
+
 class TimelineIn(BaseModel):
     title: str
     date: str                       # YYYY-MM-DD
@@ -1384,7 +1390,7 @@ class TimelineIn(BaseModel):
     importance: bool = False
 
 
-async def hydrate_timeline(t: dict) -> dict:
+async def hydrate_timeline(t: dict, my_member_id: Optional[str] = None) -> dict:
     t = clean(dict(t))
     people = []
     for pid in t.get("people", []):
@@ -1392,6 +1398,11 @@ async def hydrate_timeline(t: dict) -> dict:
         if m:
             people.append(m)
     t["people_members"] = people
+    tid = t["timeline_id"]
+    t["love_count"] = await db.timeline_reactions.count_documents({"timeline_id": tid})
+    t["comment_count"] = await db.timeline_comments.count_documents({"timeline_id": tid})
+    t["my_love"] = bool(my_member_id) and bool(
+        await db.timeline_reactions.find_one({"timeline_id": tid, "member_id": my_member_id}))
     return t
 
 
@@ -1399,13 +1410,15 @@ async def hydrate_timeline(t: dict) -> dict:
 async def list_timeline(user: dict = Depends(get_current_user), member_id: Optional[str] = None,
                         category: Optional[str] = None):
     fid = require_family(user)
+    mine = await member_for_user(user)
+    my_id = mine["member_id"] if mine else None
     q = {"family_id": fid}
     if member_id:
         q["people"] = member_id
     if category:
         q["category"] = category
     events = await db.timeline.find(q, {"_id": 0}).sort("date", -1).to_list(1000)
-    return [await hydrate_timeline(e) for e in events]
+    return [await hydrate_timeline(e, my_id) for e in events]
 
 
 @api.post("/timeline")
@@ -1449,17 +1462,121 @@ async def on_this_day(user: dict = Depends(get_current_user)):
 @api.get("/timeline/{timeline_id}")
 async def get_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    mine = await member_for_user(user)
     t = await db.timeline.find_one({"timeline_id": timeline_id, "family_id": fid}, {"_id": 0})
     if not t:
         raise HTTPException(status_code=404, detail="Memory not found")
-    return await hydrate_timeline(t)
+    return await hydrate_timeline(t, mine["member_id"] if mine else None)
+
+
+@api.post("/timeline/{timeline_id}/react")
+async def react_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    t = await db.timeline.find_one({"timeline_id": timeline_id, "family_id": fid}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    existing = await db.timeline_reactions.find_one(
+        {"timeline_id": timeline_id, "member_id": mine["member_id"]}, {"_id": 0})
+    if existing:
+        await db.timeline_reactions.delete_one({"timeline_id": timeline_id, "member_id": mine["member_id"]})
+    else:
+        await db.timeline_reactions.insert_one({
+            "timeline_id": timeline_id, "family_id": fid, "member_id": mine["member_id"],
+            "created_at": now_iso(),
+        })
+    return await hydrate_timeline(t, mine["member_id"])
+
+
+@api.get("/timeline/{timeline_id}/comments")
+async def list_timeline_comments(timeline_id: str, user: dict = Depends(get_current_user)):
+    require_family(user)
+    comments = await db.timeline_comments.find({"timeline_id": timeline_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    for c in comments:
+        c["author"] = await db.members.find_one({"member_id": c["member_id"]}, {"_id": 0})
+    return comments
+
+
+@api.post("/timeline/{timeline_id}/comments")
+async def add_timeline_comment(timeline_id: str, body: CommentIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    c = {
+        "comment_id": new_id("tcmt_"), "timeline_id": timeline_id, "family_id": fid,
+        "member_id": mine["member_id"], "text": body.text, "created_at": now_iso(),
+    }
+    await db.timeline_comments.insert_one(c)
+    c = clean(c)
+    c["author"] = mine
+    return c
 
 
 @api.delete("/timeline/{timeline_id}")
 async def delete_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.timeline.delete_one({"timeline_id": timeline_id, "family_id": fid})
+    await db.timeline_reactions.delete_many({"timeline_id": timeline_id})
+    await db.timeline_comments.delete_many({"timeline_id": timeline_id})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Birthday wishes
+# ---------------------------------------------------------------------------
+class WishIn(BaseModel):
+    message: str
+    emoji: Optional[str] = "🎂"
+
+
+@api.get("/birthdays/{member_id}/wishes")
+async def list_wishes(member_id: str, user: dict = Depends(get_current_user), year: Optional[int] = None):
+    fid = require_family(user)
+    m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    yr = year or date.today().year
+    wishes = await db.wishes.find(
+        {"family_id": fid, "member_id": member_id, "year": yr}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for w in wishes:
+        w["from"] = await db.members.find_one({"member_id": w["from_member_id"]}, {"_id": 0})
+    return {"member": m, "year": yr, "wishes": wishes}
+
+
+@api.post("/birthdays/{member_id}/wishes")
+async def add_wish(member_id: str, body: WishIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Write a wish first")
+    yr = date.today().year
+    w = {
+        "wish_id": new_id("wish_"), "family_id": fid, "member_id": member_id, "year": yr,
+        "from_member_id": mine["member_id"], "message": body.message.strip(),
+        "emoji": body.emoji or "🎂", "created_at": now_iso(),
+    }
+    await db.wishes.insert_one(w)
+    try:
+        if m.get("linked_user_id") and m["linked_user_id"] != user["user_id"]:
+            await send_push([m["linked_user_id"]], {
+                "title": f"{mine['name']} sent you a birthday wish 🎂",
+                "message": body.message.strip()[:120],
+                "action_url": f"/birthday/{member_id}",
+            })
+    except Exception as e:
+        logger.warning(f"birthday wish push failed (non-blocking): {e}")
+    w = clean(w)
+    w["from"] = mine
+    return w
+
 
 
 # ---------------------------------------------------------------------------

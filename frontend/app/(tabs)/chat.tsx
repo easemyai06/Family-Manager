@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -53,9 +54,13 @@ export default function ChatList() {
         testID={`chat-${item.chat_id}`}
       >
         {isGroup ? (
-          <View style={[styles.groupAvatar, { backgroundColor: item.color }]}>
-            <Ionicons name={item.type === "family" ? "heart" : "people"} size={24} color="#fff" />
-          </View>
+          item.avatar ? (
+            <SmartImage uri={item.avatar} style={styles.groupAvatar} />
+          ) : (
+            <View style={[styles.groupAvatar, { backgroundColor: item.color }]}>
+              <Ionicons name={item.type === "family" ? "heart" : "people"} size={24} color="#fff" />
+            </View>
+          )
         ) : (
           <Avatar uri={item.avatar} name={item.display_name} size={54} color={item.color} ring />
         )}

@@ -199,7 +199,7 @@ export default function Home() {
 
         {birthdays.length > 0 ? (
           <Pressable
-            onPress={() => router.push("/(tabs)/family")}
+            onPress={() => router.push(`/birthday/${birthdays[0].member?.member_id}`)}
             style={{ marginTop: spacing.md }}
             testID="birthday-banner"
           >
@@ -211,7 +211,7 @@ export default function Home() {
                   {birthdays[0].days === 0 ? "today!" : `in ${birthdays[0].days} day${birthdays[0].days > 1 ? "s" : ""}`}
                 </AppText>
                 <AppText size={12} color="rgba(44,44,40,0.7)">
-                  Tap to send birthday love
+                  Tap to send a birthday wish 🎉
                 </AppText>
               </View>
             </LinearGradient>

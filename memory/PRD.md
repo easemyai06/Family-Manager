@@ -55,17 +55,24 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   custom groups only).
 - Our Family Story: family timeline (year groups + category filters), individual member stories
   (from member profile), Add Memory (photos/date/category/people/importance — any member), Memory
-  Detail (photo carousel + delete), Memory Vault (3-col photo grid grouped by year), Family Yearbook
-  (on-screen scrollable per-year cover + memory pages). On This Day card on Home + a once-a-day
-  in-app morning reminder banner.
+  Detail (photo carousel + ❤️ love reaction + written notes/comments + delete), Memory Vault (3-col
+  photo grid grouped by year), Family Yearbook (on-screen scrollable per-year cover + memory pages).
+  On This Day card on Home + a once-a-day in-app morning reminder banner.
+- Family Tree: auto-grouped by generation (grandparents → parents → children) from roles, tap any
+  node to open that person's profile/story.
+- Birthday Wishes: written wish + emoji, wishes stack on the birthday person's celebration screen
+  (opened from Home birthday banner + member profile).
+- Group chat cover photo: set/change from the group manage screen; shows in chat list + header.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
-  Day" reminder (daily 08:00 UTC loop, deduped) + new-message push. Requires user to add Firebase
-  google-services.json and Publish+build to work; EMERGENT_PUSH_KEY is a deploy-injected placeholder.
-- Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push) backend tests pass; frontend flows verified.
+  Day" reminder (daily 08:00 UTC loop, deduped) + new-message push + birthday-wish push. Requires
+  user to add Firebase google-services.json and Publish+build to work; EMERGENT_PUSH_KEY is a
+  deploy-injected placeholder.
+- Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
+  + 10/10 (tree+birthday+memory-reactions+group-photo) backend tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
-- Family Tree (interactive) + generational timeline.
+- Time Capsules (write a message to open on a future date).
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.

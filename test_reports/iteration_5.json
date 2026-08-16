@@ -1,0 +1,42 @@
+{
+  "summary": "Batch #5 backend + frontend verification (Family Tree, Birthday Wishes, Memory reactions/notes, Custom Group photo). BACKEND: 10/10 tests PASSED in /app/backend/tests/test_batch5_api.py — memory react toggle (my_love true→false, love_count reflected in GET /timeline/{id}), notes list+add (author populated, comment_count increments), birthday wishes GET+POST for current year (shape {member, year, wishes[] with from}), 404 on unknown member_id (GET and POST), 400 on empty message, PATCH /chats/{id} {photo_url} on custom group returns avatar=photo_url (verified via GET), and correctly rejects family/direct chats with 400. FRONTEND (mobile viewport 390x844, storytester@fam.com/secret123): Family Tree — More → 'Family Tree' row (testID more-tree) opens the tree; renders 3 tiers (Grandparents/Parents/Children) with 5 tree-node-<id> nodes; tapping a node opens that member's profile (member-back visible). Birthday Wishes — from Meera's profile tap 'Birthday Wishes' (member-birthday-wishes) opens celebration screen with LinearGradient header; picking wish-emoji-🎉, typing in wish-input, tapping wish-send posts and the new wish card (wish-<id>) appears in feed and the '0 wishes' counter increments to '1 wish'. Home birthday-banner testID is visible and opens the same birthday screen. Memory reactions/notes — More → more-timeline → open a memory-<tid> card → memory-detail screen; tapping memory-love toggles heart+count (verified '1 love' → '0 loves'); typing in memory-comment-input and tapping memory-comment-send adds a note (memory-comment-<id>), note count increments (1 note → 2 notes). Group Photo — created a custom group (new-chat-btn → select 2 members → group-name-input 'TEST_batch5_photo_grp' → create-chat-btn), the gear (chat-manage-btn) opens Manage where group-photo-picker (camera-icon badge) is visible ('Tap to set a group photo' copy), tapping it does not crash on web (native picker doesn't open — EXPECTED per review note), group-rename-input + save-group-btn Save flow completes. NOTE: previously-flagged stale header on chat/[id] after group rename (iteration_4) is STILL PRESENT — after save the chat header shows the pre-save name until the screen is remounted. All testIDs in the review request are present and functional.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "chat/[id].tsx", "issue": "Same stale-header bug from iteration_4 is unresolved — after save-group-btn on /chat/manage pops back, the parent chat header still shows the pre-save group name (my test renamed to 'TEST_batch5_renamed_grp' but header remained 'TEST_batch5_photo_grp'). Fix: call loadChat() from the existing useFocusEffect in /app/frontend/app/chat/[id].tsx alongside loadMsgs(). Reference: /app/frontend/app/chat/[id].tsx:66-82", "testID": "chat-manage-btn", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "pointerEvents JSX prop", "issue": "Console still emits 'props.pointerEvents is deprecated. Use style.pointerEvents' on RN Web (carried over from iterations 1-4). Non-blocking."},
+      {"component": "expo-notifications on web", "issue": "Warning 'Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' — expected because push is native-only. Not a bug."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch5_api.py",
+    "/app/test_reports/pytest/pytest_batch5_results.xml"
+  ],
+  "action_items": [
+    "(from iteration_4 — still unresolved) chat/[id].tsx: reload `chat` inside useFocusEffect (currently only loadMsgs refreshes on focus). One-line change resolves stale header after group rename or group photo save.",
+    "Optional: split server.py (2038 lines) into routers — timeline, birthdays, chats, seed, push — the 700-line guideline is significantly exceeded.",
+    "Optional: migrate pointerEvents JSX prop → style.pointerEvents to clear the RN Web deprecation warning (also flagged in iterations 1-4)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 2038 lines — grew again with wishes + timeline reactions/comments endpoints. Router split overdue.",
+    "PATCH /chats/{id} silently drops caller's own member_id from remove_member_ids (line 1373 `ids.add(mine['member_id'])`) — still doesn't return an explicit 400, callers may be confused (documented in iteration_4).",
+    "WishIn.message has no length cap; POST /birthdays/{id}/wishes will accept arbitrarily long messages. Consider adding max_length via pydantic Field.",
+    "add_wish sends push using `send_push` and swallows the error — good — but note the push_ok side effect is dependent on placeholder EMERGENT_PUSH_KEY in preview (returns 500 for register-push, documented). Not a bug.",
+    "hydrate_timeline runs 3 extra Mongo queries per item in /timeline (love_count, comment_count, my_love) which is O(N) round-trips on the list. Fine for MVP (~10 memories) but should be aggregated for large families."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch5_api.py (new — 10 tests for memory react/notes, birthday wishes, group photo)",
+    "/app/test_reports/pytest/pytest_batch5_results.xml (new — junit output)",
+    "/app/test_reports/iteration_5.json (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10 new tests; prior 32 core + 13 chat + 11 story/reactions + 11 batch4 still available)", "frontend": "100% of the batch #5 flows exercised (tree, birthday wishes incl. home banner, memory love+notes, custom-group photo picker + save flow) — only the pre-existing iteration_4 stale-header bug remains."},
+  "seed_data_creation": "Backend tests register a fresh TEST_batch5_* user per session and seed the Sharma demo. Playwright run reused storytester@fam.com and added: 1 birthday wish 'TEST_batch5 wonderful day!' on Meera, 1 memory note 'TEST_batch5 lovely memory!' on tl_7664227d5e7a46ad (also toggled love on that memory and left it OFF), 1 new custom group 'TEST_batch5_photo_grp' (rename attempt to 'TEST_batch5_renamed_grp' — header did not refresh, see stale-header bug). Not cleaned up (no delete-account endpoint).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New testIDs verified functional this iteration: more-tree, tree-back, tree-node-<id>, birthday-back, wish-emoji-<emoji>, wish-input, wish-send, wish-<id>, birthday-banner (Home), member-birthday-wishes, memory-love, memory-comment-input, memory-comment-send, memory-comment-<id>, group-photo-picker. Prior testIDs from batch 4 (chat-manage-btn, group-rename-input, save-group-btn, new-chat-btn, create-chat-btn, group-name-input, select-<id>, tab-more, tab-chat, more-timeline, more-profile, login-link-btn/email-input/password-input/submit-btn, otd-nudge, memory-detail-back) all still work. WEB PICKER NOTE: group-photo-picker on web is a no-op — expected per review; verify the save flow instead of the actual image upload. The tree-node-<id> value uses the raw member_id (e.g. tree-node-mem_9dbaf0c868804473). timeline index memory cards use testID `memory-<timeline_id>` (not `timeline-card-`), and detail screen shows love/note counters as '<N> loves' / '<N> notes' inline text.",
+  "rca_of_issue": "Stale group header after rename/photo save (still present from iteration_4). RCA: /app/frontend/app/chat/[id].tsx loads the chat object once in useEffect on mount but only re-fetches messages via useFocusEffect. When /chat/manage pops back after PATCH /chats/{id}, the parent screen refetches messages but keeps the stale chat state (old name/photo/member count). Fix: call loadChat() from the existing useFocusEffect callback (already calls loadMsgs)."
+}

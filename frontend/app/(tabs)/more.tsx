@@ -30,7 +30,7 @@ const ORGANIZE: Row[] = [
 const REMEMBER: Row[] = [
   { key: "albums", label: "Family Albums", icon: "images", color: "#FF6B6B", soon: true },
   { key: "timeline", label: "Our Family Story", icon: "time", color: "#D98E5A", route: "/timeline" },
-  { key: "tree", label: "Family Tree", icon: "git-network", color: "#8AB07D", soon: true },
+  { key: "tree", label: "Family Tree", icon: "git-network", color: "#8AB07D", route: "/tree" },
   { key: "capsule", label: "Time Capsules", icon: "cube", color: "#B5835A", soon: true },
 ];
 

@@ -1,16 +1,18 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Alert, useWindowDimensions } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, TextInput, Alert, Platform, useWindowDimensions } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
-import { spacing, radius, shadow } from "@/src/theme/tokens";
+import { spacing, radius, shadow, fonts } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
-import { formatDate } from "@/src/lib/time";
+import { formatDate, timeAgo } from "@/src/lib/time";
 
 export default function MemoryDetail() {
   const { c } = useTheme();
@@ -19,10 +21,14 @@ export default function MemoryDetail() {
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [m, setM] = useState<any>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  const [text, setText] = useState("");
 
   const load = useCallback(async () => {
     try {
-      setM(await api(`/timeline/${id}`));
+      const [mem, cs] = await Promise.all([api(`/timeline/${id}`), api(`/timeline/${id}/comments`)]);
+      setM(mem);
+      setComments(cs);
     } catch {}
   }, [id]);
 
@@ -31,6 +37,24 @@ export default function MemoryDetail() {
       load();
     }, [load])
   );
+
+  const toggleLove = async () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      setM(await api(`/timeline/${id}/react`, { method: "POST" }));
+    } catch {}
+  };
+
+  const addComment = async () => {
+    const body = text.trim();
+    if (!body) return;
+    setText("");
+    try {
+      const cm = await api(`/timeline/${id}/comments`, { method: "POST", body: { text: body } });
+      setComments((prev) => [...prev, cm]);
+      setM((prev: any) => (prev ? { ...prev, comment_count: (prev.comment_count || 0) + 1 } : prev));
+    } catch {}
+  };
 
   const remove = () => {
     Alert.alert("Delete memory?", "This memory will be removed from your family story.", [
@@ -54,8 +78,8 @@ export default function MemoryDetail() {
   const heroH = Math.min(width * 0.9, 380);
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+    <KeyboardAvoidingView behavior="translate-with-padding" style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xl }} keyboardShouldPersistTaps="handled">
         {/* hero */}
         <View style={{ height: hasMedia ? heroH : 150 }}>
           {hasMedia ? (
@@ -134,9 +158,68 @@ export default function MemoryDetail() {
               </View>
             </View>
           ) : null}
+
+          {/* love + notes */}
+          <View style={[styles.loveRow, { borderTopColor: c.divider }]}>
+            <Pressable onPress={toggleLove} style={styles.loveBtn} testID="memory-love">
+              <Ionicons name={m.my_love ? "heart" : "heart-outline"} size={24} color={m.my_love ? c.brand : c.onSurfaceTertiary} />
+              <AppText size={14} weight="semibold" color={m.my_love ? c.brand : c.onSurfaceSecondary}>
+                {m.love_count || 0} {m.love_count === 1 ? "love" : "loves"}
+              </AppText>
+            </Pressable>
+            <View style={styles.loveBtn}>
+              <Ionicons name="chatbubble-outline" size={21} color={c.onSurfaceTertiary} />
+              <AppText size={14} weight="semibold" color={c.onSurfaceSecondary}>
+                {m.comment_count || 0} {m.comment_count === 1 ? "note" : "notes"}
+              </AppText>
+            </View>
+          </View>
+
+          <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
+            {comments.length === 0 ? (
+              <AppText size={13} color={c.onSurfaceTertiary}>
+                Be the first to leave a note on this memory ❤️
+              </AppText>
+            ) : (
+              comments.map((cm) => (
+                <View key={cm.comment_id} style={styles.commentRow} testID={`memory-comment-${cm.comment_id}`}>
+                  <Avatar uri={cm.author?.photo_url} name={cm.author?.name} size={34} color={cm.author?.color} />
+                  <View style={[styles.commentBubble, { backgroundColor: c.surfaceSecondary }]}>
+                    <View style={styles.commentTop}>
+                      <AppText size={13} weight="bold" color={cm.author?.color}>
+                        {cm.author?.name}
+                      </AppText>
+                      <AppText size={11} color={c.onSurfaceTertiary}>
+                        {timeAgo(cm.created_at)}
+                      </AppText>
+                    </View>
+                    <AppText size={14} color={c.onSurface} style={{ marginTop: 2 }}>
+                      {cm.text}
+                    </AppText>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
         </View>
       </ScrollView>
-    </View>
+
+      {/* composer */}
+      <View style={[styles.composer, { backgroundColor: c.surface, borderTopColor: c.border, paddingBottom: insets.bottom || spacing.md }]}>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          placeholder="Leave a note…"
+          placeholderTextColor={c.onSurfaceTertiary}
+          style={[styles.input, { backgroundColor: c.surfaceSecondary, color: c.onSurface, fontFamily: fonts.textMedium }]}
+          multiline
+          testID="memory-comment-input"
+        />
+        <Pressable onPress={addComment} style={[styles.sendBtn, { backgroundColor: text.trim() ? c.brand : c.surfaceTertiary }]} disabled={!text.trim()} testID="memory-comment-send">
+          <Ionicons name="arrow-up" size={20} color={text.trim() ? "#fff" : c.onSurfaceTertiary} />
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -150,4 +233,12 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm },
   peopleWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.lg },
   person: { alignItems: "center", gap: 4 },
+  loveRow: { flexDirection: "row", alignItems: "center", gap: spacing.xl, marginTop: spacing.xl, paddingTop: spacing.lg, borderTopWidth: 1 },
+  loveBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
+  commentRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
+  commentBubble: { flex: 1, borderRadius: radius.md, padding: spacing.md },
+  commentTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1 },
+  input: { flex: 1, borderRadius: radius.lg, paddingHorizontal: spacing.lg, paddingVertical: 10, fontSize: 15, maxHeight: 110, minHeight: 44 },
+  sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
 });

@@ -89,6 +89,12 @@ export default function MemberProfile() {
             onPress={() => router.push(`/timeline?member=${member.member_id}&name=${encodeURIComponent(member.name)}`)}
             testID="member-view-story"
           />
+          <Button
+            label="Birthday Wishes 🎂"
+            variant="secondary"
+            onPress={() => router.push(`/birthday/${member.member_id}`)}
+            testID="member-birthday-wishes"
+          />
         </View>
 
         {details.length ? (
