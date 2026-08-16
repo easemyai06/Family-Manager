@@ -462,3 +462,67 @@ frontend_batch6:
 agent_communication_batch6:
     -agent: "main"
     -message: "Batch #6 complete. TEST BACKEND: capsules GET/POST(future date required)/GET{id}/DELETE(author only); highlights/week; timeline/places + timeline?location=. TEST FRONTEND: (1) More > Time Capsules -> list (screenshot-verified) -> FAB create (message + unlock date preset/stepper) -> new locked capsule appears; open a locked capsule (countdown, message hidden) and an unlocked one (message shown). (2) More > Weekly Highlights renders stats+memories. (3) More > Places We've Been grid -> tap a place -> filtered timeline. Use capsuletester@fam.com / secret123 (freshly seeded: 8 memories across 7 places + 2 capsules). NOTE: Home Sunday-highlights card only shows on Sundays; today likely isn't Sunday so verify via More instead. Push/voice remain native-only."
+
+# ============ Feature Batch #7 (Rewards: streak+stars+badges / Family Albums / Memory Search) ============
+backend_batch7:
+  - task: "Rewards aggregation (/api/rewards) + family streak in /api/home"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/rewards returns per-member star points (posts 10/love 5/memory 15/wish 5/chore 8), leaderboard sorted, family streak (consecutive active days w/ 1-day grace), and 8 badges w/ earned+progress. /api/home now returns family_streak. Verified via curl (streak=3, Raj 135 top, badges earned First Post+Storyteller)."
+  - task: "Family Albums CRUD (creator-only add photos)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET/POST /api/albums, GET /api/albums/{id}, POST /api/albums/{id}/photos (creator ONLY -> 403 else; sets cover if none), DELETE (creator only). Seed adds 'Goa Getaway' album w/ 3 photos. Verified via curl."
+
+frontend_batch7:
+  - task: "Family Rewards screen (streak, star leaderboard, badges, kid celebration)"
+    implemented: true
+    working: true
+    file: "frontend/app/rewards/index.tsx, frontend/src/components/StarBurst.tsx, frontend/app/(tabs)/more.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-confirmed: More > Family Rewards shows 🔥 streak, ranked star leaderboard w/ medals + progress bars, badges grid (earned vs locked w/ progress), and a StarBurst confetti celebration on open. Home shows a '{n}-day family streak' chip (home-streak) that opens Rewards."
+  - task: "Family Albums screens (list, create modal, detail w/ creator-only add)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/albums/index.tsx, create.tsx, [id].tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Family Albums (no longer soon). Grid of albums (cover+count+creator). FAB (fab-add-album) -> create (album-title-input, save-album-btn) -> opens album detail. Detail shows photo grid; 'Add Photos' (album-add-photos) shows ONLY for the creator (image pick may not work on web preview -> expected). Delete (album-delete) creator-only."
+  - task: "Memory Search on Our Family Story screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/timeline/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Search bar (memory-search-input) under the header filters memories instantly by title, location, or person name; clear button (memory-search-clear)."
+
+agent_communication_batch7:
+    -agent: "main"
+    -message: "Batch #7 complete. TEST BACKEND: /api/rewards (leaderboard+streak+badges), /api/home family_streak, albums CRUD incl. creator-only add-photos 403. TEST FRONTEND: (1) More > Family Rewards (already screenshot-verified) + Home 'home-streak' chip opens it; (2) More > Family Albums -> FAB create album -> opens detail -> as creator 'Add Photos' visible (web image pick may fail -> expected); open the seeded 'Goa Getaway' album to see its 3 photos; (3) Our Family Story -> type in memory-search-input (e.g. 'Kerala' or a person name) -> list filters instantly. Use rewardtester@fam.com / secret123 (seeded: leaderboard data, 'Goa Getaway' album w/ 3 photos, 8 memories across places). Push/voice remain native-only."

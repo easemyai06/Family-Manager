@@ -969,6 +969,37 @@ def days_until_birthday(bday: Optional[str]) -> Optional[int]:
     return (nxt - today).days
 
 
+async def _family_activity_dates(fid: str, days: int = 120) -> set:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    dates: set = set()
+    for coll, field in [("posts", "created_at"), ("affections", "created_at"),
+                        ("timeline", "created_at"), ("wishes", "created_at"), ("messages", "created_at")]:
+        docs = await db[coll].find({"family_id": fid, field: {"$gte": cutoff}}, {field: 1, "_id": 0}).to_list(8000)
+        for d in docs:
+            if d.get(field):
+                dates.add(d[field][:10])
+    cc = await db.chore_completions.find({"family_id": fid}, {"date": 1, "_id": 0}).to_list(8000)
+    for d in cc:
+        if d.get("date"):
+            dates.add(d["date"][:10])
+    return dates
+
+
+def _streak_from_dates(dates: set) -> int:
+    if not dates:
+        return 0
+    cur = date.today()
+    if cur.isoformat() not in dates:
+        cur = cur - timedelta(days=1)
+        if cur.isoformat() not in dates:
+            return 0
+    streak = 0
+    while cur.isoformat() in dates:
+        streak += 1
+        cur = cur - timedelta(days=1)
+    return streak
+
+
 @api.get("/home")
 async def home(user: dict = Depends(get_current_user)):
     fid = require_family(user)
@@ -1022,6 +1053,8 @@ async def home(user: dict = Depends(get_current_user)):
             e["years_ago"] = 0
         on_this_day.append(await hydrate_timeline(e))
 
+    family_streak = _streak_from_dates(await _family_activity_dates(fid))
+
     return {
         "family": fam,
         "me": mine,
@@ -1034,6 +1067,7 @@ async def home(user: dict = Depends(get_current_user)):
         "shopping_pending": shopping_pending,
         "unread_messages": unread_messages,
         "on_this_day": on_this_day,
+        "family_streak": family_streak,
     }
 
 
@@ -1731,6 +1765,152 @@ async def delete_capsule(capsule_id: str, user: dict = Depends(get_current_user)
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Rewards — star points, family streak, badges
+# ---------------------------------------------------------------------------
+POINTS = {"post": 10, "love": 5, "memory": 15, "wish": 5, "chore": 8}
+
+BADGE_DEFS = [
+    {"key": "first_post", "label": "First Post", "emoji": "📸", "metric": "posts", "target": 1},
+    {"key": "storyteller", "label": "Storyteller", "emoji": "📖", "metric": "memories", "target": 5},
+    {"key": "memory_keeper", "label": "Memory Keeper", "emoji": "🏛️", "metric": "memories", "target": 15},
+    {"key": "love_bug", "label": "Love Bug", "emoji": "❤️", "metric": "loves", "target": 25},
+    {"key": "birthday_star", "label": "Birthday Star", "emoji": "🎂", "metric": "wishes", "target": 5},
+    {"key": "chatterbox", "label": "Chatterbox", "emoji": "💬", "metric": "messages", "target": 50},
+    {"key": "on_fire", "label": "On Fire", "emoji": "🔥", "metric": "streak", "target": 7},
+    {"key": "super_family", "label": "Super Family", "emoji": "🏆", "metric": "points", "target": 200},
+]
+
+
+@api.get("/rewards")
+async def rewards(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+
+    scores = {m["member_id"]: {"member": m, "points": 0, "posts": 0, "loves": 0, "memories": 0, "wishes": 0, "chores": 0} for m in members}
+
+    def add(mid, key, pts):
+        if mid in scores:
+            scores[mid]["points"] += pts
+            scores[mid][key] += 1
+
+    for p in await db.posts.find({"family_id": fid}, {"author_member_id": 1, "_id": 0}).to_list(5000):
+        add(p.get("author_member_id"), "posts", POINTS["post"])
+    for a in await db.affections.find({"family_id": fid}, {"from_member_id": 1, "_id": 0}).to_list(20000):
+        add(a.get("from_member_id"), "loves", POINTS["love"])
+    for t in await db.timeline.find({"family_id": fid}, {"created_by": 1, "_id": 0}).to_list(5000):
+        add(t.get("created_by"), "memories", POINTS["memory"])
+    for w in await db.wishes.find({"family_id": fid}, {"from_member_id": 1, "_id": 0}).to_list(5000):
+        add(w.get("from_member_id"), "wishes", POINTS["wish"])
+    for cc in await db.chore_completions.find({"family_id": fid}, {"member_id": 1, "_id": 0}).to_list(20000):
+        add(cc.get("member_id"), "chores", POINTS["chore"])
+
+    leaderboard = sorted(scores.values(), key=lambda x: x["points"], reverse=True)
+
+    streak = _streak_from_dates(await _family_activity_dates(fid))
+    totals = {
+        "posts": await db.posts.count_documents({"family_id": fid}),
+        "memories": await db.timeline.count_documents({"family_id": fid}),
+        "loves": await db.affections.count_documents({"family_id": fid}),
+        "wishes": await db.wishes.count_documents({"family_id": fid}),
+        "messages": await db.messages.count_documents({"family_id": fid}),
+        "points": sum(s["points"] for s in scores.values()),
+        "streak": streak,
+    }
+    badges = []
+    for b in BADGE_DEFS:
+        current = totals.get(b["metric"], 0)
+        badges.append({**b, "current": min(current, b["target"]), "earned": current >= b["target"]})
+
+    return {"leaderboard": leaderboard, "streak": streak, "totals": totals, "badges": badges}
+
+
+# ---------------------------------------------------------------------------
+# Family Albums
+# ---------------------------------------------------------------------------
+class AlbumIn(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+
+class AlbumPhotosIn(BaseModel):
+    media: List[MediaItem] = []
+
+
+@api.get("/albums")
+async def list_albums(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    albums = await db.albums.find({"family_id": fid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for a in albums:
+        a["creator"] = await db.members.find_one({"member_id": a["created_by"]}, {"_id": 0})
+        a["photo_count"] = len(a.get("photos", []))
+    return albums
+
+
+@api.post("/albums")
+async def create_album(body: AlbumIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Give your album a title")
+    a = {
+        "album_id": new_id("alb_"), "family_id": fid, "title": body.title.strip(),
+        "description": (body.description or "").strip() or None, "created_by": mine["member_id"],
+        "cover": None, "photos": [], "created_at": now_iso(),
+    }
+    await db.albums.insert_one(a)
+    a = clean(a)
+    a["creator"] = mine
+    a["photo_count"] = 0
+    return a
+
+
+@api.get("/albums/{album_id}")
+async def get_album(album_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    a = await db.albums.find_one({"album_id": album_id, "family_id": fid}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Album not found")
+    a["creator"] = await db.members.find_one({"member_id": a["created_by"]}, {"_id": 0})
+    return a
+
+
+@api.post("/albums/{album_id}/photos")
+async def add_album_photos(album_id: str, body: AlbumPhotosIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    a = await db.albums.find_one({"album_id": album_id, "family_id": fid}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Album not found")
+    if not mine or a["created_by"] != mine["member_id"]:
+        raise HTTPException(status_code=403, detail="Only the album creator can add photos")
+    new_photos = [{"photo_id": new_id("ph_"), "url": m.url, "type": m.type,
+                   "added_by": mine["member_id"], "created_at": now_iso()} for m in body.media]
+    if not new_photos:
+        return await get_album(album_id, user)
+    update = {"$push": {"photos": {"$each": new_photos}}}
+    if not a.get("cover"):
+        update["$set"] = {"cover": new_photos[0]["url"]}
+    await db.albums.update_one({"album_id": album_id}, update)
+    return await get_album(album_id, user)
+
+
+@api.delete("/albums/{album_id}")
+async def delete_album(album_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    a = await db.albums.find_one({"album_id": album_id, "family_id": fid}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Album not found")
+    if not mine or a["created_by"] != mine["member_id"]:
+        raise HTTPException(status_code=403, detail="Only the album creator can delete this album")
+    await db.albums.delete_one({"album_id": album_id})
+    return {"ok": True}
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -2130,6 +2310,20 @@ async def seed_demo(user: dict = Depends(get_current_user)):
         "media": [{"url": IMG["post4"], "type": "image"}],
         "unlock_date": (today - timedelta(days=30)).isoformat(), "created_at": now_iso(),
     })
+
+    # ---- family album ----
+    await db.albums.insert_one({
+        "album_id": new_id("alb_"), "family_id": fid, "title": "Goa Getaway ✈️",
+        "description": "Our sunny escape to the beaches of Goa.", "created_by": mem_ids["Raj"],
+        "cover": IMG["post4"],
+        "photos": [
+            {"photo_id": new_id("ph_"), "url": IMG["post4"], "type": "image", "added_by": mem_ids["Raj"], "created_at": now_iso()},
+            {"photo_id": new_id("ph_"), "url": IMG["post2"], "type": "image", "added_by": mem_ids["Raj"], "created_at": now_iso()},
+            {"photo_id": new_id("ph_"), "url": IMG["post1"], "type": "image", "added_by": mem_ids["Raj"], "created_at": now_iso()},
+        ],
+        "created_at": now_iso(),
+    })
+
 
 
     # ---- chats ----

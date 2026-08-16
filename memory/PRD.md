@@ -68,17 +68,21 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Weekly Highlights: warm 7-day recap (posts, memories, birthday wishes, love sent, most-active
   member, new memories) — Sunday card on Home + a screen in More.
 - Places We've Been: memories grouped by location into a visual grid; tap a place → its memories.
+- Family Rewards: per-member ⭐ star points (posts/love/memories/wishes/chores), family 🔥 streak
+  (consecutive active days), unlockable badges + a confetti celebration for kids; Home streak chip.
+- Family Albums: shared photo albums; creator-only photo adds; grid + detail + create.
+- Memory Search: instant search on Our Family Story by title, place or person.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
   Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
   birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
   EMERGENT_PUSH_KEY is a deploy-injected placeholder.
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
-  + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places) backend
-  tests pass; frontend flows verified.
+  + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places)
+  + 17/17 (rewards+albums+search) backend tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
-- Family Albums (shared photo albums per event/trip).
+- (open — awaiting next user direction)
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.

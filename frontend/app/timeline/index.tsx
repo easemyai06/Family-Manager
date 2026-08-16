@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, FlatList } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, FlatList, TextInput } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,7 +7,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
-import { spacing, radius, shadow } from "@/src/theme/tokens";
+import { spacing, radius, shadow, fonts } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { TIMELINE_CATEGORIES } from "@/src/lib/constants";
 import { formatDate } from "@/src/lib/time";
@@ -19,6 +19,7 @@ export default function Timeline() {
   const params = useLocalSearchParams<{ member?: string; name?: string; category?: string; year?: string; location?: string }>();
   const [items, setItems] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>(params.category || "All");
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -44,13 +45,21 @@ export default function Timeline() {
     if (params.year) list = list.filter((e) => e.date?.startsWith(params.year!));
     if (filter === "⭐ Important") list = list.filter((e) => e.importance);
     else if (filter !== "All") list = list.filter((e) => e.category === filter);
+    const q = query.trim().toLowerCase();
+    if (q)
+      list = list.filter(
+        (e) =>
+          (e.title || "").toLowerCase().includes(q) ||
+          (e.location || "").toLowerCase().includes(q) ||
+          (e.people_members || []).some((p: any) => (p.name || "").toLowerCase().includes(q))
+      );
     const byYear: Record<string, any[]> = {};
     for (const e of list) {
       const y = e.date?.slice(0, 4) || "—";
       (byYear[y] = byYear[y] || []).push(e);
     }
     return Object.entries(byYear).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [items, filter, params.year]);
+  }, [items, filter, params.year, query]);
 
   const title = params.member ? `${params.name || "My"} Story` : params.location ? (params.name || params.location) : "Our Family Story";
 
@@ -79,6 +88,22 @@ export default function Timeline() {
                 <Ionicons name="albums" size={18} color={c.brand} />
               </Pressable>
             </View>
+          ) : null}
+        </View>
+        <View style={[styles.searchBar, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+          <Ionicons name="search" size={17} color={c.onSurfaceTertiary} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search by title, place or person"
+            placeholderTextColor={c.onSurfaceTertiary}
+            style={[styles.searchInput, { color: c.onSurface, fontFamily: fonts.textMedium }]}
+            testID="memory-search-input"
+          />
+          {query ? (
+            <Pressable onPress={() => setQuery("")} hitSlop={8} testID="memory-search-clear">
+              <Ionicons name="close-circle" size={18} color={c.onSurfaceTertiary} />
+            </Pressable>
           ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -183,6 +208,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { borderBottomWidth: 1, paddingBottom: spacing.sm },
   headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  searchBar: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginHorizontal: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.md, height: 42, borderRadius: radius.md, borderWidth: 1 },
+  searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
   vaultBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   chipRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
   chip: { height: 36, borderRadius: radius.pill, paddingHorizontal: spacing.lg, alignItems: "center", justifyContent: "center", borderWidth: 1, flexShrink: 0 },

@@ -137,6 +137,14 @@ export default function Home() {
           <AppText size={13} color={c.onSurfaceTertiary}>
             {home?.family?.name}
           </AppText>
+          {home?.family_streak ? (
+            <Pressable onPress={() => router.push("/rewards")} style={styles.streakChip} testID="home-streak">
+              <AppText size={13}>🔥</AppText>
+              <AppText size={12} weight="bold" color="#C77A2B">
+                {home.family_streak}-day family streak
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
         <Pressable onPress={() => me && router.push(`/member/${me.member_id}`)} testID="home-avatar">
           <Avatar uri={me?.photo_url} name={me?.name} size={52} color={me?.color} ring />
@@ -379,6 +387,7 @@ const styles = StyleSheet.create({
   nudgeWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   nudge: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
   headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md },
+  streakChip: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", backgroundColor: "#FFF0DB", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
   quickRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
   quickPill: {
     flexDirection: "row",
