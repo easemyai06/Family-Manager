@@ -1,0 +1,191 @@
+{
+  "app_name": "FamilyHome",
+  "personality": "4 Tactile / Playful LIGHT",
+  "personality_one_liner": "A warm, joyful, and deeply personal digital home that feels like a shared family scrapbook crossed with a premium organizer.",
+  "color": {
+    "light": {
+      "surface": "#FDFBF7",
+      "onSurface": "#2C2C28",
+      "surfaceSecondary": "#F4EFE6",
+      "onSurfaceSecondary": "#4A4A43",
+      "surfaceTertiary": "#EAE4D9",
+      "onSurfaceTertiary": "#6B6B63",
+      "surfaceInverse": "#2C2C28",
+      "onSurfaceInverse": "#FDFBF7",
+      "brand": "#FF6B6B",
+      "brandPrimary": "#FF6B6B",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#FF9E9E",
+      "onBrandSecondary": "#2C2C28",
+      "brandTertiary": "#FFD9D9",
+      "onBrandTertiary": "#FF4D4D",
+      "success": "#8AB07D",
+      "onSuccess": "#FFFFFF",
+      "warning": "#FFD166",
+      "onWarning": "#2C2C28",
+      "error": "#E05757",
+      "onError": "#FFFFFF",
+      "info": "#A3B18A",
+      "onInfo": "#FFFFFF",
+      "border": "#EAE4D9",
+      "borderStrong": "#D6CEBE",
+      "divider": "#F4EFE6"
+    },
+    "dark": {
+      "surface": "#1A1918",
+      "onSurface": "#F4EFE6",
+      "surfaceSecondary": "#242321",
+      "onSurfaceSecondary": "#D6CEBE",
+      "surfaceTertiary": "#2F2E2B",
+      "onSurfaceTertiary": "#A39F95",
+      "surfaceInverse": "#F4EFE6",
+      "onSurfaceInverse": "#1A1918",
+      "brand": "#FF6B6B",
+      "brandPrimary": "#FF8080",
+      "onBrandPrimary": "#1A1918",
+      "brandSecondary": "#CC5656",
+      "onBrandSecondary": "#F4EFE6",
+      "brandTertiary": "#4A2525",
+      "onBrandTertiary": "#FF9E9E",
+      "success": "#75966B",
+      "onSuccess": "#1A1918",
+      "warning": "#D6B056",
+      "onWarning": "#1A1918",
+      "error": "#CC4E4E",
+      "onError": "#FFFFFF",
+      "info": "#8A9675",
+      "onInfo": "#1A1918",
+      "border": "#2F2E2B",
+      "borderStrong": "#4A4A43",
+      "divider": "#242321"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Nunito",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use generous padding around content. Rely on playful chunky layouts. Avoid accidental empty space; use intentional padding to frame items.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "pill": 999
+  },
+  "shadow_tier": "2",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use frosted glass on sticky headers over the family feed.",
+      "Use glass on the bottom tab bar when content scrolls behind it.",
+      "Use glass on 'Send Some Love' affection overlay backdrops."
+    ],
+    "dont's": [
+      "Do not use glass on chore list rows or shopping list items.",
+      "Do not blur standard form fields or text regions."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "A welcoming dashboard summarizing the day's events, unread affection/messages, and a feed of recent family moments.",
+      "states": {
+        "loading": "Centered playful spinner with a warm greeting.",
+        "empty": "Illustration of a family tree with a 'Welcome home! Add your first memory' CTA.",
+        "error": "Friendly error text 'Oops, couldn't load the living room' with a Retry button."
+      },
+      "layout": "Top: Large greeting 'Good Morning, Dad ❤️' (displayFontFamily). Below it: A horizontally scrolling 'Quick Actions' row of pills (Hug, Message, Post) using brandPrimary. Center: 'Today's Plan' with chunky stacked cards for chores/meals. Bottom: Vertical scrolling Family Feed with full-width image cards (must use gradient scrims for overlaid text)."
+    },
+    {
+      "name": "Calendar",
+      "purpose": "Shared family schedule showing who is doing what, color-coded by family member.",
+      "states": {
+        "loading": "Skeleton grid of calendar days.",
+        "empty": "No events today illustration (blank notebook) + 'Add Event' CTA.",
+        "error": "Error loading schedule + Retry button."
+      },
+      "layout": "Sticky top month/week toggle. Grid of days below. Events are represented by rounded pill chips with the specific family member's assigned color (e.g. Coral, Mustard, Olive). Touching an event opens a glassmorphic bottom sheet with details."
+    },
+    {
+      "name": "Chores & Shopping",
+      "purpose": "Playful checklist for kids' chores and family groceries.",
+      "states": {
+        "loading": "Checklist skeleton.",
+        "empty": "Illustration of an empty plate (for groceries) or a clean room (for chores) + primary CTA.",
+        "error": "Failed to load lists + Retry button."
+      },
+      "layout": "Two-tab layout (Chores / Shopping). Lists use large touch targets (min 56pt height). Checked items visually strike-through and fade to onSurfaceTertiary. Incorporate playful star icons (⭐) or badges for completed kid chores."
+    },
+    {
+      "name": "Affection Center (Overlay/Modal)",
+      "purpose": "The signature 'Send Some Love' interaction to send hugs/kisses to members.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full-screen glassmorphic overlay. Large member avatars in a grid. Once a member is selected, show floating reaction emojis (❤️, 🤗, 😘) using Reanimated. Tapping one triggers haptics and a full-screen confetti/hearts animation."
+    }
+  ],
+  "images": {
+    "avatar_dad": {
+      "url": "https://images.unsplash.com/photo-1579538506280-84e461ad0077?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBmYW1pbHklMjBwb3J0cmFpdCUyMGh1Z2dpbmd8ZW58MHx8fHwxNzg2OTA2NzczfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Dad avatar"
+    },
+    "feed_post_1": {
+      "url": "https://images.unsplash.com/photo-1636830632657-1dcda9360a3a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDJ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBmYW1pbHklMjBwb3J0cmFpdCUyMGh1Z2dpbmd8ZW58MHx8fHwxNzg2OTA2NzczfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Family hugging"
+    },
+    "empty_shopping": {
+      "url": "https://images.unsplash.com/photo-1645802734096-07f97fcd8bf2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzV8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMHBsYXRlJTIwaWxsdXN0cmF0aW9uJTIwb3IlMjBjdXRlJTIwZ3JvY2VyeSUyMGJhZyUyMGlsbHVzdHJhdGlvbnxlbnwwfHx8fDE3ODY5MDY3NzN8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Empty plate"
+    },
+    "empty_calendar": {
+      "url": "https://images.unsplash.com/photo-1695131020187-d3dcdab5016b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwxfHxibGFuayUyMG5vdGVib29rJTIwcGFwZXIlMjBsYXlvdXQlMjBjdXRlfGVufDB8fHx8MTc4NjkwNjc3M3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Blank notebook"
+    }
+  },
+  "haptics": {
+    "send_affection": "impactHeavy + continuous sequence during animation",
+    "check_chore": "impactLight",
+    "tab_switch": "selection",
+    "open_bottom_sheet": "impactLight"
+  },
+  "instructions_to_main_agent": [
+    "Adhere STRICTLY to the '4 Tactile / Playful' personality. Use chunky rounded cards (radius lg or pill) and playful asymmetric or stacked layouts for a warm, family-friendly feel.",
+    "BANNED COLORS: Do not use ANY shades of Blue, Purple, Indigo, or Violet. Stick entirely to the provided warm earth/botanical/coral palette. Member colors should be mapped to Coral, Mustard, Olive, and Sage.",
+    "Typography: Use 'Plus Jakarta Sans' for strong, friendly headings, and 'Nunito' for highly legible and playful body text. Max weight is 500 across the app.",
+    "Affection Center: This is the signature feature. Build a robust `react-native-reanimated` overlay for 'Send Some Love' that includes floating emojis, haptics, and a full-screen immersive feel when an affection type is chosen.",
+    "Image Scrims: Any text placed on top of the Family Feed images or Avatars MUST use a vertical linear-gradient scrim (transparent to surfaceInverse) to guarantee WCAG contrast.",
+    "Navigation: Implement a standard 5-tab bottom navigation with glassmorphism. Avoid floating tabs if they compromise the safe area."
+  ]
+}

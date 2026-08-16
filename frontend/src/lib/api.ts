@@ -1,0 +1,80 @@
+import { Platform } from "react-native";
+
+const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+export const API_BASE = `${ORIGIN}/api`;
+export const BACKEND_ORIGIN = ORIGIN;
+
+let authToken: string | null = null;
+export function setAuthToken(t: string | null) {
+  authToken = t;
+}
+export function getAuthToken() {
+  return authToken;
+}
+
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+type Options = {
+  method?: string;
+  body?: any;
+};
+
+export async function api<T = any>(path: string, opts: Options = {}): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: opts.method || "GET",
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/auth/") && onUnauthorized) {
+      onUnauthorized();
+    }
+    const message = (data && data.detail) || (typeof data === "string" ? data : "Something went wrong");
+    const err: any = new Error(message);
+    err.status = res.status;
+    throw err;
+  }
+  return data as T;
+}
+
+// Resolve a media url to a fully-qualified, authenticated URL.
+export function mediaUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (url.startsWith("/api/")) {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${BACKEND_ORIGIN}${url}${sep}token=${authToken || ""}`;
+  }
+  return url;
+}
+
+// Upload a local file (image/video) via multipart, returns { url, path, type }.
+export async function uploadMedia(uri: string, kind: "image" | "video" = "image") {
+  const name = uri.split("/").pop() || `upload.${kind === "video" ? "mp4" : "jpg"}`;
+  const type = kind === "video" ? "video/mp4" : "image/jpeg";
+  const form = new FormData();
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(uri)).blob();
+    form.append("file", blob, name);
+  } else {
+    form.append("file", { uri, name, type } as any);
+  }
+  form.append("kind", kind);
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(`${API_BASE}/upload`, { method: "POST", headers, body: form });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.detail || "Upload failed");
+  return data as { url: string; path: string; type: string };
+}
