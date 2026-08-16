@@ -60,8 +60,8 @@ const PILLARS: { title: string; rows: Row[] }[] = [
   {
     title: "🛡️ Protect",
     rows: [
-      { key: "vault", label: "Family Vault", icon: "lock-closed", color: "#6B8E5A", soon: true },
-      { key: "emergency", label: "Emergency Center", icon: "medkit", color: "#E86A6A", soon: true },
+      { key: "vault", label: "Family Vault", icon: "lock-closed", color: "#6B8E5A", route: "/vault" },
+      { key: "emergency", label: "Emergency Center", icon: "medkit", color: "#E86A6A", route: "/emergency" },
     ],
   },
 ];

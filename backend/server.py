@@ -323,6 +323,98 @@ class WishNoteIn(BaseModel):
     text: str
 
 
+class VaultFile(BaseModel):
+    url: str
+    type: str = "document"          # image | pdf | document
+    name: Optional[str] = None
+
+
+class VaultFolderIn(BaseModel):
+    name: str
+    icon: Optional[str] = "folder"
+
+
+class VaultItemIn(BaseModel):
+    kind: str = "document"          # document | insurance
+    title: str
+    folder_id: Optional[str] = None
+    owner_member_id: Optional[str] = None
+    notes: Optional[str] = None
+    tags: List[str] = []
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    files: List[VaultFile] = []
+    visibility: str = "family"      # family | parents | grandparents | selected
+    visible_member_ids: List[str] = []
+    # insurance-specific (all optional)
+    provider: Optional[str] = None
+    policy_number: Optional[str] = None
+    policy_holder: Optional[str] = None
+    coverage_amount: Optional[str] = None
+    premium: Optional[str] = None
+    agent_contact: Optional[str] = None
+    claims_number: Optional[str] = None
+    emergency_number: Optional[str] = None
+    website: Optional[str] = None
+    covered_member_ids: List[str] = []
+
+
+class EmergencyContactIn(BaseModel):
+    name: str
+    relationship: Optional[str] = None       # relationship or organization
+    phone: str
+    alt_phone: Optional[str] = None
+    whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+    icon: Optional[str] = None                # emoji
+    critical: bool = False
+    member_id: Optional[str] = None
+
+
+class EmergencyInstructionIn(BaseModel):
+    title: str
+    icon: Optional[str] = "🚨"
+    steps: List[str] = []
+    contact_ids: List[str] = []
+
+
+class FamilyPlanIn(BaseModel):
+    home_address: Optional[str] = None
+    meeting_point: Optional[str] = None
+    alt_meeting_point: Optional[str] = None
+    parent_numbers: Optional[str] = None
+    neighbour: Optional[str] = None
+    school_contact: Optional[str] = None
+    doctor: Optional[str] = None
+    hospital: Optional[str] = None
+    insurance_number: Optional[str] = None
+    building_security: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MedicalCardIn(BaseModel):
+    member_id: str
+    blood_group: Optional[str] = None
+    allergies: Optional[str] = None
+    medication: Optional[str] = None
+    conditions: Optional[str] = None
+    doctor: Optional[str] = None
+    hospital: Optional[str] = None
+    insurance_provider: Optional[str] = None
+    policy_reference: Optional[str] = None
+    emergency_contact: Optional[str] = None
+
+
+class SosTriggerIn(BaseModel):
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    message: Optional[str] = None
+
+
+
+
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -2481,6 +2573,393 @@ async def add_wish_note(wish_id: str, body: WishNoteIn, user: dict = Depends(get
 
 
 # ---------------------------------------------------------------------------
+# Family Vault (insurance & important documents)  +  Emergency Center
+# ---------------------------------------------------------------------------
+def _can_view_secure(item: dict, viewer: Optional[dict]) -> bool:
+    """Visibility for Vault items. Family admin can always view (they control access)."""
+    if not viewer:
+        return False
+    if viewer.get("role") == "admin":
+        return True
+    if item.get("owner_member_id") and item["owner_member_id"] == viewer["member_id"]:
+        return True
+    vis = item.get("visibility", "family")
+    if vis == "family":
+        return True
+    if vis == "parents":
+        return viewer.get("role") in ("admin", "parent")
+    if vis == "grandparents":
+        return _is_grandparent(viewer) or viewer.get("role") in ("admin", "parent")
+    if vis == "selected":
+        return viewer["member_id"] in (item.get("visible_member_ids") or [])
+    return False
+
+
+def _can_edit_secure(item: dict, viewer: Optional[dict]) -> bool:
+    if not viewer:
+        return False
+    if viewer.get("role") in ("admin", "parent"):
+        return True
+    if item.get("owner_member_id") == viewer.get("member_id"):
+        return True
+    return item.get("created_by") == viewer.get("member_id")
+
+
+def _days_until(expiry: Optional[str]) -> Optional[int]:
+    if not expiry:
+        return None
+    try:
+        return (date.fromisoformat(expiry[:10]) - date.today()).days
+    except ValueError:
+        return None
+
+
+async def hydrate_vault(item: dict, viewer: Optional[dict]) -> dict:
+    out = clean(dict(item))
+    out["days_until_expiry"] = _days_until(item.get("expiry_date"))
+    out["can_edit"] = _can_edit_secure(item, viewer)
+    if item.get("owner_member_id"):
+        out["owner"] = _member_card(await db.members.find_one({"member_id": item["owner_member_id"]}, {"_id": 0}))
+    else:
+        out["owner"] = None
+    covered = []
+    for mid in item.get("covered_member_ids") or []:
+        covered.append(_member_card(await db.members.find_one({"member_id": mid}, {"_id": 0})))
+    out["covered_members"] = [c for c in covered if c]
+    return out
+
+
+@api.get("/vault/folders")
+async def vault_folders(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    folders = await db.vault_folders.find({"family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    viewer = await member_for_user(user)
+    items = await db.vault_items.find({"family_id": fid}, {"_id": 0}).to_list(5000)
+    visible = [it for it in items if _can_view_secure(it, viewer)]
+    counts: dict = {}
+    for it in visible:
+        counts[it.get("folder_id")] = counts.get(it.get("folder_id"), 0) + 1
+    for f in folders:
+        f["count"] = counts.get(f["folder_id"], 0)
+    return folders
+
+
+@api.post("/vault/folders", status_code=201)
+async def create_vault_folder(body: VaultFolderIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Folder needs a name")
+    f = {"folder_id": new_id("vf_"), "family_id": fid, "name": body.name.strip(),
+         "icon": body.icon or "folder", "created_at": now_iso()}
+    await db.vault_folders.insert_one(f)
+    return {**clean(f), "count": 0}
+
+
+@api.delete("/vault/folders/{folder_id}")
+async def delete_vault_folder(folder_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can delete folders")
+    await db.vault_folders.delete_one({"folder_id": folder_id, "family_id": fid})
+    await db.vault_items.update_many({"family_id": fid, "folder_id": folder_id}, {"$set": {"folder_id": None}})
+    return {"ok": True}
+
+
+@api.get("/vault/items")
+async def vault_items(folder_id: Optional[str] = None, kind: Optional[str] = None,
+                      user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    q: dict = {"family_id": fid}
+    if folder_id:
+        q["folder_id"] = folder_id
+    if kind:
+        q["kind"] = kind
+    docs = await db.vault_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    visible = [d for d in docs if _can_view_secure(d, viewer)]
+    return [await hydrate_vault(d, viewer) for d in visible]
+
+
+@api.post("/vault/items", status_code=201)
+async def create_vault_item(body: VaultItemIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not viewer or viewer.get("role") not in ("admin", "parent", "adult"):
+        raise HTTPException(status_code=403, detail="Only adults can add to the Family Vault")
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Give this a title")
+    item = {
+        "item_id": new_id("vi_"), "family_id": fid, "kind": body.kind if body.kind in ("document", "insurance") else "document",
+        "title": body.title.strip(), "folder_id": body.folder_id, "owner_member_id": body.owner_member_id,
+        "notes": body.notes, "tags": body.tags or [], "issue_date": body.issue_date, "expiry_date": body.expiry_date,
+        "files": [f.model_dump() for f in body.files], "visibility": body.visibility,
+        "visible_member_ids": body.visible_member_ids or [],
+        "provider": body.provider, "policy_number": body.policy_number, "policy_holder": body.policy_holder,
+        "coverage_amount": body.coverage_amount, "premium": body.premium, "agent_contact": body.agent_contact,
+        "claims_number": body.claims_number, "emergency_number": body.emergency_number, "website": body.website,
+        "covered_member_ids": body.covered_member_ids or [],
+        "created_by": viewer["member_id"], "created_at": now_iso(),
+    }
+    await db.vault_items.insert_one(item)
+    return await hydrate_vault(item, viewer)
+
+
+@api.get("/vault/expiries")
+async def vault_expiries(days: int = 180, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    docs = await db.vault_items.find({"family_id": fid, "expiry_date": {"$ne": None}}, {"_id": 0}).to_list(2000)
+    out = []
+    for d in docs:
+        du = _days_until(d.get("expiry_date"))
+        if du is not None and -3650 <= du <= days and _can_view_secure(d, viewer):
+            out.append(await hydrate_vault(d, viewer))
+    out.sort(key=lambda x: x.get("days_until_expiry") if x.get("days_until_expiry") is not None else 99999)
+    return out
+
+
+@api.get("/vault/items/{item_id}")
+async def get_vault_item(item_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _can_view_secure(item, viewer):
+        raise HTTPException(status_code=403, detail="You don't have access to this")
+    return await hydrate_vault(item, viewer)
+
+
+@api.patch("/vault/items/{item_id}")
+async def edit_vault_item(item_id: str, body: VaultItemIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _can_edit_secure(item, viewer):
+        raise HTTPException(status_code=403, detail="You can't edit this")
+    await db.vault_items.update_one({"item_id": item_id}, {"$set": {
+        "kind": body.kind if body.kind in ("document", "insurance") else item.get("kind", "document"),
+        "title": body.title.strip(), "folder_id": body.folder_id, "owner_member_id": body.owner_member_id,
+        "notes": body.notes, "tags": body.tags or [], "issue_date": body.issue_date, "expiry_date": body.expiry_date,
+        "files": [f.model_dump() for f in body.files], "visibility": body.visibility,
+        "visible_member_ids": body.visible_member_ids or [],
+        "provider": body.provider, "policy_number": body.policy_number, "policy_holder": body.policy_holder,
+        "coverage_amount": body.coverage_amount, "premium": body.premium, "agent_contact": body.agent_contact,
+        "claims_number": body.claims_number, "emergency_number": body.emergency_number, "website": body.website,
+        "covered_member_ids": body.covered_member_ids or [],
+    }})
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    return await hydrate_vault(item, viewer)
+
+
+@api.delete("/vault/items/{item_id}")
+async def delete_vault_item(item_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _can_edit_secure(item, viewer):
+        raise HTTPException(status_code=403, detail="You can't delete this")
+    await db.vault_items.delete_one({"item_id": item_id})
+    return {"ok": True}
+
+
+# ---- Emergency Center ----
+@api.get("/emergency/contacts")
+async def emergency_contacts(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    docs = await db.emergency_contacts.find({"family_id": fid}, {"_id": 0}).to_list(500)
+    docs.sort(key=lambda c: (not c.get("critical"), (c.get("name") or "").lower()))
+    return docs
+
+
+@api.post("/emergency/contacts", status_code=201)
+async def add_emergency_contact(body: EmergencyContactIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not body.name.strip() or not body.phone.strip():
+        raise HTTPException(status_code=400, detail="Name and phone are required")
+    c = {"contact_id": new_id("ec_"), "family_id": fid, **body.model_dump(),
+         "name": body.name.strip(), "phone": body.phone.strip(),
+         "created_by": viewer["member_id"] if viewer else None, "created_at": now_iso()}
+    await db.emergency_contacts.insert_one(c)
+    return clean(c)
+
+
+@api.patch("/emergency/contacts/{contact_id}")
+async def edit_emergency_contact(contact_id: str, body: EmergencyContactIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    existing = await db.emergency_contacts.find_one({"contact_id": contact_id, "family_id": fid}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    await db.emergency_contacts.update_one({"contact_id": contact_id}, {"$set": {
+        **body.model_dump(), "name": body.name.strip(), "phone": body.phone.strip()}})
+    return clean(await db.emergency_contacts.find_one({"contact_id": contact_id, "family_id": fid}, {"_id": 0}))
+
+
+@api.delete("/emergency/contacts/{contact_id}")
+async def delete_emergency_contact(contact_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    await db.emergency_contacts.delete_one({"contact_id": contact_id, "family_id": fid})
+    return {"ok": True}
+
+
+@api.get("/emergency/instructions")
+async def emergency_instructions(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    return await db.emergency_instructions.find({"family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(200)
+
+
+@api.post("/emergency/instructions", status_code=201)
+async def add_emergency_instruction(body: EmergencyInstructionIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can add instructions")
+    ins = {"instruction_id": new_id("ei_"), "family_id": fid, "title": body.title.strip(),
+           "icon": body.icon or "🚨", "steps": [s for s in body.steps if s.strip()],
+           "contact_ids": body.contact_ids or [], "created_at": now_iso()}
+    await db.emergency_instructions.insert_one(ins)
+    return clean(ins)
+
+
+@api.patch("/emergency/instructions/{instruction_id}")
+async def edit_emergency_instruction(instruction_id: str, body: EmergencyInstructionIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can edit instructions")
+    if not await db.emergency_instructions.find_one({"instruction_id": instruction_id, "family_id": fid}):
+        raise HTTPException(status_code=404, detail="Not found")
+    await db.emergency_instructions.update_one({"instruction_id": instruction_id}, {"$set": {
+        "title": body.title.strip(), "icon": body.icon or "🚨",
+        "steps": [s for s in body.steps if s.strip()], "contact_ids": body.contact_ids or []}})
+    return clean(await db.emergency_instructions.find_one({"instruction_id": instruction_id, "family_id": fid}, {"_id": 0}))
+
+
+@api.delete("/emergency/instructions/{instruction_id}")
+async def delete_emergency_instruction(instruction_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can delete instructions")
+    await db.emergency_instructions.delete_one({"instruction_id": instruction_id, "family_id": fid})
+    return {"ok": True}
+
+
+@api.get("/emergency/plan")
+async def get_family_plan(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    plan = await db.family_plans.find_one({"family_id": fid}, {"_id": 0})
+    return plan or {"family_id": fid, "last_reviewed": None}
+
+
+@api.put("/emergency/plan")
+async def save_family_plan(body: FamilyPlanIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can update the plan")
+    data = {**body.model_dump(), "family_id": fid, "last_reviewed": now_iso()}
+    await db.family_plans.update_one({"family_id": fid}, {"$set": data}, upsert=True)
+    return clean(await db.family_plans.find_one({"family_id": fid}, {"_id": 0}))
+
+
+@api.get("/emergency/medical/{member_id}")
+async def get_medical_card(member_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    card = await db.medical_cards.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    return card or {"member_id": member_id, "member": _member_card(m)}
+
+
+@api.put("/emergency/medical/{member_id}")
+async def save_medical_card(member_id: str, body: MedicalCardIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    # a member can edit their own; parents/admin can edit anyone (they control children's info)
+    if not (viewer and (viewer["member_id"] == member_id or viewer.get("role") in ("admin", "parent"))):
+        raise HTTPException(status_code=403, detail="You can't edit this medical card")
+    data = {**body.model_dump(), "member_id": member_id, "family_id": fid, "updated_at": now_iso()}
+    await db.medical_cards.update_one({"member_id": member_id, "family_id": fid}, {"$set": data}, upsert=True)
+    card = await db.medical_cards.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    card["member"] = _member_card(m)
+    return card
+
+
+@api.post("/emergency/sos", status_code=201)
+async def trigger_sos(body: SosTriggerIn, user: dict = Depends(get_current_user)):
+    """Raise a family SOS: alerts the family in chat + push, optionally sharing location."""
+    fid = require_family(user)
+    me = await member_for_user(user)
+    now = now_iso()
+    loc = None
+    if body.latitude is not None and body.longitude is not None:
+        loc = {"latitude": body.latitude, "longitude": body.longitude,
+               "maps_url": f"https://www.google.com/maps?q={body.latitude},{body.longitude}"}
+    alert = {"sos_id": new_id("sos_"), "family_id": fid, "member_id": (me or {}).get("member_id"),
+             "member_name": (me or {}).get("name", "Someone"), "location": loc,
+             "message": (body.message or "").strip() or None, "status": "active", "created_at": now}
+    await db.sos_alerts.insert_one(alert)
+
+    # post to the main family chat so everyone sees it immediately
+    fam_chat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if fam_chat:
+        loc_txt = f"\n📍 Location: {loc['maps_url']}" if loc else ""
+        body_txt = f"\n{alert['message']}" if alert["message"] else ""
+        text = f"🚨 FAMILY SOS 🚨\n{alert['member_name']} needs help.{body_txt}{loc_txt}"
+        await db.messages.insert_one({
+            "message_id": new_id("msg_"), "chat_id": fam_chat["chat_id"], "family_id": fid,
+            "sender_member_id": alert["member_id"], "text": text, "media": [],
+            "type": "text", "created_at": now,
+        })
+        await db.chats.update_one({"chat_id": fam_chat["chat_id"]}, {"$set": {
+            "last_message": {"text": "🚨 Family SOS", "sender": alert["member_name"], "created_at": now, "type": "text"}}})
+
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    recipients = [m["linked_user_id"] for m in members
+                  if m.get("linked_user_id") and m["linked_user_id"] != user["user_id"]]
+    push_ok = False
+    try:
+        if recipients:
+            await send_push(recipients, {
+                "title": "🚨 Family SOS",
+                "message": f"{alert['member_name']} triggered an SOS alert. Tap to respond.",
+                "action_url": "/emergency",
+            }, idempotency_key=alert["sos_id"])
+        push_ok = True
+    except Exception as e:
+        logger.warning(f"SOS push failed (non-blocking): {e}")
+    return {**clean(alert), "notified": len(recipients), "push_ok": push_ok}
+
+
+@api.get("/emergency/sos/active")
+async def active_sos(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    alerts = await db.sos_alerts.find({"family_id": fid, "status": "active"}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    for a in alerts:
+        a["member"] = _member_card(await db.members.find_one({"member_id": a.get("member_id")}, {"_id": 0}))
+    return alerts
+
+
+@api.post("/emergency/sos/{sos_id}/resolve")
+async def resolve_sos(sos_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    await db.sos_alerts.update_one({"sos_id": sos_id, "family_id": fid}, {"$set": {"status": "resolved"}})
+    return {"ok": True}
+
+
+
+# ---------------------------------------------------------------------------
 # Media upload / serve
 # ---------------------------------------------------------------------------
 @api.post("/upload")
@@ -2610,6 +3089,28 @@ async def run_morning_reminders():
             except Exception as e:
                 logger.warning(f"capsule push failed for {fid} (non-blocking): {e}")
             await db.push_log.insert_one({"key": cap_key, "created_at": now_iso()})
+
+        # Vault items expiring within 30 days -> remind parents/admins once per item per day
+        soon_iso = (today + timedelta(days=30)).isoformat()
+        vitems = await db.vault_items.find(
+            {"family_id": fid, "expiry_date": {"$ne": None, "$gte": today.isoformat(), "$lte": soon_iso}},
+            {"_id": 0}).to_list(200)
+        parents = [m for m in members if m.get("role") in ("admin", "parent") and m.get("linked_user_id")]
+        parent_ids = [m["linked_user_id"] for m in parents]
+        for vi in vitems:
+            days_left = (date.fromisoformat(vi["expiry_date"][:10]) - today).days
+            vkey = f"vaultexp:{vi['item_id']}:{today.isoformat()}"
+            if await db.push_log.find_one({"key": vkey}) or not parent_ids:
+                continue
+            try:
+                await send_push(parent_ids, {
+                    "title": "Document expiring soon 🔐",
+                    "message": f"{vi['title']} expires in {days_left} day{'s' if days_left != 1 else ''}.",
+                    "action_url": "/vault",
+                }, idempotency_key=vkey)
+            except Exception as e:
+                logger.warning(f"vault expiry push failed for {fid} (non-blocking): {e}")
+            await db.push_log.insert_one({"key": vkey, "created_at": now_iso()})
 
 
 async def morning_reminder_loop():
@@ -2960,6 +3461,108 @@ async def seed_demo(user: dict = Depends(get_current_user)):
             "note_id": new_id("wn_"), "wish_id": lego["wish_id"], "family_id": fid,
             "member_id": mem_ids["Meera"], "text": "I'll pick this up this weekend — let's not tell Aarav! 🤫",
             "created_at": now_iso()})
+
+    # ---- family vault ----
+    vf = {}
+    for fname, ficon in [("Insurance", "shield-checkmark"), ("Documents", "document-text"),
+                         ("Home", "home"), ("Vehicles", "car"), ("Travel", "airplane")]:
+        vfid = new_id("vf_")
+        vf[fname] = vfid
+        await db.vault_folders.insert_one({"folder_id": vfid, "family_id": fid, "name": fname,
+                                           "icon": ficon, "created_at": now_iso()})
+    exp30 = (today + timedelta(days=30)).isoformat()
+    exp15 = (today + timedelta(days=15)).isoformat()
+    exp180 = (today + timedelta(days=182)).isoformat()
+    vault_items = [
+        {"kind": "insurance", "title": "Family Health Insurance", "folder_id": vf["Insurance"],
+         "provider": "Star Health", "policy_number": "SH-99823471", "policy_holder": "Raj Sharma",
+         "coverage_amount": "₹10,00,000", "premium": "₹24,000 / year", "agent_contact": "Amit · +91 98200 11223",
+         "claims_number": "1800-425-2255", "emergency_number": "1800-102-4477", "website": "https://starhealth.in",
+         "expiry_date": exp30, "issue_date": (today - timedelta(days=335)).isoformat(),
+         "covered_member_ids": [mem_ids["Raj"], mem_ids["Priya"], mem_ids["Aarav"], mem_ids["Anaya"]],
+         "visibility": "parents", "notes": "Cashless at all network hospitals."},
+        {"kind": "insurance", "title": "Car Insurance — Honda City", "folder_id": vf["Vehicles"],
+         "provider": "ICICI Lombard", "policy_number": "IL-CAR-556677", "policy_holder": "Raj Sharma",
+         "coverage_amount": "₹6,50,000", "premium": "₹11,500 / year", "claims_number": "1800-2666",
+         "expiry_date": exp15, "visibility": "parents"},
+        {"kind": "document", "title": "Aarav's Passport", "folder_id": vf["Documents"],
+         "owner_member_id": mem_ids["Aarav"], "expiry_date": exp180, "visibility": "parents",
+         "notes": "Passport No. K1234567. Renew before travelling."},
+        {"kind": "document", "title": "Home Rent Agreement", "folder_id": vf["Home"],
+         "visibility": "parents", "notes": "11-month agreement, renews in March."},
+    ]
+    for vi in vault_items:
+        base = {"item_id": new_id("vi_"), "family_id": fid, "folder_id": None, "owner_member_id": None,
+                "notes": None, "tags": [], "issue_date": None, "expiry_date": None, "files": [],
+                "visibility": "family", "visible_member_ids": [], "provider": None, "policy_number": None,
+                "policy_holder": None, "coverage_amount": None, "premium": None, "agent_contact": None,
+                "claims_number": None, "emergency_number": None, "website": None, "covered_member_ids": [],
+                "created_by": mem_ids["Raj"], "created_at": now_iso()}
+        base.update(vi)
+        await db.vault_items.insert_one(base)
+
+    # ---- emergency center ----
+    ec_defs = [
+        ("Raj (Dad)", "Father", "+91 98100 22334", True, "👨", mem_ids["Raj"]),
+        ("Priya (Mom)", "Mother", "+91 98100 55667", True, "👩", mem_ids["Priya"]),
+        ("Grandma Meera", "Grandmother", "+91 98100 88990", False, "👵", mem_ids["Meera"]),
+        ("Dr. Sharma", "Family Doctor", "+91 98111 44556", True, "👨‍⚕️", None),
+        ("City Care Hospital", "Hospital", "+91 11 4567 8900", True, "🏥", None),
+        ("Ambulance", "Emergency Service", "108", True, "🚑", None),
+        ("Police", "Emergency Service", "100", True, "👮", None),
+        ("Fire Department", "Emergency Service", "101", True, "🚒", None),
+        ("Building Security", "Security", "+91 11 2233 4455", False, "🛡️", None),
+        ("Star Health Assist", "Insurance", "1800-425-2255", False, "🩺", None),
+    ]
+    for name, rel, phone, crit, icon, mid in ec_defs:
+        await db.emergency_contacts.insert_one({
+            "contact_id": new_id("ec_"), "family_id": fid, "name": name, "relationship": rel,
+            "phone": phone, "alt_phone": None, "whatsapp": None, "email": None, "address": None,
+            "notes": None, "icon": icon, "critical": crit, "member_id": mid,
+            "created_by": mem_ids["Raj"], "created_at": now_iso()})
+
+    ei_defs = [
+        ("Fire 🔥", "🔥", ["Leave the house immediately — do not stop for belongings.",
+                          "Do NOT use the elevator, take the stairs.",
+                          "Meet at the front gate (our family meeting point).",
+                          "Call the Fire Department (101).", "Call Mom or Dad."]),
+        ("Medical Emergency 🚑", "🚑", ["Call an ambulance (108).", "Contact our family doctor.",
+                                       "Open the person's Medical Card for allergies & blood group.",
+                                       "Notify Mom and Dad."]),
+        ("Child Lost / Separated 🧒", "🧒", ["Stay calm and stay where you are if you're the child.",
+                                            "Find a staff member or a police officer.",
+                                            "Call Mom or Dad from any phone.",
+                                            "Our meeting point is the main entrance."]),
+    ]
+    for title, icon, steps in ei_defs:
+        await db.emergency_instructions.insert_one({
+            "instruction_id": new_id("ei_"), "family_id": fid, "title": title, "icon": icon,
+            "steps": steps, "contact_ids": [], "created_at": now_iso()})
+
+    await db.family_plans.update_one({"family_id": fid}, {"$set": {
+        "family_id": fid, "home_address": "42 Rose Villa, Green Park, New Delhi 110016",
+        "meeting_point": "Front gate of the building", "alt_meeting_point": "Green Park Metro Station",
+        "parent_numbers": "Raj +91 98100 22334 · Priya +91 98100 55667",
+        "neighbour": "Mrs. Kapoor (Flat 3B) +91 98100 77889",
+        "school_contact": "DPS Green Park +91 11 2696 0000", "doctor": "Dr. Sharma +91 98111 44556",
+        "hospital": "City Care Hospital +91 11 4567 8900", "insurance_number": "Star Health 1800-425-2255",
+        "building_security": "+91 11 2233 4455", "notes": "Keep this plan updated every 6 months.",
+        "last_reviewed": now_iso()}}, upsert=True)
+
+    await db.medical_cards.insert_one({
+        "member_id": mem_ids["Aarav"], "family_id": fid, "blood_group": "O+",
+        "allergies": "Peanuts", "medication": "None", "conditions": "Mild asthma",
+        "doctor": "Dr. Sharma +91 98111 44556", "hospital": "City Care Hospital",
+        "insurance_provider": "Star Health", "policy_reference": "SH-99823471",
+        "emergency_contact": "Mom +91 98100 55667", "updated_at": now_iso()})
+    await db.medical_cards.insert_one({
+        "member_id": mem_ids["Raj"], "family_id": fid, "blood_group": "B+",
+        "allergies": "None", "medication": "None", "conditions": "None",
+        "doctor": "Dr. Sharma +91 98111 44556", "hospital": "City Care Hospital",
+        "insurance_provider": "Star Health", "policy_reference": "SH-99823471",
+        "emergency_contact": "Priya +91 98100 55667", "updated_at": now_iso()})
+
+
 
 
     all_ids = list(mem_ids.values())

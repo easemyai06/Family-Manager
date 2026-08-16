@@ -14,7 +14,9 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Share family photos in posts and profiles",
         "NSCameraUsageDescription": "Capture family moments to share",
-        "NSMicrophoneUsageDescription": "Record voice messages for your family"
+        "NSMicrophoneUsageDescription": "Record voice messages for your family",
+        "NSFaceIDUsageDescription": "Unlock your private Family Vault",
+        "NSLocationWhenInUseUsageDescription": "Share your location during a family SOS"
       }
     },
     "android": {
@@ -28,7 +30,11 @@
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -63,6 +69,18 @@
         "expo-notifications",
         {
           "color": "#FF6B6B"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Unlock your private Family Vault"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Share your location during a family SOS"
         }
       ]
     ],

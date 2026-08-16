@@ -79,3 +79,21 @@ export async function uploadMedia(uri: string, kind: "image" | "video" | "audio"
   if (!res.ok) throw new Error(data?.detail || "Upload failed");
   return data as { url: string; path: string; type: string };
 }
+
+// Upload an arbitrary document (PDF/scan/etc). Preserves filename + mime type.
+export async function uploadDocument(uri: string, name: string, mimeType: string) {
+  const form = new FormData();
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(uri)).blob();
+    form.append("file", blob, name);
+  } else {
+    form.append("file", { uri, name, type: mimeType } as any);
+  }
+  form.append("kind", "document");
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch(`${API_BASE}/upload`, { method: "POST", headers, body: form });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.detail || "Upload failed");
+  return data as { url: string; path: string; type: string };
+}

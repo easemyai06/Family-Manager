@@ -697,3 +697,67 @@ frontend_batch10:
 agent_communication_batch10:
     -agent: "main"
     -message: "Batch #10 = Phase A Wish Lists (items 67-69) + 6-pillar More reorg. TEST BACKEND: wishlists overview + per-owner (visibility), item CRUD (403 for non-owner non-parent), reserve/unreserve/status (409 on double-reserve; only-reserver for status/unreserve), notes (adults-only, owner 403). NOTE: in the demo only Raj (admin) is a real logged-in user; other members have no login, so owner-hiding for a CHILD can't be exercised via login — verify the LOGIC via Raj as an adult non-owner (should SEE 'reserved_by'), and trust hydrate for owner-hiding. TEST FRONTEND (in-app nav, account wishdemo@fam.com / secret123, seeded): More tab now shows 6 pillars. More > 🎁 Celebrate & Wish > Wish Lists -> hub -> open Aarav's Wishlist (4 items; LEGO shows 'Meera is getting this — hidden from them 🤫'). Open an UNRESERVED item (e.g. New Football Shoes) -> Secret Gift Mode card -> tap 'I'm Getting This 🎁' (wish-reserve-btn) -> becomes reserved, status steps appear; add a private gift note (wish-note-input + wish-note-send); tap 'I'm no longer getting this' to release. Add a wish: open My Wishlist (Dad) -> add-wish-btn -> fill name + price + pick priority/occasion/category + Save -> appears. Family Wishlist: open -> items are NOT reservable (shared goals). Birthday screen has a 'See <name>'s Wishlist' link. Push/voice native-only. Do NOT retest unrelated older features."
+
+# ============ Feature Batch #11 (Phase B: Family Vault + Phase C: Emergency Center + Birthday wishlist surfacing) ============
+backend_batch11:
+  - task: "Family Vault: folders + items (document/insurance) CRUD + visibility + expiries"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET/POST /api/vault/folders (+ per-folder visible count), DELETE folder (parents). GET /api/vault/items (?folder_id&kind), POST (adults only 403 else), GET/PATCH/DELETE /api/vault/items/{id} (creator/owner/parent; 403 else; 403 view if not permitted). Visibility family|parents|grandparents|selected via _can_view_secure (admin sees all). GET /api/vault/expiries?days=N returns items expiring within N days sorted asc with days_until_expiry. Files support image + PDF/document (uploadDocument). Verified via curl: seed = 5 folders, 4 items, 2 expiring (Car 15d, Health 30d). Morning loop also pushes 30-day expiry reminders to parents (native-only)."
+  - task: "Emergency Center: contacts, instructions, family plan, medical cards, SOS"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET/POST/PATCH/DELETE /api/emergency/contacts (critical sorted first; name+phone required). GET/POST/PATCH/DELETE /api/emergency/instructions (parents only add/edit/delete). GET/PUT /api/emergency/plan (parents; last_reviewed set on save). GET/PUT /api/emergency/medical/{member_id} (self or parent). POST /api/emergency/sos (best-effort location -> creates alert + posts '🚨 FAMILY SOS' to the family chat + push to family; returns notified+push_ok). GET /api/emergency/sos/active, POST /api/emergency/sos/{id}/resolve. Verified via curl: 10 contacts, 3 instructions, plan present, Aarav medical card (O+/Peanuts), SOS created + posted to family chat (notified=0 since only 1 linked user, push_ok true)."
+
+frontend_batch11:
+  - task: "Family Vault screens with PIN/biometric lock"
+    implemented: true
+    working: true
+    file: "frontend/app/vault/index.tsx, folder/[id].tsx, item/[id].tsx, create.tsx, src/components/VaultGate.tsx, src/lib/vaultSession.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-verified: More > Protect > Family Vault opens a PIN gate (VaultGate: first-time 4-digit setup+confirm, then enter; biometric via expo-local-authentication where available; vault-key-<d>, vault-biometric-btn). After unlock: dashboard shows ⏰ Upcoming Expiries (color-coded days) + Folders grid; vault-add-btn; vault-lock-btn re-locks. Folder screen lists items; item detail shows insurance fields/covered members/attachments (openable) + edit/delete. Create modal supports document|insurance kind, folder pick, dates, visibility (+selected members), photo + PDF attach. Deep-linked vault screens redirect to /vault when locked. Confirmed screenshot: Insurance/Documents/Home/Vehicles/Travel folders + 2 expiries."
+  - task: "Emergency Center screens (hub+SOS, contacts, instructions, plan, medical)"
+    implemented: true
+    working: true
+    file: "frontend/app/emergency/index.tsx, contacts.tsx, contact-edit.tsx, instructions.tsx, instruction-edit.tsx, plan.tsx, medical.tsx, medical/[id].tsx, src/lib/dial.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-verified: More > Protect > Emergency Center = hub with big red SOS button (sos-button -> confirm -> best-effort expo-location -> POST /emergency/sos -> alerts family chat; active-sos banner + resolve). Quick Call shows critical contacts w/ big green Call buttons (call-<id> -> tel:). Shortcut grid: Contacts (⭐Critical pinned, add via contact-edit modal, WhatsApp button), What To Do (expandable instruction steps; parents add via instruction-edit), Family Plan (parents edit inline, last-reviewed), Medical Cards (member list -> medcard with blood group/allergies big cards, self/parent edit). SOS location/calling are native-only."
+  - task: "Birthday screen surfaces the member's top wishes"
+    implemented: true
+    working: true
+    file: "frontend/app/birthday/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Birthday screen now fetches /wishlists/{id} and shows the top 3 wishes (by priority) inline under the wishlist link (birthday-wish-<id> -> /wishlist/item/<id>), so relatives instantly see what to gift."
+
+agent_communication_batch11:
+    -agent: "main"
+    -message: "Batch #11 = Phase B Family Vault (70-72,81-82) + Phase C Emergency Center (73-80,83-84) + birthday wishlist surfacing. Account: protectdemo@fam.com / secret123 (seeded: 5 vault folders, 4 vault items incl 2 expiring insurance policies; 10 emergency contacts, 3 instructions, a family plan, medical cards for Aarav O+/Peanuts & Raj B+). TEST BACKEND: vault folders/items CRUD + visibility (adult-only create 403; permission 403 on view/edit), /vault/expiries?days=90 (2 items). emergency contacts CRUD (critical sort), instructions (parent-only add/edit 403 for others — but demo only-Raj-is-admin so test allowed path), plan GET/PUT, medical GET/PUT, POST /emergency/sos (creates alert + posts to family chat + returns notified/push_ok), sos/active + resolve. TEST FRONTEND (in-app nav): More tab shows 6 pillars; 🛡️ Protect now has Family Vault + Emergency Center (no longer 'Soon'). VAULT: open -> PIN setup (type 1234 then 1234 via vault-key-* to set, then it unlocks) -> Upcoming Expiries + Folders; open a folder -> item -> insurance details; vault-add-btn -> create modal (toggle Document/Insurance, pick folder, expiry YYYY-MM-DD, save); vault-lock-btn re-locks (re-open asks PIN 1234). EMERGENCY: hub SOS button (confirm dialog -> sends; on web location may be blank, that's fine), Quick Call, Contacts (⭐critical first, add-contact-btn -> save; toggle critical), What To Do (expand steps; add-instruction-btn), Family Plan (edit-plan-btn -> save), Medical Cards (open a member -> edit -> save). Biometric unlock, SOS location & tap-to-call are NATIVE-ONLY (don't fail on web). Do NOT retest unrelated older features."

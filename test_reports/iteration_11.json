@@ -1,0 +1,44 @@
+{
+  "summary": "Batch #11 (Family Vault + Emergency Center + birthday wishlist surfacing) tested end-to-end. Backend: 18/18 pytest cases pass against protectdemo@fam.com. Vault: /vault/folders returns 5 seeded folders each with a per-folder count; /vault/items returns 4 seeded items; ?kind=insurance filters correctly; POST creates document + insurance items (all fields persist incl. provider/policy_number/coverage_amount/expiry_date/covered_member_ids and hydrated covered_members); PATCH updates persist and DELETE followed by GET returns 404. /vault/expiries?days=90 returns Car Insurance (~15d) and Family Health (~30d) sorted ascending each with days_until_expiry. Emergency: /emergency/contacts returns 10 contacts with critical-first ordering (Ambulance 108/Police 100/Fire 101 present). POST 400s on empty name or empty phone; PATCH toggles critical; DELETE works. /emergency/instructions has 3 seeded (Fire/Medical/Child Lost); CRUD as admin persists steps. /emergency/plan GET+PUT round-trip (home_address change persisted, last_reviewed set). /emergency/medical/{aarav} returns blood O+ / allergies=Peanuts; PUT updates persist. SOS: POST /emergency/sos with lat/lng creates the alert, posts a '🚨 FAMILY SOS' message into the family chat (verified via GET messages), returns {sos_id, notified, push_ok, location.maps_url} with correct maps URL; /sos/active lists it; /sos/{id}/resolve clears it. Regression: /api/families/members and /api/wishlists still work. Frontend (Expo web, iPhone 12 viewport): Login as Raj -> More tab renders 6-pillar layout -> Protect > Family Vault opens VaultGate (PIN setup: typed 1234 via vault-key-1..4 then confirmed 1234) -> dashboard renders with UPCOMING EXPIRIES (Car 15d red, Family Health 30d amber, sorted asc), FOLDERS grid (5 folders with counts), 'Add to Vault' FAB. Tapped vault-lock-btn, entered wrong PIN 9999 -> vault-pin-error 'Wrong PIN' shown, then 1234 -> unlocked. Opened Insurance folder -> vault-item-* -> insurance detail page shows Star Health, SH-99823471, Raj Sharma, ₹10,00,000, Amit contact, 1800-425-2255/1800-102-4477, 4 covered member avatars, starhealth.in link, notes. vault-add-btn opens /vault/create with kind toggle (vault-kind-document / vault-kind-insurance), folder chips, member owner chips, visibility chips; saved TEST_UI_Item -> returned to vault dashboard (cleaned up after). Emergency hub renders sos-button gradient, QUICK CALL x3 (Ambulance/City Care/Dr Sharma) each with green Call, and 4 shortcut cards (emergency-contacts, emergency-instructions, emergency-plan, emergency-medical). Contacts screen: ⭐ CRITICAL section shows Ambulance/City Care Hospital/Dr Sharma/Fire/Police/Priya/Raj pinned first; add-contact-btn opens contact-edit; filled name+phone -> save-contact-btn -> TEST_UI_Contact appears in list (cleaned up after). Instructions screen renders 3 seeded (Fire/Medical/Child Lost) with add-instruction-btn. Plan screen shows edit-plan-btn. Medical screen shows all 5 members (medical-<member_id>). Birthday screen for Aarav renders 'See Aarav's Wishlist' (birthday-wishlist-link) plus 3 inline top wishes with star ratings (Visit Disneyland ⭐⭐⭐ ₹4,999 LEGO ⭐⭐⭐, Harry Potter ⭐⭐) — birthday-wish-* count = 3. Wish Lists (Phase A) still opens correctly. NATIVE-ONLY items not verifiable on web preview (per test brief): SOS Alert.alert() confirm dialog does not fire on RN-Web (Alert.alert with multiple buttons is a no-op on this expo web build), tap-to-call tel:/wa.me, biometric unlock, and real geolocation acquisition are native-only — backend SOS endpoint itself was verified end-to-end via pytest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Emergency SOS confirm dialog (web only)",
+        "issue": "React Native Alert.alert('Send a Family SOS?', ...) does not render a browser confirm/modal on the current Expo Web build, so tapping sos-button on web does nothing visible. On native this shows the confirm sheet and then POSTs /emergency/sos. Backend flow works when invoked directly. Native-only concern per brief.",
+        "affected_testIDs": ["sos-button"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch11_vault_emergency.py",
+    "/app/test_reports/pytest/pytest_batch11_results.xml"
+  ],
+  "action_items": [
+    "(Optional) If a web-preview SOS demo is desired, replace Alert.alert on web with a custom in-app confirm modal (or use expo-router's <Alert> shim / a react-native-modal). Not required — native-only per test brief.",
+    "(Hygiene, ongoing) server.py is now 3655 lines. Same recommendation as prior iterations to split vault + emergency into their own routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py:2867 — /emergency/plan PUT stamps last_reviewed=now on every write (including no-op saves). If you ever want to expose 'last actually reviewed' vs 'last saved' they need to be two fields.",
+    "server.py:2900-2942 — trigger_sos returns push_ok=False silently if the send_push exception is caught INSIDE the try; the flag is only set to True after the send completes. Logic is correct, but the response spec calls it 'push_ok' — on web/emulator with a placeholder EMERGENT_PUSH_KEY this is fine.",
+    "VaultGate.tsx:23 — First-render sets mode='loading' but the loading screen only shows the keypad (not disabled). If a user is a *very* fast tapper they can press digits before the useEffect resolves. Not a real-world risk; consider gating press() on mode !== 'loading'.",
+    "vaultSession.ts — session is in-memory only. A hard reload / new tab re-triggers the PIN entry. This matches the spec ('lock on app close') but the WINDOW_MS=3min unlock is generous; consider aligning with device-inactivity time.",
+    "emergency/index.tsx:32 — quick call list uses .slice(0,3) of critical contacts sorted by list order; there is no explicit priority (Ambulance/Police/Fire never guaranteed to be surfaced first). Currently works because seed order + critical flag place emergency services high, but a user editing critical flags could hide them from Quick Call.",
+    "Vault visibility helpers _can_view_secure / _can_edit_secure treat every 'adult'/'parent'/'admin' as an editor of every item they can see. This may be too permissive (any parent can PATCH/DELETE another parent's private policy). Acceptable for MVP; document it."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch11_vault_emergency.py (new — 18 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% of web-testable flows (SOS confirm dialog is native-only per brief)"},
+  "seed_data_creation": "Two TEST_-prefixed artefacts (TEST_UI_Item vault item, TEST_UI_Contact emergency contact) were created during UI testing and DELETED via API after verification. Pytest also creates + deletes its own TEST_ items/folders/contacts/instructions. protectdemo@fam.com family is left clean.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch #11 (Family Vault + Emergency Center) is stable. Seeded account protectdemo@fam.com / secret123 is admin Raj with 5 folders, 4 vault items (2 expiring insurance policies), 10 emergency contacts, 3 instructions, family plan, medical cards for Aarav (O+/Peanuts) and Raj (B+). Vault PIN in the app is set to 1234 on first unlock; a fresh web session goes through setup+confirm again because vaultSession is in-memory. Auth token lives in AsyncStorage->IndexedDB (db='AsyncStorage'), NOT localStorage. Testing hard-refresh to a subpath (e.g. /vault or /emergency/plan) works because these screens re-read the token from AsyncStorage; you can also use in-app SPA nav via history.pushState + PopStateEvent. Alert.alert-based confirm dialogs do NOT fire on this RN Web build — trigger SOS through the API to verify chat/push side effects, and reserve the on-tap confirm assertion for native builds. GET /api/families/members (not /api/members) and GET /api/wishlists (not /api/wishlists/overview).",
+  "rca_of_issue": ""
+}

@@ -90,6 +90,18 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   notes per item. Linked from the birthday screen. More reorganized into 6 pillars (Connect /
   Organize / Remember / Preserve / Celebrate & Wish / Protect); Family Vault + Emergency Center
   are "Soon" placeholders (Phases B & C).
+- Family Vault (PROTECT): a PIN/biometric-locked area (expo-local-authentication + 4-digit PIN via
+  VaultGate; 3-min unlock session) for insurance policies & important documents in folders
+  (Insurance/Documents/Home/Vehicles/Travel). Items carry issue/expiry dates, tags, notes, photo +
+  PDF attachments (private token-gated storage) and per-item visibility (family/parents/
+  grandparents/selected). Upcoming Expiries view (30/60/90/6mo) + a daily push reminder to parents
+  30 days before expiry. More > Protect > Family Vault.
+- Emergency Center (PROTECT): quick-access hub with a big Family SOS button (best-effort location
+  share + posts "🚨 FAMILY SOS" into the family chat + push), emergency contacts & SOS numbers
+  (⭐Critical pinned, big Call/WhatsApp buttons), emergency instructions (expandable steps), a
+  Family Emergency Plan (parents edit; last-reviewed), and per-member Medical Cards (blood group,
+  allergies, doctor, insurance…). More > Protect > Emergency Center. Birthday screens surface a
+  member's top wishes inline.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
   Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
   birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
@@ -97,27 +109,24 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
   + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places)
   + 17/17 (rewards+albums+search) + 10/10 (weekly-winner+search-everywhere)
-  + 13/13 (meal-planner+recipes) + 16/16 (wish-lists+secret-gift-mode) backend tests pass;
-  frontend flows verified.
+  + 13/13 (meal-planner+recipes) + 16/16 (wish-lists+secret-gift-mode)
+  + 18/18 (family-vault+emergency-center) backend tests pass; frontend flows verified.
 - Google Sign-In: verified against the current Emergent Google Auth playbook (web redirect +
   hash/query session_id parse; native WebBrowser + Linking cold/hot handlers; backend
   /auth/session exchanges session_id via X-Session-ID and mints the app JWT). Real OAuth can't
   be automated; email/password is the automated test path.
 
 ## Backlog (prioritized)
-### P0 (next) — PROTECT pillar (from the big 67–85 spec; Phase A Wishlists done)
-- Phase B — Family Vault & Documents (items 70–72, 81–82): insurance policies + important
-  documents in folders, expiry reminders (30/60/90/6mo), per-item "who can see" permissions,
-  biometric/PIN lock to open the Vault (MVP: private permission-controlled storage, not E2E).
-- Phase C — Emergency Center & SOS (items 73–80, 83–84): emergency contacts + SOS numbers
-  (big Call buttons, ⭐Critical pinned), Emergency Instructions, Family Emergency Plan, Medical
-  Card per member, Emergency Quick-Access screen, SOS button (alert family + in-app alert +
-  tap-to-call + share current location), Emergency Access delegation. NOTE: location/calling/
-  biometric only fully work on a native build (not Expo Go/web) — user acknowledged.
-- Phase A follow-ups (optional): scheduled/auto birthday wishlist surfacing; gift-planning as a
-  full private chat thread (currently per-item adult-only notes).
+### P0 (next) — PROTECT follow-ups & polish (Phases A/B/C shipped)
+- Emergency Access delegation (item 83): let admins grant a trusted member limited emergency-only
+  access to children's insurance/doctor/instructions when parents can't respond.
+- Cross-app hooks (item 84): Profile → Emergency Info shortcut; Timeline milestone → linked Vault
+  doc; auto "Emergency" pin on Home.
+- Vault hardening (optional): access/audit logs, re-auth before opening a single sensitive doc.
 ### P1
 - Birthdays: scheduled wishes; RSVP + recurring events; external calendar sync. Notifications center.
 ### P2
 - Future Letters. AI: event import (screenshot/paste), recipe creator, memory assistant, timeline suggestions.
 - Admin panel (roles/permissions/devices), accessibility polish.
+### Refactor (tech debt)
+- server.py is ~3.7k lines — consider splitting into routers (vault, emergency, wishlists, chat, …).

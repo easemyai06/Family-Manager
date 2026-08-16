@@ -21,12 +21,18 @@ export default function BirthdayWishes() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
+  const [topWishes, setTopWishes] = useState<any[]>([]);
   const [text, setText] = useState("");
   const [emoji, setEmoji] = useState("🎂");
 
   const load = useCallback(async () => {
     try {
       setData(await api(`/birthdays/${id}/wishes`));
+    } catch {}
+    try {
+      const wl = await api(`/wishlists/${id}`);
+      const sorted = [...(wl.items || [])].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      setTopWishes(sorted.slice(0, 3));
     } catch {}
   }, [id]);
 
@@ -87,11 +93,34 @@ export default function BirthdayWishes() {
                 See {m.name}'s Wishlist
               </AppText>
               <AppText size={12} color={c.onSurfaceSecondary}>
-                Find the perfect gift
+                {topWishes.length > 0 ? "Top picks below — tap for the full list" : "Find the perfect gift"}
               </AppText>
             </View>
             <Ionicons name="chevron-forward" size={18} color={c.brand} />
           </Pressable>
+
+          {topWishes.length > 0 ? (
+            <View style={{ gap: spacing.sm }}>
+              {topWishes.map((w) => (
+                <Pressable
+                  key={w.wish_id}
+                  onPress={() => router.push(`/wishlist/item/${w.wish_id}`)}
+                  style={[styles.topWish, { backgroundColor: c.surface, borderColor: c.border }]}
+                  testID={`birthday-wish-${w.wish_id}`}
+                >
+                  <AppText size={13}>{"⭐".repeat(w.priority || 1)}</AppText>
+                  <AppText size={14} weight="semibold" style={{ flex: 1 }} numberOfLines={1}>
+                    {w.name}
+                  </AppText>
+                  {w.price ? (
+                    <AppText size={13} weight="bold" color={c.brand}>
+                      {w.price}
+                    </AppText>
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
 
           {wishes.length === 0 ? (
             <View style={styles.empty}>
@@ -160,6 +189,7 @@ const styles = StyleSheet.create({
   back: { position: "absolute", left: spacing.lg, width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center" },
   empty: { alignItems: "center", paddingVertical: spacing["3xl"] },
   wishlistLink: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md },
+  topWish: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   card: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start", borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   composerWrap: { borderTopWidth: 1, paddingTop: spacing.sm },
