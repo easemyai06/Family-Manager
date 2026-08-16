@@ -77,14 +77,22 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   Star of the Week card on Weekly Highlights, and week_leaderboard exposed via /api/rewards.
 - Search Everywhere: global search screen (Home header search icon) across people, memories,
   posts and chats (case-insensitive, scoped to the caller's family) via GET /api/search?q=.
+- Meal Planner + Recipes: save family recipes (title, photo, ingredients, prep time) and assign
+  them to Breakfast/Lunch/Dinner slots across a Mon–Sun week (week switcher). One tap "Add to
+  Shopping" aggregates every planned recipe's ingredients into a de-duped "Meal Plan 🍽️"
+  shopping list (idempotent). More > Recipes + More > Meal Planner.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
   Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
   birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
   EMERGENT_PUSH_KEY is a deploy-injected placeholder.
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
   + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places)
-  + 17/17 (rewards+albums+search) + 10/10 (weekly-winner+search-everywhere) backend tests pass;
-  frontend flows verified.
+  + 17/17 (rewards+albums+search) + 10/10 (weekly-winner+search-everywhere)
+  + 13/13 (meal-planner+recipes) backend tests pass; frontend flows verified.
+- Google Sign-In: verified against the current Emergent Google Auth playbook (web redirect +
+  hash/query session_id parse; native WebBrowser + Linking cold/hot handlers; backend
+  /auth/session exchanges session_id via X-Session-ID and mints the app JWT). Real OAuth can't
+  be automated; email/password is the automated test path.
 
 ## Backlog (prioritized)
 ### P0 (next)

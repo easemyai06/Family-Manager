@@ -270,6 +270,31 @@ class TodoItemIn(BaseModel):
     priority: Optional[str] = "normal"  # low | normal | high
 
 
+class Ingredient(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+
+
+class RecipeIn(BaseModel):
+    title: str
+    description: Optional[str] = None
+    photo_url: Optional[str] = None
+    ingredients: List[Ingredient] = []
+    prep_minutes: Optional[int] = None
+
+
+class MealIn(BaseModel):
+    week_start: str          # ISO date of the Monday
+    day: int                 # 0=Mon .. 6=Sun
+    slot: str                # breakfast | lunch | dinner
+    recipe_id: str
+
+
+class MealToShoppingIn(BaseModel):
+    week_start: str
+    list_id: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -873,6 +898,166 @@ async def delete_shopping_item(item_id: str, user: dict = Depends(get_current_us
     require_family(user)
     await db.shopping_items.delete_one({"item_id": item_id})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Recipes & Meal Planner
+# ---------------------------------------------------------------------------
+MEAL_SLOTS = ["breakfast", "lunch", "dinner"]
+
+
+def _recipe_card(r: dict) -> dict:
+    return {
+        "recipe_id": r["recipe_id"], "title": r["title"], "photo_url": r.get("photo_url"),
+        "ingredient_count": len(r.get("ingredients") or []), "prep_minutes": r.get("prep_minutes"),
+    }
+
+
+@api.get("/recipes")
+async def list_recipes(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    return await db.recipes.find({"family_id": fid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api.post("/recipes")
+async def create_recipe(body: RecipeIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Give your recipe a name")
+    r = {
+        "recipe_id": new_id("rcp_"), "family_id": fid, "title": body.title.strip(),
+        "description": (body.description or "").strip() or None, "photo_url": body.photo_url,
+        "ingredients": [{"name": i.name.strip(), "quantity": (i.quantity or "").strip() or None}
+                        for i in body.ingredients if i.name.strip()],
+        "prep_minutes": body.prep_minutes,
+        "created_by": mine["member_id"] if mine else None, "created_at": now_iso(),
+    }
+    await db.recipes.insert_one(r)
+    return clean(r)
+
+
+@api.get("/recipes/{recipe_id}")
+async def get_recipe(recipe_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    r = await db.recipes.find_one({"recipe_id": recipe_id, "family_id": fid}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    r["author"] = await db.members.find_one({"member_id": r.get("created_by")}, {"_id": 0})
+    return r
+
+
+@api.delete("/recipes/{recipe_id}")
+async def delete_recipe(recipe_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    r = await db.recipes.find_one({"recipe_id": recipe_id, "family_id": fid}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    is_admin = bool(mine and mine.get("role") == "admin")
+    if not is_admin and r.get("created_by") != (mine["member_id"] if mine else None):
+        raise HTTPException(status_code=403, detail="Only the creator can delete this recipe")
+    await db.recipes.delete_one({"recipe_id": recipe_id})
+    await db.meal_plans.delete_many({"family_id": fid, "recipe_id": recipe_id})
+    return {"ok": True}
+
+
+@api.get("/meals")
+async def get_meals(week_start: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    entries = await db.meal_plans.find(
+        {"family_id": fid, "week_start": week_start}, {"_id": 0}).to_list(200)
+    out = []
+    for e in entries:
+        r = await db.recipes.find_one({"recipe_id": e["recipe_id"], "family_id": fid}, {"_id": 0})
+        out.append({**e, "recipe": _recipe_card(r) if r else None})
+    return {"week_start": week_start, "meals": out}
+
+
+@api.post("/meals")
+async def set_meal(body: MealIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    if body.slot not in MEAL_SLOTS:
+        raise HTTPException(status_code=400, detail="Invalid meal slot")
+    if not (0 <= body.day <= 6):
+        raise HTTPException(status_code=400, detail="Invalid day")
+    r = await db.recipes.find_one({"recipe_id": body.recipe_id, "family_id": fid}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    await db.meal_plans.delete_many(
+        {"family_id": fid, "week_start": body.week_start, "day": body.day, "slot": body.slot})
+    entry = {"plan_id": new_id("mp_"), "family_id": fid, "week_start": body.week_start,
+             "day": body.day, "slot": body.slot, "recipe_id": body.recipe_id, "created_at": now_iso()}
+    await db.meal_plans.insert_one(entry)
+    return {**clean(entry), "recipe": _recipe_card(r)}
+
+
+@api.delete("/meals/{plan_id}")
+async def delete_meal(plan_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    await db.meal_plans.delete_one({"plan_id": plan_id, "family_id": fid})
+    return {"ok": True}
+
+
+@api.post("/meals/to-shopping")
+async def meals_to_shopping(body: MealToShoppingIn, user: dict = Depends(get_current_user)):
+    """Auto-fill a shopping list with every ingredient from the week's planned recipes."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    entries = await db.meal_plans.find(
+        {"family_id": fid, "week_start": body.week_start}, {"_id": 0}).to_list(200)
+    if not entries:
+        raise HTTPException(status_code=400, detail="No meals planned for this week yet")
+
+    recipe_ids = list({e["recipe_id"] for e in entries})
+    agg: dict = {}  # lower(name) -> {"name", "quantities": [..]}
+    for rid in recipe_ids:
+        r = await db.recipes.find_one({"recipe_id": rid, "family_id": fid}, {"_id": 0})
+        if not r:
+            continue
+        for ing in r.get("ingredients") or []:
+            nm = (ing.get("name") or "").strip()
+            if not nm:
+                continue
+            key = nm.lower()
+            agg.setdefault(key, {"name": nm, "quantities": []})
+            q = (ing.get("quantity") or "").strip()
+            if q:
+                agg[key]["quantities"].append(q)
+    if not agg:
+        raise HTTPException(status_code=400, detail="Your planned recipes have no ingredients yet")
+
+    list_id = body.list_id
+    if list_id:
+        lst = await db.shopping_lists.find_one({"list_id": list_id, "family_id": fid}, {"_id": 0})
+        if not lst:
+            raise HTTPException(status_code=404, detail="Shopping list not found")
+    else:
+        # Reuse the family's existing "Meal Plan" list so repeated taps dedupe instead of piling up.
+        lst = await db.shopping_lists.find_one({"family_id": fid, "name": "Meal Plan 🍽️"}, {"_id": 0})
+        if lst:
+            list_id = lst["list_id"]
+        else:
+            list_id = new_id("shl_")
+            lst = {"list_id": list_id, "family_id": fid, "name": "Meal Plan 🍽️",
+                   "category": "Grocery", "created_at": now_iso()}
+            await db.shopping_lists.insert_one(lst)
+
+    existing = await db.shopping_items.find({"list_id": list_id}, {"_id": 0, "name": 1}).to_list(2000)
+    existing_names = {(i.get("name") or "").lower() for i in existing}
+    added = 0
+    for key, v in agg.items():
+        if key in existing_names:
+            continue
+        qty = " + ".join(dict.fromkeys(v["quantities"])) or None
+        await db.shopping_items.insert_one({
+            "item_id": new_id("shi_"), "list_id": list_id, "family_id": fid, "name": v["name"],
+            "quantity": qty, "category": "Grocery", "notes": "From meal plan",
+            "checked": False, "added_by": mine["name"] if mine else None, "created_at": now_iso(),
+        })
+        added += 1
+    return {"list_id": list_id, "list_name": lst["name"], "added": added, "total_ingredients": len(agg)}
+
 
 
 # ---------------------------------------------------------------------------
@@ -2392,7 +2577,40 @@ async def seed_demo(user: dict = Depends(get_current_user)):
 
 
 
-    # ---- chats ----
+    # ---- recipes & weekly meal plan ----
+    monday = today - timedelta(days=today.weekday())  # Monday of the current week
+    recipe_defs = [
+        ("Rajma Chawal 🍛", "Comforting kidney-bean curry with fluffy steamed rice.", 40,
+         [("Kidney beans", "2 cups"), ("Onion", "2"), ("Tomato", "3"),
+          ("Basmati rice", "3 cups"), ("Ginger-garlic paste", "1 tbsp"), ("Garam masala", "1 tsp")]),
+        ("Masala Dosa 🥞", "Crispy dosa with a spiced potato filling.", 30,
+         [("Dosa batter", "4 cups"), ("Potato", "4"), ("Onion", "1"),
+          ("Mustard seeds", "1 tsp"), ("Curry leaves", "a few")]),
+        ("Paneer Butter Masala 🧈", "Creamy tomato-and-butter paneer curry.", 35,
+         [("Paneer", "400 g"), ("Tomato", "4"), ("Butter", "50 g"),
+          ("Fresh cream", "1/2 cup"), ("Cashews", "10")]),
+        ("Veg Pulao 🍚", "Fragrant one-pot rice with mixed vegetables.", 25,
+         [("Basmati rice", "2 cups"), ("Mixed vegetables", "2 cups"),
+          ("Whole spices", "1 tbsp"), ("Ghee", "2 tbsp")]),
+    ]
+    rcp_ids = {}
+    for title, desc, prep, ings in recipe_defs:
+        rid = new_id("rcp_")
+        rcp_ids[title] = rid
+        await db.recipes.insert_one({
+            "recipe_id": rid, "family_id": fid, "title": title, "description": desc,
+            "photo_url": None, "ingredients": [{"name": n, "quantity": q} for n, q in ings],
+            "prep_minutes": prep, "created_by": mem_ids["Priya"], "created_at": now_iso(),
+        })
+    plan_defs = [(0, "dinner", "Rajma Chawal 🍛"), (1, "breakfast", "Masala Dosa 🥞"),
+                 (2, "dinner", "Paneer Butter Masala 🧈"), (4, "dinner", "Veg Pulao 🍚")]
+    for day, slot, title in plan_defs:
+        await db.meal_plans.insert_one({
+            "plan_id": new_id("mp_"), "family_id": fid, "week_start": monday.isoformat(),
+            "day": day, "slot": slot, "recipe_id": rcp_ids[title], "created_at": now_iso(),
+        })
+
+
     all_ids = list(mem_ids.values())
     fam_chat_id = new_id("chat_")
     await db.chats.insert_one({

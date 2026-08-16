@@ -23,8 +23,8 @@ const ORGANIZE: Row[] = [
   { key: "shopping", label: "Shopping Lists", icon: "cart", color: "#8AB07D", route: "/shopping" },
   { key: "todos", label: "To-Do Lists", icon: "checkbox", color: "#A3B18A", route: "/todos" },
   { key: "chores", label: "Kids Chores", icon: "star", color: "#FFD166", route: "/chores" },
-  { key: "meals", label: "Meal Planner", icon: "restaurant", color: "#D98E5A", soon: true },
-  { key: "recipes", label: "Recipes", icon: "book", color: "#C96F4A", soon: true },
+  { key: "meals", label: "Meal Planner", icon: "restaurant", color: "#D98E5A", route: "/meals" },
+  { key: "recipes", label: "Recipes", icon: "book", color: "#C96F4A", route: "/recipes" },
 ];
 
 const REMEMBER: Row[] = [

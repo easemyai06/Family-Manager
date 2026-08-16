@@ -579,3 +579,68 @@ frontend_batch8:
 agent_communication_batch8:
     -agent: "main"
     -message: "Batch #8 complete (Weekly Winner + Search Everywhere). TEST BACKEND: (1) /api/rewards -> week_leaderboard (sorted desc) + star_of_week (top member, points>0); confirm a CHILD who completed chores appears in weekly points. (2) /api/highlights/week -> star_of_week present. (3) /api/search?q= across members/memories/posts/chats (case-insensitive, scoped to caller family; empty q returns empty lists). TEST FRONTEND: (1) Home header search icon (home-search) -> /search; type 'Priya' -> People + Chats sections render, tap a person -> member profile, tap a chat -> conversation; type a memory word -> Memories section -> tap -> timeline detail; clear button resets. (2) More > Family Rewards -> gold 👑 Star of the Week card + star leaderboard; (3) More > Weekly Highlights -> Star of the Week card + stat cards. Fresh seeded account: winner1786918036@fam.com / secret123 (Raj=Star of Week 125, Aarav child 36 incl chores). Or register fresh + Explore Sharma Family. Push/voice remain native-only (don't fail on web)."
+
+# ============ Feature Batch #9 (Meal Planner + Recipes -> Shopping auto-fill / Google auth verify) ============
+backend_batch9:
+  - task: "Recipes CRUD (/api/recipes GET/POST/GET{id}/DELETE)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET list (newest first), POST create {title, description, photo_url, ingredients[{name,quantity}], prep_minutes} (any member), GET{id} (w/ author), DELETE (creator or admin -> 403 else; also removes from meal_plans). Verified via curl: 4 seeded recipes."
+  - task: "Meal Planner (/api/meals GET?week_start / POST upsert slot / DELETE / to-shopping)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/meals?week_start=<Monday ISO> returns {week_start, meals:[{plan_id,day,slot,recipe_id,recipe:{title,photo_url,ingredient_count}}]}. POST /api/meals {week_start,day(0-6),slot(breakfast|lunch|dinner),recipe_id} upserts (replaces existing slot). DELETE /api/meals/{plan_id}. POST /api/meals/to-shopping {week_start,list_id?} aggregates all ingredients from that week's recipes (dedup by name, quantities joined with ' + '), adds to a shopping list (reuses/creates 'Meal Plan 🍽️' list when no list_id) skipping names already present. Verified via curl: seed plan (4 meals) -> to-shopping added 17 items; 2nd call added 0 (idempotent, same list)."
+
+frontend_batch9:
+  - task: "Recipes screens (list, create modal w/ dynamic ingredients+photo, detail)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/recipes/index.tsx, create.tsx, [id].tsx, frontend/app/(tabs)/more.tsx, frontend/app/_layout.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Recipes (no longer 'soon') -> list (recipe-<id>) + add-recipe-btn -> create modal (recipe-title-input, dynamic ingredient rows ing-name-<i>/ing-qty-<i>, add-ingredient, optional recipe-photo-pick, save-recipe-btn) -> recipe detail (ingredients list, recipe-delete for creator, recipe-plan-btn -> /meals). open-meal-planner FAB on list."
+  - task: "Weekly Meal Planner screen (week nav, day/slot grid, recipe picker, add-to-shopping)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/meals/index.tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Meal Planner (no longer 'soon'). Week switcher (week-prev/week-next, defaults to current Mon-Sun). 7 day cards each with Breakfast/Lunch/Dinner slots (slot-<day>-<slotkey>); empty slot -> tap opens recipe picker modal (pick-recipe-<id> / picker-new-recipe); filled slot shows recipe + clear (slot-clear-<day>-<slotkey>). 'meals-to-shopping' button auto-fills the Meal Plan shopping list from the week's recipes then navigates to that list; toast shows count. Screenshot-confirmed the planner grid renders. NOTE: on a HARD web refresh directly onto a data screen, first fetch can race the auth-token bootstrap (pre-existing app-wide behavior on web refresh); in-app navigation is unaffected."
+
+  - task: "Google Sign-In verification (email OAuth via Emergent) — no code change"
+    implemented: true
+    working: true
+    file: "backend/server.py, frontend/src/auth/AuthContext.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Reviewed against current Emergent Google Auth playbook (integration_expert). Implementation matches: web uses window.location.href redirect + hash/query session_id parse on mount; native uses WebBrowser.openAuthSessionAsync + Linking cold/hot handlers registered at mount; guarded by processedSessions Set; backend POST /auth/session exchanges session_id via X-Session-ID header at demobackend.emergentagent.com and upserts by email. App mints its own JWT (unified with email/password) instead of a user_sessions row — valid. Verified backend returns 401 for an invalid session_id. TRUE end-to-end OAuth cannot be automated (requires real Google login); email/password remains the automated path."
+
+agent_communication_batch9:
+    -agent: "main"
+    -message: "Batch #9 (Meal Planner + Recipes). TEST BACKEND: recipes CRUD (creator-only delete 403), /api/meals GET/POST(upsert replaces same day+slot)/DELETE, /api/meals/to-shopping (aggregates week's recipe ingredients into a 'Meal Plan 🍽️' shopping list, dedup, idempotent on repeat). TEST FRONTEND (use IN-APP navigation, not hard refresh): (1) More > Recipes -> shows 4 seeded recipes -> open one -> ingredients list; add-recipe-btn -> create modal -> add title + a couple ingredient rows -> Save -> lands on detail. (2) More > Meal Planner -> current week shows seeded meals (Mon dinner Rajma Chawal, Tue breakfast Masala Dosa, Wed dinner Paneer Butter Masala, Fri dinner Veg Pulao). Tap an empty slot -> recipe picker -> pick a recipe -> it fills the slot; tap clear (x) removes it; week-prev/next changes the week. (3) Tap 'meals-to-shopping' -> toast 'Added N items…' -> navigates to the Meal Plan shopping list containing the ingredients. Regression: Shopping lists still work. Account: mealdemo@fam.com / secret123 (seeded 4 recipes + a current-week meal plan). Or register fresh + Explore Sharma Family. Google Sign-In: verified vs playbook (no code change); real OAuth can't be automated — do NOT fail on it. Push/voice remain native-only."
