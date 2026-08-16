@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { AppText } from "@/src/components/ui/AppText";
 import { spacing } from "@/src/theme/tokens";
+import { api } from "@/src/lib/api";
 
 const TABS: { name: string; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { name: "index", label: "Home", icon: "home-outline", activeIcon: "home" },
@@ -21,6 +22,23 @@ const TABS: { name: string; label: string; icon: keyof typeof Ionicons.glyphMap;
 function TabBar({ state, navigation }: BottomTabBarProps) {
   const { c, scheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const [chatUnread, setChatUnread] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const tick = async () => {
+      try {
+        const chats = await api<any[]>("/chats");
+        if (active) setChatUnread(chats.reduce((s, ch) => s + (ch.unread || 0), 0));
+      } catch {}
+    };
+    tick();
+    const iv = setInterval(tick, 8000);
+    return () => {
+      active = false;
+      clearInterval(iv);
+    };
+  }, []);
 
   return (
     <View style={[styles.wrap, { paddingBottom: insets.bottom || spacing.sm }]}>
@@ -53,11 +71,20 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
             };
             return (
               <Pressable key={route.key} onPress={onPress} style={styles.tab} testID={`tab-${tab.name}`}>
-                <Ionicons
-                  name={focused ? tab.activeIcon : tab.icon}
-                  size={24}
-                  color={focused ? c.brand : c.onSurfaceTertiary}
-                />
+                <View>
+                  <Ionicons
+                    name={focused ? tab.activeIcon : tab.icon}
+                    size={24}
+                    color={focused ? c.brand : c.onSurfaceTertiary}
+                  />
+                  {tab.name === "chat" && chatUnread > 0 ? (
+                    <View style={[styles.tabBadge, { backgroundColor: c.brand, borderColor: c.surface }]} testID="chat-unread-badge">
+                      <AppText size={9} weight="bold" color="#fff">
+                        {chatUnread > 9 ? "9+" : chatUnread}
+                      </AppText>
+                    </View>
+                  ) : null}
+                </View>
                 <AppText
                   size={11}
                   weight={focused ? "bold" : "medium"}
@@ -90,4 +117,5 @@ const styles = StyleSheet.create({
   wrap: { overflow: "hidden" },
   row: { flexDirection: "row", height: 60, alignItems: "center" },
   tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 6 },
+  tabBadge: { position: "absolute", top: -5, right: -10, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
 });

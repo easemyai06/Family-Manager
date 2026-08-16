@@ -999,6 +999,12 @@ async def home(user: dict = Depends(get_current_user)):
     for l in shopping:
         shopping_pending += await db.shopping_items.count_documents({"list_id": l["list_id"], "checked": False})
 
+    unread_messages = 0
+    if mine:
+        my_chats = await db.chats.find({"family_id": fid, "member_ids": mine["member_id"]}, {"_id": 0}).to_list(200)
+        for ch in my_chats:
+            unread_messages += await _unread_count(ch["chat_id"], mine["member_id"])
+
     return {
         "family": fam,
         "me": mine,
@@ -1009,7 +1015,235 @@ async def home(user: dict = Depends(get_current_user)):
         "unseen_affection": unseen_affection,
         "recent_posts": recent_posts,
         "shopping_pending": shopping_pending,
+        "unread_messages": unread_messages,
     }
+
+
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
+class ChatIn(BaseModel):
+    type: str = "direct"           # direct | group
+    member_ids: List[str] = []
+    name: Optional[str] = None
+
+
+class MessageIn(BaseModel):
+    text: Optional[str] = None
+    media: List[MediaItem] = []
+    reply_to: Optional[str] = None
+    type: str = "text"             # text | image | affection
+    affection_key: Optional[str] = None
+
+
+async def get_last_read(chat_id: str, member_id: str) -> Optional[str]:
+    r = await db.chat_reads.find_one({"chat_id": chat_id, "member_id": member_id}, {"_id": 0})
+    return r["last_read_at"] if r else None
+
+
+async def _unread_count(chat_id: str, member_id: str) -> int:
+    lr = await get_last_read(chat_id, member_id)
+    q = {"chat_id": chat_id, "sender_member_id": {"$ne": member_id}}
+    if lr:
+        q["created_at"] = {"$gt": lr}
+    return await db.messages.count_documents(q)
+
+
+async def hydrate_chat(chat: dict, mine: dict) -> dict:
+    members = []
+    for mid in chat.get("member_ids", []):
+        m = await db.members.find_one({"member_id": mid}, {"_id": 0})
+        if m:
+            members.append(m)
+    display_name = chat.get("name")
+    avatar = None
+    color = "#D98E5A"
+    if chat["type"] == "direct":
+        other = next((m for m in members if m["member_id"] != mine["member_id"]), None)
+        display_name = other["name"] if other else "Chat"
+        avatar = other["photo_url"] if other else None
+        color = other["color"] if other else "#FF6B6B"
+    elif chat["type"] == "family":
+        display_name = display_name or "Family Chat"
+        color = "#FF6B6B"
+    else:
+        display_name = display_name or "Group"
+    out = clean(dict(chat))
+    out["members"] = members
+    out["display_name"] = display_name
+    out["avatar"] = avatar
+    out["color"] = color
+    out["unread"] = await _unread_count(chat["chat_id"], mine["member_id"])
+    return out
+
+
+async def ensure_family_chat(fid: str, mine: dict) -> dict:
+    fam_chat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if not fam_chat:
+        members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+        fam_chat = {
+            "chat_id": new_id("chat_"), "family_id": fid, "type": "family", "name": None,
+            "member_ids": [m["member_id"] for m in members], "created_by": mine["member_id"],
+            "last_message": None, "created_at": now_iso(),
+        }
+        await db.chats.insert_one(fam_chat)
+    else:
+        # keep the family chat in sync with any newly added members
+        members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+        all_ids = [m["member_id"] for m in members]
+        if set(all_ids) != set(fam_chat.get("member_ids", [])):
+            await db.chats.update_one({"chat_id": fam_chat["chat_id"]}, {"$set": {"member_ids": all_ids}})
+            fam_chat["member_ids"] = all_ids
+    return fam_chat
+
+
+async def _require_chat(chat_id: str, fid: str, mine: dict) -> dict:
+    chat = await db.chats.find_one({"chat_id": chat_id, "family_id": fid}, {"_id": 0})
+    if not chat or mine["member_id"] not in chat.get("member_ids", []):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return chat
+
+
+@api.get("/chats")
+async def list_chats(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        return []
+    await ensure_family_chat(fid, mine)
+    chats = await db.chats.find({"family_id": fid, "member_ids": mine["member_id"]}, {"_id": 0}).to_list(200)
+    hyd = [await hydrate_chat(ch, mine) for ch in chats]
+    hyd.sort(key=lambda c: (c.get("last_message") or {}).get("created_at", "") or c["created_at"], reverse=True)
+    return hyd
+
+
+@api.post("/chats")
+async def create_chat(body: ChatIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    ids = sorted(set(body.member_ids) | {mine["member_id"]})
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="Pick at least one person")
+    if body.type == "direct" and len(ids) == 2:
+        existing = await db.chats.find_one(
+            {"family_id": fid, "type": "direct", "member_ids": {"$all": ids, "$size": 2}}, {"_id": 0})
+        if existing:
+            return await hydrate_chat(existing, mine)
+    chat = {
+        "chat_id": new_id("chat_"), "family_id": fid,
+        "type": "direct" if (body.type == "direct" and len(ids) == 2) else "group",
+        "name": body.name if body.type != "direct" else None,
+        "member_ids": ids, "created_by": mine["member_id"], "last_message": None, "created_at": now_iso(),
+    }
+    await db.chats.insert_one(chat)
+    return await hydrate_chat(chat, mine)
+
+
+@api.get("/chats/{chat_id}")
+async def get_chat(chat_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    chat = await _require_chat(chat_id, fid, mine)
+    return await hydrate_chat(chat, mine)
+
+
+@api.get("/chats/{chat_id}/messages")
+async def get_messages(chat_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    msgs = await db.messages.find({"chat_id": chat_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    for m in msgs:
+        m["sender"] = await db.members.find_one({"member_id": m["sender_member_id"]}, {"_id": 0})
+    reads = {}
+    async for r in db.chat_reads.find({"chat_id": chat_id}, {"_id": 0}):
+        reads[r["member_id"]] = r["last_read_at"]
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=6)).isoformat()
+    typing = []
+    async for tdoc in db.typing.find({"chat_id": chat_id, "at": {"$gte": cutoff}}, {"_id": 0}):
+        if tdoc["member_id"] != mine["member_id"]:
+            tm = await db.members.find_one({"member_id": tdoc["member_id"]}, {"_id": 0})
+            if tm:
+                typing.append(tm)
+    return {"messages": msgs, "reads": reads, "typing": typing}
+
+
+@api.post("/chats/{chat_id}/messages")
+async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    chat = await _require_chat(chat_id, fid, mine)
+
+    reply_preview = None
+    if body.reply_to:
+        r = await db.messages.find_one({"message_id": body.reply_to}, {"_id": 0})
+        if r:
+            rs = await db.members.find_one({"member_id": r["sender_member_id"]}, {"_id": 0})
+            snippet = r.get("text") or ("📷 Photo" if r.get("media") else "❤️")
+            reply_preview = {"name": rs["name"] if rs else "", "text": snippet}
+
+    msg = {
+        "message_id": new_id("msg_"), "chat_id": chat_id, "family_id": fid,
+        "sender_member_id": mine["member_id"], "text": body.text, "media": [m.dict() for m in body.media],
+        "type": body.type, "affection_key": body.affection_key, "reply_to": body.reply_to,
+        "reply_preview": reply_preview, "created_at": now_iso(),
+    }
+    await db.messages.insert_one(msg)
+
+    if body.type == "affection" and body.affection_key:
+        preview = AFFECTION_LABELS.get(body.affection_key, "❤️")
+    elif body.media:
+        preview = body.text or "📷 Photo"
+    else:
+        preview = body.text or ""
+    await db.chats.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"last_message": {"text": preview, "sender": mine["name"], "created_at": msg["created_at"], "type": body.type}}},
+    )
+    # sender has implicitly read their own message
+    await db.chat_reads.update_one(
+        {"chat_id": chat_id, "member_id": mine["member_id"]},
+        {"$set": {"last_read_at": msg["created_at"]}}, upsert=True)
+
+    # Chat → Affection: also record affection for recipients so it shows in the
+    # Love timeline and triggers their received-love overlay.
+    if body.type == "affection" and body.affection_key:
+        for mid in chat.get("member_ids", []):
+            if mid == mine["member_id"]:
+                continue
+            await db.affections.insert_one({
+                "affection_id": new_id("aff_"), "family_id": fid, "from_member_id": mine["member_id"],
+                "to_member_id": mid, "type": body.affection_key, "message": body.text,
+                "is_family": chat["type"] != "direct", "seen": False, "created_at": msg["created_at"],
+            })
+
+    msg = clean(msg)
+    msg["sender"] = mine
+    return msg
+
+
+@api.post("/chats/{chat_id}/read")
+async def mark_chat_read(chat_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    await db.chat_reads.update_one(
+        {"chat_id": chat_id, "member_id": mine["member_id"]},
+        {"$set": {"last_read_at": now_iso()}}, upsert=True)
+    return {"ok": True}
+
+
+@api.post("/chats/{chat_id}/typing")
+async def set_typing(chat_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    await db.typing.update_one(
+        {"chat_id": chat_id, "member_id": mine["member_id"]},
+        {"$set": {"at": now_iso()}}, upsert=True)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -1240,6 +1474,50 @@ async def seed_demo(user: dict = Depends(get_current_user)):
             "to_member_id": mem_ids[to], "type": typ, "message": None, "is_family": False,
             "seen": True, "created_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
         })
+
+    # ---- chats ----
+    all_ids = list(mem_ids.values())
+    fam_chat_id = new_id("chat_")
+    await db.chats.insert_one({
+        "chat_id": fam_chat_id, "family_id": fid, "type": "family", "name": None,
+        "member_ids": all_ids, "created_by": mem_ids["Raj"], "last_message": None,
+        "created_at": now_iso(),
+    })
+    fam_msgs = [
+        ("Priya", "Who's picking up Aarav from football today? 🏈", 180),
+        ("Raj", "I've got it 👍", 175),
+        ("Meera", "Dinner will be ready by 8 ❤️", 90),
+        ("Anaya", "Yaaay rajma rice! 🍚", 60),
+    ]
+    last = None
+    for frm, txt, mins in fam_msgs:
+        created = (datetime.now(timezone.utc) - timedelta(minutes=mins)).isoformat()
+        await db.messages.insert_one({
+            "message_id": new_id("msg_"), "chat_id": fam_chat_id, "family_id": fid,
+            "sender_member_id": mem_ids[frm], "text": txt, "media": [], "type": "text",
+            "affection_key": None, "reply_to": None, "reply_preview": None, "created_at": created,
+        })
+        last = {"text": txt, "sender": frm, "created_at": created, "type": "text"}
+    await db.chats.update_one({"chat_id": fam_chat_id}, {"$set": {"last_message": last}})
+
+    # a direct chat Priya <-> Raj
+    direct_id = new_id("chat_")
+    await db.chats.insert_one({
+        "chat_id": direct_id, "family_id": fid, "type": "direct", "name": None,
+        "member_ids": sorted([mem_ids["Raj"], mem_ids["Priya"]]), "created_by": mem_ids["Priya"],
+        "last_message": None, "created_at": now_iso(),
+    })
+    direct_msgs = [("Priya", "Can you grab milk on the way home?", 200), ("Raj", "Sure! Anything else?", 195), ("Priya", "Just milk, thank you love ❤️", 190)]
+    last = None
+    for frm, txt, mins in direct_msgs:
+        created = (datetime.now(timezone.utc) - timedelta(minutes=mins)).isoformat()
+        await db.messages.insert_one({
+            "message_id": new_id("msg_"), "chat_id": direct_id, "family_id": fid,
+            "sender_member_id": mem_ids[frm], "text": txt, "media": [], "type": "text",
+            "affection_key": None, "reply_to": None, "reply_preview": None, "created_at": created,
+        })
+        last = {"text": txt, "sender": frm, "created_at": created, "type": "text"}
+    await db.chats.update_one({"chat_id": direct_id}, {"$set": {"last_message": last}})
 
     return {"family": clean(fam), "message": "Demo family created"}
 

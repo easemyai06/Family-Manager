@@ -44,14 +44,18 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - To-Dos: multiple lists, tasks w/ priority + assignee, toggle, add/delete.
 - More: navigation hub, invite code, appearance (light/dark/system), logout.
 - Demo seed: Sharma family w/ members, posts+reactions+comments, stories, events, chores, shopping,
-  to-dos, affection + love timeline.
-- Tested: 32/32 backend pytest pass; frontend flows verified.
+  to-dos, affection + love timeline, and chat (family group + a direct chat).
+- Chat: conversation list w/ unread badges + Chat-tab aggregate badge; family/direct/custom-group
+  conversations; text, photo, reply, and affection-in-chat messages; typing indicators; read
+  receipts (Sent/Seen/Seen by N); near-real-time via polling; Chat→Affection link (chat love shows
+  in Love timeline + recipient overlay); unread_messages surfaced on Home.
+- Tested: 32/32 (v1) + 13/13 (chat) backend tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
-- Private Chat: 1:1, family group, custom groups (text, media, voice, reactions, typing/read status).
 - Our Family Story: family timeline + individual life timelines + milestones + memory vault + On This Day.
 - Family Tree (interactive) + generational timeline.
+- Chat additions: voice notes (needs native build), message reactions, pinned messages, group management.
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.
