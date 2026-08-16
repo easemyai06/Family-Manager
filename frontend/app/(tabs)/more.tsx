@@ -28,10 +28,12 @@ const ORGANIZE: Row[] = [
 ];
 
 const REMEMBER: Row[] = [
-  { key: "albums", label: "Family Albums", icon: "images", color: "#FF6B6B", soon: true },
+  { key: "highlights", label: "Weekly Highlights", icon: "sparkles", color: "#FFB84D", route: "/highlights" },
   { key: "timeline", label: "Our Family Story", icon: "time", color: "#D98E5A", route: "/timeline" },
-  { key: "tree", label: "Family Tree", icon: "git-network", color: "#8AB07D", route: "/tree" },
-  { key: "capsule", label: "Time Capsules", icon: "cube", color: "#B5835A", soon: true },
+  { key: "places", label: "Places We've Been", icon: "map", color: "#8AB07D", route: "/places" },
+  { key: "tree", label: "Family Tree", icon: "git-network", color: "#7FA9C9", route: "/tree" },
+  { key: "capsule", label: "Time Capsules", icon: "cube", color: "#B5835A", route: "/capsule" },
+  { key: "albums", label: "Family Albums", icon: "images", color: "#FF6B6B", soon: true },
 ];
 
 export default function More() {

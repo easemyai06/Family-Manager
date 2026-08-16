@@ -16,16 +16,20 @@ export default function Timeline() {
   const { c } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ member?: string; name?: string; category?: string; year?: string }>();
+  const params = useLocalSearchParams<{ member?: string; name?: string; category?: string; year?: string; location?: string }>();
   const [items, setItems] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>(params.category || "All");
 
   const load = useCallback(async () => {
     try {
-      const q = params.member ? `?member_id=${params.member}` : "";
+      const q = params.member
+        ? `?member_id=${params.member}`
+        : params.location
+        ? `?location=${encodeURIComponent(params.location)}`
+        : "";
       setItems(await api(`/timeline${q}`));
     } catch {}
-  }, [params.member]);
+  }, [params.member, params.location]);
 
   useFocusEffect(
     useCallback(() => {
@@ -48,7 +52,7 @@ export default function Timeline() {
     return Object.entries(byYear).sort((a, b) => b[0].localeCompare(a[0]));
   }, [items, filter, params.year]);
 
-  const title = params.member ? `${params.name || "My"} Story` : "Our Family Story";
+  const title = params.member ? `${params.name || "My"} Story` : params.location ? (params.name || params.location) : "Our Family Story";
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
@@ -66,7 +70,7 @@ export default function Timeline() {
               {items.length} memories preserved
             </AppText>
           </View>
-          {!params.member ? (
+          {!params.member && !params.location ? (
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <Pressable onPress={() => router.push("/timeline/yearbook")} hitSlop={10} style={[styles.vaultBtn, { backgroundColor: c.brandTertiary }]} testID="open-yearbook">
                 <Ionicons name="book" size={18} color={c.brand} />

@@ -114,6 +114,7 @@ function RootNav() {
         <Stack.Screen name="affection/send" options={{ presentation: "modal" }} />
         <Stack.Screen name="event/create" options={{ presentation: "modal" }} />
         <Stack.Screen name="timeline/create" options={{ presentation: "modal" }} />
+        <Stack.Screen name="capsule/create" options={{ presentation: "modal" }} />
       </Stack>
     </>
   );

@@ -219,6 +219,24 @@ export default function Home() {
         ) : null}
       </View>
 
+      {/* sunday highlights */}
+      {new Date().getDay() === 0 ? (
+        <Pressable onPress={() => router.push("/highlights")} style={styles.section} testID="sunday-highlights">
+          <LinearGradient colors={["#FF9E9E", "#FF6B6B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.sundayCard}>
+            <AppText size={26}>✨</AppText>
+            <View style={{ flex: 1 }}>
+              <AppText family="display" weight="bold" size={15} color="#fff">
+                This Week's Highlights
+              </AppText>
+              <AppText size={12} color="rgba(255,255,255,0.9)">
+                See what your family got up to this week
+              </AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#fff" />
+          </LinearGradient>
+        </Pressable>
+      ) : null}
+
       {/* on this day */}
       {home?.on_this_day?.length ? (
         <View style={styles.section}>
@@ -376,6 +394,7 @@ const styles = StyleSheet.create({
   otdHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   otdCard: { width: 160, borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   otdImg: { width: "100%", height: 96, backgroundColor: "#EAE4D9", alignItems: "center", justifyContent: "center" },
+  sundayCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
   todayCard: { borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1 },
   statRow: { flexDirection: "row", gap: spacing.sm },
   statChip: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 8, flex: 1, justifyContent: "center" },

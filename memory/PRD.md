@@ -63,16 +63,22 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Birthday Wishes: written wish + emoji, wishes stack on the birthday person's celebration screen
   (opened from Home birthday banner + member profile).
 - Group chat cover photo: set/change from the group manage screen; shows in chat list + header.
+- Time Capsules: write a message (+ optional photos) to the whole family that stays sealed until a
+  future unlock date; locked content is hidden until then; author can delete; push on unlock.
+- Weekly Highlights: warm 7-day recap (posts, memories, birthday wishes, love sent, most-active
+  member, new memories) — Sunday card on Home + a screen in More.
+- Places We've Been: memories grouped by location into a visual grid; tap a place → its memories.
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
-  Day" reminder (daily 08:00 UTC loop, deduped) + new-message push + birthday-wish push. Requires
-  user to add Firebase google-services.json and Publish+build to work; EMERGENT_PUSH_KEY is a
-  deploy-injected placeholder.
+  Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
+  birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
+  EMERGENT_PUSH_KEY is a deploy-injected placeholder.
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
-  + 10/10 (tree+birthday+memory-reactions+group-photo) backend tests pass; frontend flows verified.
+  + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places) backend
+  tests pass; frontend flows verified.
 
 ## Backlog (prioritized)
 ### P0 (next)
-- Time Capsules (write a message to open on a future date).
+- Family Albums (shared photo albums per event/trip).
 ### P1
 - Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
 - Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.

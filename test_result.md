@@ -387,3 +387,78 @@ frontend_batch5:
 agent_communication_batch5:
     -agent: "main"
     -message: "Batch #5 complete. TEST BACKEND: memory react toggle + comments; birthday wishes GET/POST; group PATCH photo_url. TEST FRONTEND: (1) More > Family Tree renders generations, tap a node -> member profile; (2) member profile 'Birthday Wishes' + Home birthday banner -> birthday screen, pick emoji + send a wish -> appears in feed; (3) memory detail love toggle + add a note (already screenshot-verified, please retest interaction); (4) create/open a custom group -> gear -> manage -> set a group photo -> save -> photo shows in chat list + header. Account: storytester@fam.com / secret123 (has 9 memories + members Raj/Priya/Aarav/Anaya/Meera). Note: Home birthday banner only appears if a birthday is within the upcoming window; use member profile button to reach Birthday Wishes reliably. Push/voice remain native-only (don't fail on web)."
+
+# ============ Feature Batch #6 (Time Capsules / Weekly Highlights / Places view) ============
+backend_batch6:
+  - task: "Time Capsules CRUD + locked-content hiding + unlock push"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/capsules (locked hides message/media, returns days_until), POST /api/capsules {message, media, unlock_date} (any member; unlock_date must be future -> 400 otherwise), GET /api/capsules/{id}, DELETE (author only -> 403). Morning loop pushes family when a capsule unlocks. Seed adds 2 demo capsules (1 locked +120d, 1 unlocked -30d). Verified via curl: 2 capsules, locked message HIDDEN."
+  - task: "Weekly Highlights aggregation (/api/highlights/week)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Returns period + counts {posts, memories, wishes, loves} over last 7 days, top_poster, and mini lists of posts+memories. Verified via curl (counts + top_poster Aarav)."
+  - task: "Places grouping (/api/timeline/places) + location filter on /api/timeline"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/timeline/places groups memories by location (count + cover), declared before /timeline/{id} to avoid capture. GET /api/timeline?location= filters case-insensitive. Verified via curl (7 places)."
+
+frontend_batch6:
+  - task: "Time Capsules screens (list, create with future unlock date, detail locked/unlocked)"
+    implemented: true
+    working: true
+    file: "frontend/app/capsule/index.tsx, create.tsx, [id].tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-confirmed list shows Unlocked capsule (message) + Sealed capsule (Opens in 120 days, hidden). More > Time Capsules (no longer soon). Create: message + optional photos + unlock date presets/stepper (min tomorrow) + save-capsule-btn. Detail: locked shows countdown, unlocked shows message+photos; author can delete."
+  - task: "Weekly Highlights screen + Sunday Home card"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/highlights/index.tsx, frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Weekly Highlights opens recap (period, 4 stat cards, top poster, new memories list). Home shows a 'sunday-highlights' card ONLY on Sundays (today may not be Sunday -> card hidden is expected). Opened anytime from More."
+  - task: "Places We've Been screen + tap-through to filtered timeline"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/places/index.tsx, frontend/app/timeline/index.tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Places We've Been: 2-col grid of places (cover + count). Tapping (place-<location>) opens the timeline filtered to that location with the place name as title."
+
+agent_communication_batch6:
+    -agent: "main"
+    -message: "Batch #6 complete. TEST BACKEND: capsules GET/POST(future date required)/GET{id}/DELETE(author only); highlights/week; timeline/places + timeline?location=. TEST FRONTEND: (1) More > Time Capsules -> list (screenshot-verified) -> FAB create (message + unlock date preset/stepper) -> new locked capsule appears; open a locked capsule (countdown, message hidden) and an unlocked one (message shown). (2) More > Weekly Highlights renders stats+memories. (3) More > Places We've Been grid -> tap a place -> filtered timeline. Use capsuletester@fam.com / secret123 (freshly seeded: 8 memories across 7 places + 2 capsules). NOTE: Home Sunday-highlights card only shows on Sundays; today likely isn't Sunday so verify via More instead. Push/voice remain native-only."

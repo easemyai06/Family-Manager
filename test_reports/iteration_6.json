@@ -1,0 +1,42 @@
+{
+  "summary": "Batch #6 backend + frontend verification (Time Capsules, Weekly Highlights, Memory Map/Places). BACKEND: 11/11 tests PASSED in /app/backend/tests/test_batch6_api.py. Time Capsules — GET /api/capsules returns 2 seeded caps: locked one hides message/media (only capsule_id, unlock_date, is_locked=true, days_until, created_at, author) while unlocked one exposes message/media; POST /api/capsules with future date creates a sealed capsule (locked view returned, days_until≈45); POST with past date or today → 400; POST with empty/whitespace message → 400; GET /api/capsules/{id} of a sealed cap also hides message; DELETE by non-author (capsuletester=Raj deleting Priya's cap) → 403; DELETE by author → 200 and follow-up GET → 404. Highlights — GET /api/highlights/week returns {period{from,to}, counts{posts,memories,wishes,loves}, top_poster, posts[], memories[]} with all int counters and memory items carrying id/title/date. Places — GET /api/timeline/places returns 7 groups sorted by count desc, each with {location,count,cover}; GET /api/timeline?location=<X> filters correctly and is case-insensitive (exact / lower / upper all return same subset); unknown location returns []. FRONTEND (mobile viewport 390x844, capsuletester@fam.com/secret123): Time Capsules — More→more-capsule opens list with 2 seeded cards (Priya's Sealed 'Opens in 120 days · 14 Dec 2026' with message hidden, Raj's Unlocked with visible message); fab-add-capsule opens create screen; capsule-message-input + capsule-preset-30 + save-capsule-btn creates a new sealed capsule with 'Opens in 30 days · 15 Sep 2026' — message NOT leaked on list; tapping the new sealed capsule shows detail with 'Sealed until', '🔒', countdown, and NO message text; tapping the unlocked capsule shows 'Unlocked', 💌 hero, and full message ('A note from last month: I'm so proud of every single one of you...'). Weekly Highlights — more-highlights opens screen with 'This Week's Highlights', a period label, 4 stat cards (Posts shared / Memories added / Birthday wishes / Love sent), a 'MOST ACTIVE THIS WEEK' top-poster card, and 6 hl-memory-<id> rows; tapping hl-memory-<id> opens the memory detail (memory-love visible). Places — more-places opens 2-column grid with 7 tiles (Delhi, Delhi Public School, Home, Community Ground, Dubai, Gurgaon, Kerala); tapping place-Delhi navigates to timeline filtered by that location — header reads 'Delhi ❤️ / 2 memories preserved' and only 2 memory-<tid> cards render. REGRESSION — More→more-timeline unfiltered shows all 8 seeded memories; memory-love toggles '0 loves' → '1 love' correctly; adding a note via memory-comment-input + memory-comment-send appends memory-comment-<id> and increments to '1 note'. All batch #6 testIDs functional. NOTE: Home 'sunday-highlights' card only renders on Sundays — not tested per review-note (today is Sat).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "pointerEvents JSX prop", "issue": "Legacy console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' still emitted on RN Web (carried over from iterations 1-5). Non-blocking."},
+      {"component": "expo-notifications on web", "issue": "'Listening to push token changes is not yet fully supported on web.' — expected, push is native-only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch6_api.py",
+    "/app/test_reports/pytest/pytest_batch6_results.xml"
+  ],
+  "action_items": [
+    "None blocking for batch #6. All 3 features (Time Capsules, Weekly Highlights, Places) work end-to-end and regressions are green.",
+    "(carried from prior iterations) Optional: split server.py (now 2224 lines with capsules/places/highlights routes) into routers — capsules, highlights, timeline, chats, seed.",
+    "(carried) chat/[id].tsx: still needs loadChat() inside useFocusEffect to fix stale-header on group rename/photo — not exercised this iteration but bug from iteration_4/5 remains unresolved.",
+    "(carried) Migrate pointerEvents JSX prop → style.pointerEvents to clear RN Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2224 lines — growth from 2038 with capsules/highlights/places. Router split overdue.",
+    "CapsuleIn.message has no length cap; consider max_length via pydantic Field to prevent huge payloads.",
+    "_capsule_view compares ISO strings (`cap['unlock_date'] > date.today().isoformat()`) — works because YYYY-MM-DD sorts lexicographically, but a comment or explicit date.fromisoformat compare would be more robust.",
+    "GET /api/capsules loads every capsule's author with a per-doc query (N+1); fine for the demo (~2 caps) but should batch when families accumulate hundreds.",
+    "/highlights/week /_mini() only picks the first media element for post cover; if post.media is [] but post has no key 'media', `(p.get('media') or [{}])[0].get('url')` returns None safely — OK, but the expression is fragile; consider a helper.",
+    "GET /timeline/places has no auth-required test for empty family (only exercised via seeded demo). Not a defect but coverage gap."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch6_api.py (new — 11 tests for capsules, highlights, places)",
+    "/app/test_reports/pytest/pytest_batch6_results.xml (new — junit output)",
+    "/app/test_reports/iteration_6.json (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11 batch #6; prior 32+13+11+11+10 suites still available)", "frontend": "100% of the batch #6 flows exercised end-to-end; regression flows (unfiltered timeline, memory love/notes) also PASS"},
+  "seed_data_creation": "Backend tests register a fresh TEST_batch6_a_* user per session and seed the Sharma demo; the delete-403 test reuses the pre-seeded capsuletester@fam.com. Frontend run left 1 new sealed capsule on capsuletester's family ('TEST_batch6 UI capsule 💌', unlocks in 30 days) — the delete attempt hit Alert.alert which is not auto-confirmed on RN Web, so cleanup did not complete; safe to prune manually if needed. Also toggled love ON+OFF on the first memory and left one note 'TEST_batch6 note' on that memory. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New batch-6 testIDs verified functional: more-capsule, more-highlights, more-places, capsules-back, capsule-<capsule_id>, fab-add-capsule, close-create-capsule, capsule-message-input, capsule-preset-30 (also -182, -365, -1826), capsule-year-prev/next, capsule-month-prev/next, capsule-add-photo, capsule-remove-photo-<i>, capsule-error, save-capsule-btn, capsule-detail-back, capsule-delete, highlights-back, hl-memory-<timeline_id>, places-back, place-<location> (location string may contain spaces — Playwright selector still works via attribute matcher). Login test IDs to remember (differs from what earlier iterations logged): login-email-input, login-password-input, login-submit-btn (NOT the shortened email-input/password-input/submit-btn). Home 'sunday-highlights' card only renders on Sundays — do NOT fail if absent on weekdays. On web, capsule-delete confirm dialog uses Alert.alert which is a no-op on RN Web — the destructive action button does not auto-fire, so UI-based delete cleanup is not reliable on web (backend delete API works fine — verified in pytest).",
+  "rca_of_issue": "N/A — batch #6 passes cleanly. Only pre-existing unresolved issue (chat/[id] stale header from iteration_4) remains; that flow was not part of batch #6 review scope."
+}

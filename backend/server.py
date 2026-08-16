@@ -5,6 +5,7 @@ calendar, chores, shopping and to-do APIs backed by MongoDB, plus a rich
 demo-family seeder and Emergent Object Storage media upload/serving.
 """
 import os
+import re
 import uuid
 import asyncio
 import logging
@@ -1408,7 +1409,7 @@ async def hydrate_timeline(t: dict, my_member_id: Optional[str] = None) -> dict:
 
 @api.get("/timeline")
 async def list_timeline(user: dict = Depends(get_current_user), member_id: Optional[str] = None,
-                        category: Optional[str] = None):
+                        category: Optional[str] = None, location: Optional[str] = None):
     fid = require_family(user)
     mine = await member_for_user(user)
     my_id = mine["member_id"] if mine else None
@@ -1417,6 +1418,8 @@ async def list_timeline(user: dict = Depends(get_current_user), member_id: Optio
         q["people"] = member_id
     if category:
         q["category"] = category
+    if location:
+        q["location"] = {"$regex": f"^{re.escape(location)}$", "$options": "i"}
     events = await db.timeline.find(q, {"_id": 0}).sort("date", -1).to_list(1000)
     return [await hydrate_timeline(e, my_id) for e in events]
 
@@ -1457,6 +1460,29 @@ async def on_this_day(user: dict = Depends(get_current_user)):
         if m.get("birthday") and m["birthday"].endswith(mmdd):
             birthdays.append(m)
     return {"events": out, "birthdays": birthdays}
+
+@api.get("/timeline/places")
+async def timeline_places(user: dict = Depends(get_current_user)):
+    """Group memories by location for the 'Places we've been' view."""
+    fid = require_family(user)
+    events = await db.timeline.find(
+        {"family_id": fid, "location": {"$nin": [None, ""]}}, {"_id": 0}).sort("date", -1).to_list(2000)
+    groups: dict = {}
+    for e in events:
+        loc = (e.get("location") or "").strip()
+        if not loc:
+            continue
+        key = loc.lower()
+        g = groups.get(key)
+        if not g:
+            g = {"location": loc, "count": 0, "cover": None, "last_date": e.get("date")}
+            groups[key] = g
+        g["count"] += 1
+        if not g["cover"] and e.get("media"):
+            g["cover"] = e["media"][0].get("url")
+    return sorted(groups.values(), key=lambda x: x["count"], reverse=True)
+
+
 
 
 @api.get("/timeline/{timeline_id}")
@@ -1578,6 +1604,134 @@ async def add_wish(member_id: str, body: WishIn, user: dict = Depends(get_curren
     return w
 
 
+# ---------------------------------------------------------------------------
+# This Week's Highlights
+# ---------------------------------------------------------------------------
+@api.get("/highlights/week")
+async def weekly_highlights(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=7)).isoformat()
+
+    posts = await db.posts.find(
+        {"family_id": fid, "created_at": {"$gte": cutoff}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    memories = await db.timeline.find(
+        {"family_id": fid, "created_at": {"$gte": cutoff}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    wishes = await db.wishes.find(
+        {"family_id": fid, "created_at": {"$gte": cutoff}}, {"_id": 0}).to_list(1000)
+    loves = await db.affections.count_documents({"family_id": fid, "created_at": {"$gte": cutoff}})
+
+    # most active member by posts
+    top_poster = None
+    counts: dict = {}
+    for p in posts:
+        counts[p.get("author_member_id")] = counts.get(p.get("author_member_id"), 0) + 1
+    if counts:
+        top_id = max(counts, key=counts.get)
+        top_poster = await db.members.find_one({"member_id": top_id}, {"_id": 0})
+
+    def _mini(p):
+        return {"id": p.get("post_id"), "caption": p.get("caption"),
+                "cover": (p.get("media") or [{}])[0].get("url") if p.get("media") else None}
+
+    return {
+        "period": {"from": (now - timedelta(days=6)).date().isoformat(), "to": now.date().isoformat()},
+        "counts": {
+            "posts": len(posts), "memories": len(memories),
+            "wishes": len(wishes), "loves": loves,
+        },
+        "top_poster": top_poster,
+        "posts": [_mini(p) for p in posts[:6]],
+        "memories": [{"id": m["timeline_id"], "title": m["title"], "date": m["date"],
+                      "cover": (m.get("media") or [{}])[0].get("url") if m.get("media") else None}
+                     for m in memories[:6]],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Time Capsules
+# ---------------------------------------------------------------------------
+class CapsuleIn(BaseModel):
+    message: str
+    media: List[MediaItem] = []
+    unlock_date: str                # YYYY-MM-DD (must be in the future)
+
+
+def _capsule_view(cap: dict) -> dict:
+    """Hide the contents of a locked capsule to preserve the surprise."""
+    locked = cap["unlock_date"] > date.today().isoformat()
+    days = 0
+    if locked:
+        try:
+            d = date.fromisoformat(cap["unlock_date"])
+            days = (d - date.today()).days
+        except ValueError:
+            days = 0
+    out = {
+        "capsule_id": cap["capsule_id"], "unlock_date": cap["unlock_date"],
+        "is_locked": locked, "days_until": days, "created_at": cap.get("created_at"),
+        "author": cap.get("author"),
+    }
+    if not locked:
+        out["message"] = cap.get("message")
+        out["media"] = cap.get("media", [])
+    return out
+
+
+@api.get("/capsules")
+async def list_capsules(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    caps = await db.capsules.find({"family_id": fid}, {"_id": 0}).sort("unlock_date", 1).to_list(500)
+    for cap in caps:
+        cap["author"] = await db.members.find_one({"member_id": cap["author_member_id"]}, {"_id": 0})
+    return [_capsule_view(cap) for cap in caps]
+
+
+@api.post("/capsules")
+async def create_capsule(body: CapsuleIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Write a message for your capsule")
+    if body.unlock_date <= date.today().isoformat():
+        raise HTTPException(status_code=400, detail="Pick a future unlock date")
+    cap = {
+        "capsule_id": new_id("cap_"), "family_id": fid, "author_member_id": mine["member_id"],
+        "message": body.message.strip(), "media": [m.dict() for m in body.media],
+        "unlock_date": body.unlock_date, "created_at": now_iso(),
+    }
+    await db.capsules.insert_one(cap)
+    cap = clean(cap)
+    cap["author"] = mine
+    return _capsule_view(cap)
+
+
+@api.get("/capsules/{capsule_id}")
+async def get_capsule(capsule_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    cap = await db.capsules.find_one({"capsule_id": capsule_id, "family_id": fid}, {"_id": 0})
+    if not cap:
+        raise HTTPException(status_code=404, detail="Capsule not found")
+    cap["author"] = await db.members.find_one({"member_id": cap["author_member_id"]}, {"_id": 0})
+    return _capsule_view(cap)
+
+
+@api.delete("/capsules/{capsule_id}")
+async def delete_capsule(capsule_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    cap = await db.capsules.find_one({"capsule_id": capsule_id, "family_id": fid}, {"_id": 0})
+    if not cap:
+        raise HTTPException(status_code=404, detail="Capsule not found")
+    if mine and cap["author_member_id"] != mine["member_id"]:
+        raise HTTPException(status_code=403, detail="Only the author can delete this capsule")
+    await db.capsules.delete_one({"capsule_id": capsule_id})
+    return {"ok": True}
+
+
+
 
 # ---------------------------------------------------------------------------
 # Media upload / serve
@@ -1667,31 +1821,48 @@ async def run_morning_reminders():
     families = await db.families.find({}, {"_id": 0}).to_list(5000)
     for fam in families:
         fid = fam["family_id"]
-        log_key = f"otd:{fid}:{today.isoformat()}"
-        if await db.push_log.find_one({"key": log_key}):
-            continue
-        events = await db.timeline.find(
-            {"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(20)
-        if not events:
-            continue
-        top = events[0]
-        try:
-            yrs = today.year - int(top["date"][:4])
-        except ValueError:
-            yrs = 0
         members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
         recipients = [m["linked_user_id"] for m in members if m.get("linked_user_id")]
-        when = f"{yrs} year{'s' if yrs != 1 else ''} ago today" if yrs > 0 else "today"
-        title = "On This Day ✨"
-        extra = f" (+{len(events) - 1} more)" if len(events) > 1 else ""
-        message = f"{when}: {top['title']}{extra}. Tap to relive this memory."
-        try:
-            await send_push(recipients, {"title": title, "message": message,
-                                         "action_url": f"/timeline/{top['timeline_id']}"},
-                            idempotency_key=log_key)
-        except Exception as e:
-            logger.warning(f"morning reminder push failed for {fid} (non-blocking): {e}")
-        await db.push_log.insert_one({"key": log_key, "created_at": now_iso()})
+
+        # On This Day memory
+        otd_key = f"otd:{fid}:{today.isoformat()}"
+        if not await db.push_log.find_one({"key": otd_key}):
+            events = await db.timeline.find(
+                {"family_id": fid, "date": {"$regex": f"{mmdd}$"}}, {"_id": 0}).sort("date", -1).to_list(20)
+            if events:
+                top = events[0]
+                try:
+                    yrs = today.year - int(top["date"][:4])
+                except ValueError:
+                    yrs = 0
+                when = f"{yrs} year{'s' if yrs != 1 else ''} ago today" if yrs > 0 else "today"
+                extra = f" (+{len(events) - 1} more)" if len(events) > 1 else ""
+                message = f"{when}: {top['title']}{extra}. Tap to relive this memory."
+                try:
+                    await send_push(recipients, {"title": "On This Day ✨", "message": message,
+                                                 "action_url": f"/timeline/{top['timeline_id']}"},
+                                    idempotency_key=otd_key)
+                except Exception as e:
+                    logger.warning(f"morning reminder push failed for {fid} (non-blocking): {e}")
+                await db.push_log.insert_one({"key": otd_key, "created_at": now_iso()})
+
+        # Time capsules unlocking today
+        caps = await db.capsules.find(
+            {"family_id": fid, "unlock_date": today.isoformat()}, {"_id": 0}).to_list(100)
+        for cap in caps:
+            cap_key = f"cap:{cap['capsule_id']}"
+            if await db.push_log.find_one({"key": cap_key}):
+                continue
+            author = await db.members.find_one({"member_id": cap["author_member_id"]}, {"_id": 0})
+            try:
+                await send_push(recipients, {
+                    "title": "A time capsule just unlocked ⏳",
+                    "message": f"{(author or {}).get('name', 'Someone')} left the family a message. Tap to open it.",
+                    "action_url": f"/capsule/{cap['capsule_id']}",
+                }, idempotency_key=cap_key)
+            except Exception as e:
+                logger.warning(f"capsule push failed for {fid} (non-blocking): {e}")
+            await db.push_log.insert_one({"key": cap_key, "created_at": now_iso()})
 
 
 async def morning_reminder_loop():
@@ -1946,6 +2117,20 @@ async def seed_demo(user: dict = Depends(get_current_user)):
             "people": [mem_ids[p] for p in ppl], "media": [{"url": img, "type": "image"}] if img else [],
             "importance": imp, "created_by": mem_ids["Raj"], "created_at": now_iso(),
         })
+
+    # ---- time capsules ----
+    await db.capsules.insert_one({
+        "capsule_id": new_id("cap_"), "family_id": fid, "author_member_id": mem_ids["Priya"],
+        "message": "To my darling family — by the time this opens I hope Aarav has aced his exams and we've had our beach holiday. Never forget how much I love you all. ❤️",
+        "media": [], "unlock_date": (today + timedelta(days=120)).isoformat(), "created_at": now_iso(),
+    })
+    await db.capsules.insert_one({
+        "capsule_id": new_id("cap_"), "family_id": fid, "author_member_id": mem_ids["Raj"],
+        "message": "A note from last month: I'm so proud of every single one of you. Here's to many more adventures together! 🥂",
+        "media": [{"url": IMG["post4"], "type": "image"}],
+        "unlock_date": (today - timedelta(days=30)).isoformat(), "created_at": now_iso(),
+    })
+
 
     # ---- chats ----
     all_ids = list(mem_ids.values())
