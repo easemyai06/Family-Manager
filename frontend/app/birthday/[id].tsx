@@ -76,6 +76,23 @@ export default function BirthdayWishes() {
         </LinearGradient>
 
         <View style={{ padding: spacing.lg, gap: spacing.md }}>
+          <Pressable
+            onPress={() => router.push(`/wishlist/${id}`)}
+            style={[styles.wishlistLink, { backgroundColor: c.brandTertiary }]}
+            testID="birthday-wishlist-link"
+          >
+            <AppText size={22}>🎁</AppText>
+            <View style={{ flex: 1 }}>
+              <AppText family="display" weight="bold" size={15} color={c.brand}>
+                See {m.name}'s Wishlist
+              </AppText>
+              <AppText size={12} color={c.onSurfaceSecondary}>
+                Find the perfect gift
+              </AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={c.brand} />
+          </Pressable>
+
           {wishes.length === 0 ? (
             <View style={styles.empty}>
               <AppText size={34}>💌</AppText>
@@ -142,6 +159,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", paddingBottom: spacing.xl, borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
   back: { position: "absolute", left: spacing.lg, width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center" },
   empty: { alignItems: "center", paddingVertical: spacing["3xl"] },
+  wishlistLink: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md },
   card: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start", borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   composerWrap: { borderTopWidth: 1, paddingTop: spacing.sm },

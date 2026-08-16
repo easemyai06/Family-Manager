@@ -81,6 +81,15 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   them to Breakfast/Lunch/Dinner slots across a Mon–Sun week (week switcher). One tap "Add to
   Shopping" aggregates every planned recipe's ingredients into a de-duped "Meal Plan 🍽️"
   shopping list (idempotent). More > Recipes + More > Meal Planner.
+- Wish Lists & Gift Planning (CELEBRATE & WISH pillar): every member has "My Wishlist" + a shared
+  "Family Wishlist"; items carry photo, product link, price, store, size, colour, notes, priority
+  (1–3), occasion, category and per-item visibility (Family / Parents / Grandparents / Selected).
+  Secret Gift Mode: adults privately reserve ("I'm Getting This 🎁") to avoid duplicate gifts —
+  reservation + buyer are hidden from the wish owner/children unless revealed, while other adults
+  see who reserved; statuses Wished/Reserved/Purchased/Received; private adult-only gift-planning
+  notes per item. Linked from the birthday screen. More reorganized into 6 pillars (Connect /
+  Organize / Remember / Preserve / Celebrate & Wish / Protect); Family Vault + Emergency Center
+  are "Soon" placeholders (Phases B & C).
 - Push notifications (Emergent-managed relay): device token registration (native), morning "On This
   Day" reminder + capsule-unlock reminder (daily 08:00 UTC loop, deduped) + new-message push +
   birthday-wish push. Requires user to add Firebase google-services.json and Publish+build to work;
@@ -88,25 +97,27 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Tested: 32/32 (v1) + 13/13 (chat) + 11/11 (story+reactions+voice) + 11/11 (pin+group+push)
   + 10/10 (tree+birthday+memory-reactions+group-photo) + 11/11 (capsules+highlights+places)
   + 17/17 (rewards+albums+search) + 10/10 (weekly-winner+search-everywhere)
-  + 13/13 (meal-planner+recipes) backend tests pass; frontend flows verified.
+  + 13/13 (meal-planner+recipes) + 16/16 (wish-lists+secret-gift-mode) backend tests pass;
+  frontend flows verified.
 - Google Sign-In: verified against the current Emergent Google Auth playbook (web redirect +
   hash/query session_id parse; native WebBrowser + Linking cold/hot handlers; backend
   /auth/session exchanges session_id via X-Session-ID and mints the app JWT). Real OAuth can't
   be automated; email/password is the automated test path.
 
 ## Backlog (prioritized)
-### P0 (next)
-- (open — awaiting next user direction)
+### P0 (next) — PROTECT pillar (from the big 67–85 spec; Phase A Wishlists done)
+- Phase B — Family Vault & Documents (items 70–72, 81–82): insurance policies + important
+  documents in folders, expiry reminders (30/60/90/6mo), per-item "who can see" permissions,
+  biometric/PIN lock to open the Vault (MVP: private permission-controlled storage, not E2E).
+- Phase C — Emergency Center & SOS (items 73–80, 83–84): emergency contacts + SOS numbers
+  (big Call buttons, ⭐Critical pinned), Emergency Instructions, Family Emergency Plan, Medical
+  Card per member, Emergency Quick-Access screen, SOS button (alert family + in-app alert +
+  tap-to-call + share current location), Emergency Access delegation. NOTE: location/calling/
+  biometric only fully work on a native build (not Expo Go/web) — user acknowledged.
+- Phase A follow-ups (optional): scheduled/auto birthday wishlist surfacing; gift-planning as a
+  full private chat thread (currently per-item adult-only notes).
 ### P1
-- Meal Planner + Recipes (recipe → meal → shopping links); Family Albums.
-- Birthdays: scheduled wishes + celebration screen; RSVP + recurring events; external calendar sync.
-- Family Rewards (stars → rewards), notifications center.
+- Birthdays: scheduled wishes; RSVP + recurring events; external calendar sync. Notifications center.
 ### P2
-- Time Capsules, Future Letters, Family Yearbook.
-- AI: event import (screenshot/paste), recipe creator, meal planner, family memory assistant, timeline suggestions.
-- Universal search, admin panel (roles/permissions/devices), accessibility polish.
-
-## Next tasks
-1. Build Private Chat (backend messages/threads + real-time + UI).
-2. Build Our Family Story (timeline + milestones + On This Day) linking existing posts/events/albums.
-3. Add Meal Planner + Recipes with shopping-list integration.
+- Future Letters. AI: event import (screenshot/paste), recipe creator, memory assistant, timeline suggestions.
+- Admin panel (roles/permissions/devices), accessibility polish.

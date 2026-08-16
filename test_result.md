@@ -644,3 +644,56 @@ frontend_batch9:
 agent_communication_batch9:
     -agent: "main"
     -message: "Batch #9 (Meal Planner + Recipes). TEST BACKEND: recipes CRUD (creator-only delete 403), /api/meals GET/POST(upsert replaces same day+slot)/DELETE, /api/meals/to-shopping (aggregates week's recipe ingredients into a 'Meal Plan 🍽️' shopping list, dedup, idempotent on repeat). TEST FRONTEND (use IN-APP navigation, not hard refresh): (1) More > Recipes -> shows 4 seeded recipes -> open one -> ingredients list; add-recipe-btn -> create modal -> add title + a couple ingredient rows -> Save -> lands on detail. (2) More > Meal Planner -> current week shows seeded meals (Mon dinner Rajma Chawal, Tue breakfast Masala Dosa, Wed dinner Paneer Butter Masala, Fri dinner Veg Pulao). Tap an empty slot -> recipe picker -> pick a recipe -> it fills the slot; tap clear (x) removes it; week-prev/next changes the week. (3) Tap 'meals-to-shopping' -> toast 'Added N items…' -> navigates to the Meal Plan shopping list containing the ingredients. Regression: Shopping lists still work. Account: mealdemo@fam.com / secret123 (seeded 4 recipes + a current-week meal plan). Or register fresh + Explore Sharma Family. Google Sign-In: verified vs playbook (no code change); real OAuth can't be automated — do NOT fail on it. Push/voice remain native-only."
+
+# ============ Feature Batch #10 (Phase A: Wish Lists + Gift Planning / Secret Gift Mode + 6-pillar More reorg) ============
+backend_batch10:
+  - task: "Wish Lists CRUD + visibility rules (/api/wishlists, /wishlists/{owner}, items CRUD)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/wishlists overview (per-member visible counts + shared family count). GET /api/wishlists/{owner} (owner=member_id or 'family') returns items the viewer may see + can_add. POST /api/wishlists/{owner}/items (self or parent/admin for a member; any member for family). GET /wishlists/items/{id}, PATCH, DELETE (owner/creator/parent-admin, else 403). Visibility: family|parents|grandparents|selected enforced in _can_view_wish. Verified via curl: overview counts (Aarav 4, family 3), family items not reservable."
+  - task: "Secret Gift Mode: reserve/unreserve/status + private gift-planning notes"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /wishlists/items/{id}/reserve (adult non-owner only; 409 if already reserved by someone else; reveal flag) sets status reserved + reserved_by. hydrate_wish HIDES reservation from the wish OWNER (and children) unless reveal_buyer -> preserves surprise; other adults see 'reserved_by'. unreserve (reserver only). status (reserver only: reserved|purchased|received). GET/POST /wishlists/items/{id}/notes are ADULTS-ONLY and hidden from the owner (403). Verified via curl: reserve->status reserved, note add+list, status purchased, 2nd reserve on already-reserved -> 409, unreserve->wished. Seed: Grandma has secretly reserved Aarav's LEGO."
+
+frontend_batch10:
+  - task: "Wish List screens (hub, per-owner list, add/edit modal, item detail w/ Secret Gift Mode + notes)"
+    implemented: true
+    working: true
+    file: "frontend/app/wishlist/index.tsx, [owner].tsx, create.tsx, item/[id].tsx, frontend/src/lib/wishMeta.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Screenshot-verified: hub (Family Wishlist card + per-member cards w/ counts) and Aarav's list (items w/ price, priority stars, occasion/category chips, size/colour, and 'Meera is getting this — hidden from them 🤫' reserved bar for adult viewer). Add via add-wish-btn -> create modal (name/photo/price/store/size/colour/url + priority + occasion + category + visibility incl. 'selected' member multiselect). Item detail (wish-<id> -> /wishlist/item/<id>): product link, and for adult non-owner a Secret Gift Mode card (wish-reserve-btn + wish-reveal-toggle; when reserved by me: status steps wish-status-* + wish-unreserve-btn; private notes wish-note-input/wish-note-send). Needs full interaction retest."
+  - task: "Six-pillar More tab reorg + Wishlist on birthday screen"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/more.tsx, frontend/app/birthday/[id].tsx, frontend/app/_layout.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "More tab reorganized into 6 pillars: ❤️ Connect (Send Some Love), 📅 Organize (Shopping/To-Do/Chores/Meal Planner/Recipes), 📸 Remember (Story/Albums/Places/Highlights), 🌳 Preserve (Tree/Capsules), 🎁 Celebrate & Wish (Wish Lists=/wishlist, Family Rewards), 🛡️ Protect (Family Vault + Emergency Center = 'Soon' placeholders for later phases). Birthday screen has birthday-wishlist-link -> that member's wishlist. wishlist/create registered as modal. Screenshot-confirmed hub + Aarav list render."
+
+agent_communication_batch10:
+    -agent: "main"
+    -message: "Batch #10 = Phase A Wish Lists (items 67-69) + 6-pillar More reorg. TEST BACKEND: wishlists overview + per-owner (visibility), item CRUD (403 for non-owner non-parent), reserve/unreserve/status (409 on double-reserve; only-reserver for status/unreserve), notes (adults-only, owner 403). NOTE: in the demo only Raj (admin) is a real logged-in user; other members have no login, so owner-hiding for a CHILD can't be exercised via login — verify the LOGIC via Raj as an adult non-owner (should SEE 'reserved_by'), and trust hydrate for owner-hiding. TEST FRONTEND (in-app nav, account wishdemo@fam.com / secret123, seeded): More tab now shows 6 pillars. More > 🎁 Celebrate & Wish > Wish Lists -> hub -> open Aarav's Wishlist (4 items; LEGO shows 'Meera is getting this — hidden from them 🤫'). Open an UNRESERVED item (e.g. New Football Shoes) -> Secret Gift Mode card -> tap 'I'm Getting This 🎁' (wish-reserve-btn) -> becomes reserved, status steps appear; add a private gift note (wish-note-input + wish-note-send); tap 'I'm no longer getting this' to release. Add a wish: open My Wishlist (Dad) -> add-wish-btn -> fill name + price + pick priority/occasion/category + Save -> appears. Family Wishlist: open -> items are NOT reservable (shared goals). Birthday screen has a 'See <name>'s Wishlist' link. Push/voice native-only. Do NOT retest unrelated older features."

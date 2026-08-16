@@ -19,22 +19,51 @@ type Row = {
   soon?: boolean;
 };
 
-const ORGANIZE: Row[] = [
-  { key: "shopping", label: "Shopping Lists", icon: "cart", color: "#8AB07D", route: "/shopping" },
-  { key: "todos", label: "To-Do Lists", icon: "checkbox", color: "#A3B18A", route: "/todos" },
-  { key: "chores", label: "Kids Chores", icon: "star", color: "#FFD166", route: "/chores" },
-  { key: "meals", label: "Meal Planner", icon: "restaurant", color: "#D98E5A", route: "/meals" },
-  { key: "recipes", label: "Recipes", icon: "book", color: "#C96F4A", route: "/recipes" },
-];
-
-const REMEMBER: Row[] = [
-  { key: "rewards", label: "Family Rewards", icon: "trophy", color: "#E8A33D", route: "/rewards" },
-  { key: "highlights", label: "Weekly Highlights", icon: "sparkles", color: "#FFB84D", route: "/highlights" },
-  { key: "timeline", label: "Our Family Story", icon: "time", color: "#D98E5A", route: "/timeline" },
-  { key: "albums", label: "Family Albums", icon: "images", color: "#FF6B6B", route: "/albums" },
-  { key: "places", label: "Places We've Been", icon: "map", color: "#8AB07D", route: "/places" },
-  { key: "tree", label: "Family Tree", icon: "git-network", color: "#7FA9C9", route: "/tree" },
-  { key: "capsule", label: "Time Capsules", icon: "cube", color: "#B5835A", route: "/capsule" },
+const PILLARS: { title: string; rows: Row[] }[] = [
+  {
+    title: "❤️ Connect",
+    rows: [{ key: "affection", label: "Send Some Love", icon: "heart", color: "#E86A8C", route: "/affection/send" }],
+  },
+  {
+    title: "📅 Organize",
+    rows: [
+      { key: "shopping", label: "Shopping Lists", icon: "cart", color: "#8AB07D", route: "/shopping" },
+      { key: "todos", label: "To-Do Lists", icon: "checkbox", color: "#A3B18A", route: "/todos" },
+      { key: "chores", label: "Kids Chores", icon: "star", color: "#FFD166", route: "/chores" },
+      { key: "meals", label: "Meal Planner", icon: "restaurant", color: "#D98E5A", route: "/meals" },
+      { key: "recipes", label: "Recipes", icon: "book", color: "#C96F4A", route: "/recipes" },
+    ],
+  },
+  {
+    title: "📸 Remember",
+    rows: [
+      { key: "timeline", label: "Our Family Story", icon: "time", color: "#D98E5A", route: "/timeline" },
+      { key: "albums", label: "Family Albums", icon: "images", color: "#FF6B6B", route: "/albums" },
+      { key: "places", label: "Places We've Been", icon: "map", color: "#8AB07D", route: "/places" },
+      { key: "highlights", label: "Weekly Highlights", icon: "sparkles", color: "#FFB84D", route: "/highlights" },
+    ],
+  },
+  {
+    title: "🌳 Preserve",
+    rows: [
+      { key: "tree", label: "Family Tree", icon: "git-network", color: "#7FA9C9", route: "/tree" },
+      { key: "capsule", label: "Time Capsules", icon: "cube", color: "#B5835A", route: "/capsule" },
+    ],
+  },
+  {
+    title: "🎁 Celebrate & Wish",
+    rows: [
+      { key: "wishlist", label: "Wish Lists", icon: "gift", color: "#E86A8C", route: "/wishlist" },
+      { key: "rewards", label: "Family Rewards", icon: "trophy", color: "#E8A33D", route: "/rewards" },
+    ],
+  },
+  {
+    title: "🛡️ Protect",
+    rows: [
+      { key: "vault", label: "Family Vault", icon: "lock-closed", color: "#6B8E5A", soon: true },
+      { key: "emergency", label: "Emergency Center", icon: "medkit", color: "#E86A6A", soon: true },
+    ],
+  },
 ];
 
 export default function More() {
@@ -128,8 +157,9 @@ export default function More() {
           <Ionicons name="chevron-forward" size={20} color={c.onSurfaceTertiary} />
         </Pressable>
 
-        <Section title="Organize" rows={ORGANIZE} />
-        <Section title="Remember & Preserve" rows={REMEMBER} />
+        {PILLARS.map((p) => (
+          <Section key={p.title} title={p.title} rows={p.rows} />
+        ))}
 
         {/* invite */}
         {invite ? (

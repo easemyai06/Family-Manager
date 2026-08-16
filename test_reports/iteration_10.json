@@ -1,0 +1,44 @@
+{
+  "summary": "Batch #10 (Kids/Family Wish Lists + Secret Gift Mode + 6-pillar More reorg) tested end-to-end. Backend: 16/16 pytest cases pass. Wishlist overview returns family.count=3 and per-member counts (Aarav 4, Anaya 2, Priya 1, Raj 0, Meera 0) with is_me correctly flagged for Raj. GET /api/wishlists/{aarav} shows the LEGO item is_reserved=true, reserved_by.name='Meera', i_reserved=false for Raj, status='reserved', can_reserve=false. Family list items all have can_reserve=false and is_family=true. Item CRUD: 400 on empty name, admin (Raj) can add to any member list and to /family, PATCH edits persist and GET verifies, DELETE followed by GET returns 404. Secret Gift Mode: adult Raj reserves Aarav's Football Shoes -> i_reserved=true, status='reserved'; POST /status transitions to 'purchased', invalid status -> 400; unreserve resets to wished. Reserving own wish -> 400, reserving a family item -> 400, reserving LEGO (already Meera) -> 409, unreserving LEGO as non-reserver -> 403. Notes: adult non-owner (Raj) can GET and POST notes; empty text -> 400; both GET and POST return 403 on family items. Frontend (Expo web, iPhone SE viewport): More tab shows all 6 pillars with correct emoji headings, Family Vault/Emergency Center show 'Soon' badges and tap displays 'Family Vault is coming soon ✨' toast. Wish Lists hub renders Family Wishlist card (count 3) + 5 member cards with correct counts. Aarav's Wishlist shows 4 items, LEGO card displays reserved bar 'Meera is getting this — hidden from them 🤫' with correct status color border. Opening Football Shoes shows Secret Gift Mode card + reveal toggle + 'I'm Getting This 🎁' button; tapping reserves the item, all three status steps (wish-status-reserved/purchased/received) render, note input+send appends a note bubble, tapping 'I'm no longer getting this' releases (reserve button reappears). Family Dining Table (family item) correctly hides Secret Gift Mode card and reserve button. Create-wish flow from My Wishlist works (add-wish-btn -> modal -> name/price/priority/occasion/category/visibility chips -> save-wish-btn -> new 'TEST_Coffee Maker' item appears). Birthday screen (/birthday/{member_id}) shows 'See Aarav's Wishlist' link (birthday-wishlist-link) that routes to /wishlist/{member_id}. Fixed one bug found during testing (see rca_of_issue).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "wishlist/item/[id] — Family Dining Table",
+        "issues": [
+          "When occasion='General' and category='General', two visually identical '🎁 General' chips render side-by-side in the header. Cosmetic — consider hiding the occasion chip when it equals 'General' or deduping."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch10_wishlists.py",
+    "/app/test_reports/pytest/pytest_batch10_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Suppress the 'General' occasion chip when category is also 'General' on the wish-item detail screen to avoid duplicate chips.",
+    "(Optional / server.py hygiene) server.py is now ~3053 lines. Same recommendation as prior iterations to split into feature routers (wishlists in its own module)."
+  ],
+  "critical_code_review_comments": [
+    "Fixed: /api/seed/demo threw NameError 'all_ids is not defined' at server.py:2968 because the wish-lists seed block was inserted immediately before the family-chat seed but did not (re)compute all_ids. Added `all_ids = list(mem_ids.values())` before creating the family chat. Without this fix, EVERY fresh registration + 'Explore the Sharma Family' returns 500 and users cannot onboard — this is a P0 regression from Batch #10 that would have blocked all new users.",
+    "hydrate_wish correctly enforces Secret Gift Mode: reservation is only surfaced to (adult non-owner viewers) OR (owner when reveal_buyer=true). Children/owners see status='wished' and reserved_by=null.",
+    "wishlist visibility rules (`_can_view_wish`) handle family/parents/grandparents/selected correctly; grandparent detection is a name heuristic ('grand', 'nani', 'dadi', 'nana', 'dada') — acceptable but could be brittle if a family uses non-English relationship terms.",
+    "Notes endpoints correctly return 403 for owner, non-adults, and family items — GET and POST both share the same guard."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (inserted `all_ids = list(mem_ids.values())` before family chat seed to fix /api/seed/demo 500)",
+    "/app/backend/tests/test_batch10_wishlists.py (new — 16 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (all listed Batch #10 flows verified)"},
+  "seed_data_creation": "Two artefacts remain in Raj's wishlist on wishdemo@fam.com from UI testing: (a) a 'TEST_Coffee Maker' wish on Raj's list, and (b) one note 'Remember to gift-wrap!' on Aarav's Football Shoes (added while briefly reserving the item, then unreserving — note stays but is only visible to adult non-owner gift-givers by design). Both are TEST_-prefixed / harmless in a demo family. All pytest test data is scoped to fresh TEST_wish_<uuid>@fam.com accounts and does not touch wishdemo.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch #10 (Wish Lists + Secret Gift Mode + 6-pillar More) is stable after fixing the seed_demo NameError. Auth flow unchanged: welcome -> 'I already have an account' -> login with wishdemo@fam.com / secret123. Handle the affection overlay ('Tap to close') before touching testIDs on Home. Direct page.goto() on a subpath (e.g. /birthday/{id}) causes a 401 because the auth token/state is dropped on hard reload — use `window.history.pushState + popstate` (SPA nav) or in-app router to preserve auth. All occasion/category testIDs are Capitalised: `wish-occasion-Birthday`, `wish-category-Gadgets`, etc.",
+  "rca_of_issue": "BUG (fixed): server.py `seed_demo` referenced `all_ids` at line 2968 (family-chat seed) but the variable was never defined in that function scope. When Batch #10 inserted the wish-lists seed block before the family-chat block, it removed/replaced a line that used to assign `all_ids = list(mem_ids.values())`. Symptom: POST /api/seed/demo returned 500 Internal Server Error with `NameError: name 'all_ids' is not defined` in the backend logs, breaking new-user onboarding via 'Explore the Sharma Family'. Reproduction: register any new account -> POST /api/seed/demo -> 500. Fix: added `all_ids = list(mem_ids.values())` immediately before `fam_chat_id = new_id('chat_')` at server.py:~2964. After restart, both new-user seeding and every dependent chat/story/etc. flow works, and Batch #10 tests (which register fresh users) went from 14/16 -> 16/16."
+}

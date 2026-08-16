@@ -295,6 +295,35 @@ class MealToShoppingIn(BaseModel):
     list_id: Optional[str] = None
 
 
+class WishItemIn(BaseModel):
+    name: str
+    photo_url: Optional[str] = None
+    product_url: Optional[str] = None
+    price: Optional[str] = None
+    store: Optional[str] = None
+    size: Optional[str] = None
+    color: Optional[str] = None
+    notes: Optional[str] = None
+    priority: int = 2                       # 1=nice, 2=would love, 3=really want
+    occasion: Optional[str] = None          # Birthday | Christmas | Diwali | Eid | ...
+    category: Optional[str] = None          # Toys | Books | Experience | ...
+    visibility: str = "family"              # family | parents | grandparents | selected
+    visible_member_ids: List[str] = []
+
+
+class WishReserveIn(BaseModel):
+    reveal: bool = False
+
+
+class WishStatusIn(BaseModel):
+    status: str                             # reserved | purchased | received | wished
+
+
+class WishNoteIn(BaseModel):
+    text: str
+
+
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -2165,6 +2194,293 @@ async def global_search(q: str, user: dict = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Wish Lists & Gift Planning
+# ---------------------------------------------------------------------------
+def _is_adult(m: Optional[dict]) -> bool:
+    return bool(m and m.get("role") in ("admin", "parent", "adult"))
+
+
+def _is_grandparent(m: Optional[dict]) -> bool:
+    if not m:
+        return False
+    rel = (m.get("relationship") or "").lower()
+    return "grand" in rel or "nani" in rel or "dadi" in rel or "nana" in rel or "dada" in rel
+
+
+def _member_card(m: Optional[dict]) -> Optional[dict]:
+    if not m:
+        return None
+    return {"member_id": m.get("member_id"), "name": m.get("name"),
+            "photo_url": m.get("photo_url"), "color": m.get("color"), "relationship": m.get("relationship")}
+
+
+def _can_view_wish(item: dict, viewer: Optional[dict]) -> bool:
+    """Visibility rules for a wish item (viewer is a member of the same family)."""
+    if not viewer:
+        return False
+    if item.get("is_family"):
+        return True
+    if viewer["member_id"] == item.get("owner_member_id"):
+        return True  # owner always sees their own list
+    vis = item.get("visibility", "family")
+    if vis == "family":
+        return True
+    if vis == "parents":
+        return viewer.get("role") in ("admin", "parent")
+    if vis == "grandparents":
+        return _is_grandparent(viewer) or viewer.get("role") in ("admin", "parent")
+    if vis == "selected":
+        return viewer["member_id"] in (item.get("visible_member_ids") or [])
+    return False
+
+
+async def hydrate_wish(item: dict, viewer: Optional[dict]) -> dict:
+    is_owner = bool(viewer and viewer["member_id"] == item.get("owner_member_id"))
+    adult_viewer = _is_adult(viewer)
+    reserved_by = item.get("reserved_by_member_id")
+    reveal = bool(item.get("reveal_buyer"))
+    raw_status = item.get("status", "wished")
+
+    out = {
+        "wish_id": item["wish_id"], "owner_member_id": item.get("owner_member_id"),
+        "is_family": bool(item.get("is_family")),
+        "name": item.get("name"), "photo_url": item.get("photo_url"),
+        "product_url": item.get("product_url"), "price": item.get("price"),
+        "store": item.get("store"), "size": item.get("size"), "color": item.get("color"),
+        "notes": item.get("notes"), "priority": item.get("priority", 2),
+        "occasion": item.get("occasion"), "category": item.get("category"),
+        "visibility": item.get("visibility", "family"),
+        "visible_member_ids": item.get("visible_member_ids") or [],
+        "created_by": item.get("created_by"), "created_at": item.get("created_at"),
+    }
+
+    # Secret Gift Mode: preserve the surprise for the owner (and for children who aren't buyers).
+    show_reservation = bool(reserved_by) and ((adult_viewer and not is_owner) or (is_owner and reveal))
+    if show_reservation:
+        rb = await db.members.find_one({"member_id": reserved_by}, {"_id": 0})
+        out["status"] = raw_status
+        out["is_reserved"] = True
+        out["reserved_by"] = _member_card(rb)
+        out["i_reserved"] = bool(viewer and reserved_by == viewer["member_id"])
+    else:
+        out["status"] = "wished"
+        out["is_reserved"] = False
+        out["reserved_by"] = None
+        out["i_reserved"] = False
+    out["can_reserve"] = adult_viewer and not is_owner and not reserved_by and not out["is_family"]
+    out["can_edit"] = bool(viewer and (is_owner or viewer.get("role") in ("admin", "parent") or item.get("created_by") == viewer.get("member_id")))
+    return out
+
+
+async def _get_wish_or_404(wish_id: str, fid: str) -> dict:
+    item = await db.wish_items.find_one({"wish_id": wish_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Wish not found")
+    return item
+
+
+@api.get("/wishlists")
+async def wishlist_overview(user: dict = Depends(get_current_user)):
+    """Hub: each member's wishlist count (only items the viewer may see) + the shared family list."""
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    items = await db.wish_items.find({"family_id": fid}, {"_id": 0}).to_list(5000)
+
+    per_member = {m["member_id"]: 0 for m in members}
+    family_count = 0
+    for it in items:
+        if it.get("is_family"):
+            family_count += 1
+        elif _can_view_wish(it, viewer):
+            oid = it.get("owner_member_id")
+            if oid in per_member:
+                per_member[oid] += 1
+
+    return {
+        "members": [{"member": _member_card(m), "count": per_member.get(m["member_id"], 0),
+                     "is_me": bool(viewer and viewer["member_id"] == m["member_id"])} for m in members],
+        "family": {"count": family_count},
+    }
+
+
+@api.get("/wishlists/{owner}")
+async def wishlist_items(owner: str, user: dict = Depends(get_current_user)):
+    """owner = a member_id or the string 'family' for the shared list."""
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if owner == "family":
+        q = {"family_id": fid, "is_family": True}
+        owner_member = None
+    else:
+        q = {"family_id": fid, "owner_member_id": owner, "is_family": {"$ne": True}}
+        owner_member = await db.members.find_one({"member_id": owner, "family_id": fid}, {"_id": 0})
+        if not owner_member:
+            raise HTTPException(status_code=404, detail="Member not found")
+    docs = await db.wish_items.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    visible = [d for d in docs if d.get("is_family") or _can_view_wish(d, viewer)]
+    items = [await hydrate_wish(d, viewer) for d in visible]
+    can_add = owner == "family" or (viewer and (viewer["member_id"] == owner or viewer.get("role") in ("admin", "parent")))
+    return {"owner": owner, "owner_member": _member_card(owner_member), "is_family": owner == "family",
+            "can_add": bool(can_add), "items": items}
+
+
+@api.post("/wishlists/{owner}/items", status_code=201)
+async def add_wish(owner: str, body: WishItemIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Give the wish a name")
+    is_family = owner == "family"
+    if not is_family:
+        target = await db.members.find_one({"member_id": owner, "family_id": fid}, {"_id": 0})
+        if not target:
+            raise HTTPException(status_code=404, detail="Member not found")
+        allowed = viewer and (viewer["member_id"] == owner or viewer.get("role") in ("admin", "parent"))
+        if not allowed:
+            raise HTTPException(status_code=403, detail="You can only add to your own wishlist")
+    item = {
+        "wish_id": new_id("wish_"), "family_id": fid,
+        "owner_member_id": None if is_family else owner, "is_family": is_family,
+        "name": body.name.strip(), "photo_url": body.photo_url, "product_url": body.product_url,
+        "price": body.price, "store": body.store, "size": body.size, "color": body.color,
+        "notes": body.notes, "priority": max(1, min(3, body.priority)),
+        "occasion": body.occasion, "category": body.category,
+        "visibility": body.visibility if not is_family else "family",
+        "visible_member_ids": body.visible_member_ids or [],
+        "status": "wished", "reserved_by_member_id": None, "reveal_buyer": False,
+        "created_by": viewer["member_id"] if viewer else None, "created_at": now_iso(),
+    }
+    await db.wish_items.insert_one(item)
+    return await hydrate_wish(item, viewer)
+
+
+@api.get("/wishlists/items/{wish_id}")
+async def get_wish(wish_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    if not (item.get("is_family") or _can_view_wish(item, viewer)):
+        raise HTTPException(status_code=403, detail="You can't view this wish")
+    return await hydrate_wish(item, viewer)
+
+
+@api.patch("/wishlists/items/{wish_id}")
+async def edit_wish(wish_id: str, body: WishItemIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    is_owner = viewer and viewer["member_id"] == item.get("owner_member_id")
+    if not (item.get("is_family") or is_owner or (viewer and viewer.get("role") in ("admin", "parent")) or item.get("created_by") == (viewer or {}).get("member_id")):
+        raise HTTPException(status_code=403, detail="You can't edit this wish")
+    await db.wish_items.update_one({"wish_id": wish_id}, {"$set": {
+        "name": body.name.strip(), "photo_url": body.photo_url, "product_url": body.product_url,
+        "price": body.price, "store": body.store, "size": body.size, "color": body.color,
+        "notes": body.notes, "priority": max(1, min(3, body.priority)),
+        "occasion": body.occasion, "category": body.category,
+        "visibility": body.visibility if not item.get("is_family") else "family",
+        "visible_member_ids": body.visible_member_ids or [],
+    }})
+    item = await _get_wish_or_404(wish_id, fid)
+    return await hydrate_wish(item, viewer)
+
+
+@api.delete("/wishlists/items/{wish_id}")
+async def delete_wish(wish_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    is_owner = viewer and viewer["member_id"] == item.get("owner_member_id")
+    if not (item.get("is_family") or is_owner or (viewer and viewer.get("role") in ("admin", "parent")) or item.get("created_by") == (viewer or {}).get("member_id")):
+        raise HTTPException(status_code=403, detail="You can't delete this wish")
+    await db.wish_items.delete_one({"wish_id": wish_id})
+    await db.wish_notes.delete_many({"wish_id": wish_id})
+    return {"ok": True}
+
+
+@api.post("/wishlists/items/{wish_id}/reserve")
+async def reserve_wish(wish_id: str, body: WishReserveIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not _is_adult(viewer):
+        raise HTTPException(status_code=403, detail="Only adults can reserve a gift")
+    item = await _get_wish_or_404(wish_id, fid)
+    if item.get("is_family"):
+        raise HTTPException(status_code=400, detail="Shared family wishes can't be reserved")
+    if viewer["member_id"] == item.get("owner_member_id"):
+        raise HTTPException(status_code=400, detail="You can't reserve your own wish")
+    if item.get("reserved_by_member_id") and item["reserved_by_member_id"] != viewer["member_id"]:
+        raise HTTPException(status_code=409, detail="Someone is already getting this gift")
+    await db.wish_items.update_one({"wish_id": wish_id}, {"$set": {
+        "reserved_by_member_id": viewer["member_id"], "status": "reserved", "reveal_buyer": bool(body.reveal),
+    }})
+    item = await _get_wish_or_404(wish_id, fid)
+    return await hydrate_wish(item, viewer)
+
+
+@api.post("/wishlists/items/{wish_id}/unreserve")
+async def unreserve_wish(wish_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    if item.get("reserved_by_member_id") != (viewer or {}).get("member_id"):
+        raise HTTPException(status_code=403, detail="Only the person reserving can cancel")
+    await db.wish_items.update_one({"wish_id": wish_id}, {"$set": {
+        "reserved_by_member_id": None, "status": "wished", "reveal_buyer": False,
+    }})
+    item = await _get_wish_or_404(wish_id, fid)
+    return await hydrate_wish(item, viewer)
+
+
+@api.post("/wishlists/items/{wish_id}/status")
+async def set_wish_status(wish_id: str, body: WishStatusIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if body.status not in ("wished", "reserved", "purchased", "received"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    item = await _get_wish_or_404(wish_id, fid)
+    if item.get("reserved_by_member_id") != (viewer or {}).get("member_id"):
+        raise HTTPException(status_code=403, detail="Only the person getting the gift can update this")
+    await db.wish_items.update_one({"wish_id": wish_id}, {"$set": {"status": body.status}})
+    item = await _get_wish_or_404(wish_id, fid)
+    return await hydrate_wish(item, viewer)
+
+
+@api.get("/wishlists/items/{wish_id}/notes")
+async def wish_notes(wish_id: str, user: dict = Depends(get_current_user)):
+    """Private gift-planning notes — adults only, hidden from the wish owner (Secret Gift Mode)."""
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    is_owner = viewer and viewer["member_id"] == item.get("owner_member_id")
+    if not _is_adult(viewer) or is_owner or item.get("is_family"):
+        raise HTTPException(status_code=403, detail="Gift planning is private to gift-givers")
+    notes = await db.wish_notes.find({"wish_id": wish_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    for n in notes:
+        n["member"] = _member_card(await db.members.find_one({"member_id": n["member_id"]}, {"_id": 0}))
+    return notes
+
+
+@api.post("/wishlists/items/{wish_id}/notes", status_code=201)
+async def add_wish_note(wish_id: str, body: WishNoteIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await _get_wish_or_404(wish_id, fid)
+    is_owner = viewer and viewer["member_id"] == item.get("owner_member_id")
+    if not _is_adult(viewer) or is_owner or item.get("is_family"):
+        raise HTTPException(status_code=403, detail="Gift planning is private to gift-givers")
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Empty note")
+    note = {"note_id": new_id("wn_"), "wish_id": wish_id, "family_id": fid,
+            "member_id": viewer["member_id"], "text": body.text.strip(), "created_at": now_iso()}
+    await db.wish_notes.insert_one(note)
+    note = clean(note)
+    note["member"] = _member_card(viewer)
+    return note
+
+
+
+# ---------------------------------------------------------------------------
 # Media upload / serve
 # ---------------------------------------------------------------------------
 @api.post("/upload")
@@ -2609,6 +2925,41 @@ async def seed_demo(user: dict = Depends(get_current_user)):
             "plan_id": new_id("mp_"), "family_id": fid, "week_start": monday.isoformat(),
             "day": day, "slot": slot, "recipe_id": rcp_ids[title], "created_at": now_iso(),
         })
+
+    # ---- wish lists ----
+    wish_defs = [
+        # owner, is_family, name, price, priority, occasion, category, size, color, url, visibility
+        ("Aarav", False, "LEGO Space Explorer Set", "₹4,999", 3, "Birthday", "Toys", None, None, "https://lego.com", "family"),
+        ("Aarav", False, "New Football Shoes", "₹3,200", 2, "General", "Sports", "UK 6", "Blue", None, "family"),
+        ("Aarav", False, "Harry Potter Book Set", "₹2,499", 2, "General", "Books", None, None, None, "family"),
+        ("Aarav", False, "Visit Disneyland", None, 3, "Holiday", "Experience", None, None, None, "family"),
+        ("Anaya", False, "Watercolour Paint Kit", "₹1,299", 2, "Birthday", "Activities", None, None, None, "family"),
+        ("Anaya", False, "Cozy Winter Jacket", "₹2,100", 1, "General", "Clothes", "M", "Pink", None, "family"),
+        ("Priya", False, "Noise-cancelling Headphones", "₹8,999", 2, "General", "Gadgets", None, "Black", None, "parents"),
+        (None, True, "New Family Television", "₹65,000", 3, "General", "Gadgets", '55"', None, None, "family"),
+        (None, True, "Summer Vacation to Goa", None, 3, "Holiday", "Trips", None, None, None, "family"),
+        (None, True, "Family Dining Table", "₹22,000", 2, "General", "General", None, None, None, "family"),
+    ]
+    for owner, is_fam, name, price, prio, occ, cat, size, color, url, vis in wish_defs:
+        await db.wish_items.insert_one({
+            "wish_id": new_id("wish_"), "family_id": fid,
+            "owner_member_id": None if is_fam else mem_ids[owner], "is_family": is_fam,
+            "name": name, "photo_url": None, "product_url": url, "price": price,
+            "store": None, "size": size, "color": color, "notes": None,
+            "priority": prio, "occasion": occ, "category": cat,
+            "visibility": vis, "visible_member_ids": [],
+            "status": "wished", "reserved_by_member_id": None, "reveal_buyer": False,
+            "created_by": mem_ids[owner] if owner else mem_ids["Raj"], "created_at": now_iso(),
+        })
+    # Grandma has quietly reserved Aarav's LEGO set (Secret Gift Mode demo)
+    lego = await db.wish_items.find_one({"family_id": fid, "name": "LEGO Space Explorer Set"}, {"_id": 0})
+    if lego:
+        await db.wish_items.update_one({"wish_id": lego["wish_id"]}, {"$set": {
+            "reserved_by_member_id": mem_ids["Meera"], "status": "reserved", "reveal_buyer": False}})
+        await db.wish_notes.insert_one({
+            "note_id": new_id("wn_"), "wish_id": lego["wish_id"], "family_id": fid,
+            "member_id": mem_ids["Meera"], "text": "I'll pick this up this weekend — let's not tell Aarav! 🤫",
+            "created_at": now_iso()})
 
 
     all_ids = list(mem_ids.values())
