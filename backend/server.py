@@ -1079,6 +1079,19 @@ async def hydrate_event(e: dict, viewer: Optional[dict] = None) -> dict:
     e["rsvps"] = rsvp_list
     e["rsvp_summary"] = summary
     e["my_rsvp"] = raw_rsvps.get(viewer["member_id"]) if viewer else None
+    # invited members who haven't responded yet (for host reminders)
+    invited = list(e.get("participant_ids") or [])
+    if e.get("owner_member_id") and e["owner_member_id"] not in invited:
+        invited.append(e["owner_member_id"])
+    awaiting = []
+    for mid in invited:
+        if mid in raw_rsvps:
+            continue
+        m = await db.members.find_one({"member_id": mid}, {"_id": 0})
+        if m:
+            awaiting.append(_member_card(m))
+    e["awaiting"] = awaiting
+    e["awaiting_count"] = len(awaiting)
     return e
 
 
@@ -1212,6 +1225,66 @@ async def rsvp_event(event_id: str, body: RsvpIn, user: dict = Depends(get_curre
     return await hydrate_event(e, mine)
 
 
+@api.post("/events/{event_id}/nudge")
+async def nudge_event(event_id: str, user: dict = Depends(get_current_user)):
+    """Host reminder: gently nudge invited members who haven't RSVP'd yet."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
+    if not e:
+        raise HTTPException(status_code=404, detail="Event not found")
+    is_host = e.get("owner_member_id") == mine["member_id"] or mine.get("role") in ("admin", "parent")
+    if not is_host:
+        raise HTTPException(status_code=403, detail="Only the event host can send reminders")
+    raw_rsvps = e.get("rsvps") or {}
+    invited = list(e.get("participant_ids") or [])
+    if e.get("owner_member_id") and e["owner_member_id"] not in invited:
+        invited.append(e["owner_member_id"])
+    awaiting_ids = [mid for mid in invited if mid not in raw_rsvps and mid != mine["member_id"]]
+    if not awaiting_ids:
+        return {"nudged": 0, "names": []}
+    awaiting_members = []
+    user_ids = []
+    for mid in awaiting_ids:
+        m = await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0})
+        if m:
+            awaiting_members.append(m)
+            if m.get("linked_user_id"):
+                user_ids.append(m["linked_user_id"])
+    names = [m.get("name") for m in awaiting_members if m.get("name")]
+
+    try:
+        when = date.fromisoformat(e["date"][:10]).strftime("%a %d %b")
+    except Exception:
+        when = e.get("date", "")
+    # post a gentle reminder into the family chat so it's visible in-app
+    fam_chat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if fam_chat:
+        mention = ", ".join(names)
+        text = f"⏰ Reminder from {mine.get('name', 'the host')}: please RSVP to \"{e.get('title')}\" on {when}. Waiting on: {mention}."
+        now = now_iso()
+        await db.messages.insert_one({
+            "message_id": new_id("msg_"), "chat_id": fam_chat["chat_id"], "family_id": fid,
+            "sender_member_id": mine["member_id"], "text": text, "media": [], "type": "text", "created_at": now,
+        })
+        await db.chats.update_one({"chat_id": fam_chat["chat_id"]}, {"$set": {
+            "last_message": {"text": "⏰ RSVP reminder", "sender": mine.get("name"), "created_at": now, "type": "text"}}})
+
+    # best-effort push to those awaiting (native only)
+    try:
+        if user_ids:
+            await send_push(user_ids, {
+                "title": f"⏰ RSVP: {e.get('title')}",
+                "message": f"{mine.get('name', 'The host')} is waiting for your reply for {when}.",
+                "action_url": "/(tabs)/calendar",
+            }, idempotency_key=f"nudge_{event_id}_{now_iso()[:13]}")
+    except Exception as ex:
+        logger.warning(f"RSVP nudge push failed (non-blocking): {ex}")
+    return {"nudged": len(names), "names": names}
+
+
 @api.post("/events")
 async def create_event(body: EventIn, request: Request, user: dict = Depends(get_current_user)):
     fid = require_family(user)
@@ -1300,13 +1373,14 @@ async def update_event(event_id: str, body: EventIn, user: dict = Depends(get_cu
 
 
 @api.delete("/events/{event_id}")
-async def delete_event(event_id: str, user: dict = Depends(get_current_user)):
+async def delete_event(event_id: str, scope: str = "series", user: dict = Depends(get_current_user)):
     fid = require_family(user)
     e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
-    if e and e.get("series_id"):
-        # deleting a recurring event removes the whole series
+    if e and e.get("series_id") and scope != "single":
+        # default for a recurring event: remove the whole series
         await db.events.delete_many({"family_id": fid, "series_id": e["series_id"]})
     else:
+        # scope=single (skip just this date) or a one-off event
         await db.events.delete_one({"event_id": event_id, "family_id": fid})
     return {"ok": True}
 
@@ -1946,10 +2020,21 @@ async def home(user: dict = Depends(get_current_user)):
                 pinned = {"text": pm.get("text") or "📷 Photo", "sender": _member_card(sender)}
         family_chat_peek = {"chat_id": fchat["chat_id"], "last_message": fchat.get("last_message"), "pinned": pinned}
 
+    # --- Active SOS (for the auto-pinned Home Emergency card) ------------------
+    active_sos = await db.sos_alerts.find(
+        {"family_id": fid, "status": "active"}, {"_id": 0}).sort("created_at", -1).to_list(10)
+    for a in active_sos:
+        a["member"] = _member_card(await db.members.find_one({"member_id": a.get("member_id")}, {"_id": 0}))
+
     # --- Needs attention (prioritised) -----------------------------------------
     def _plural(n):
         return "s" if n != 1 else ""
     needs_attention = []
+    if active_sos:
+        a0 = active_sos[0]
+        needs_attention.append({"key": "sos", "icon": "warning", "tone": "error",
+                                "title": f"🚨 {a0.get('member_name', 'Someone')} triggered an SOS",
+                                "subtitle": "Open the Emergency Center", "route": "/emergency"})
     overdue_tasks = [tk for tk in tasks if tk["overdue"]]
     if overdue_tasks:
         needs_attention.append({"key": "tasks_overdue", "icon": "alert-circle", "tone": "error",
@@ -2040,6 +2125,7 @@ async def home(user: dict = Depends(get_current_user)):
         "latest_post": latest_post,
         "family_chat": family_chat_peek,
         "needs_attention": needs_attention,
+        "active_sos": active_sos,
         "today_summary": today_summary,
         "notices": notices,
     }

@@ -62,8 +62,13 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   (POST /api/events/{id}/rsvp; only invited members/owner, else 403); each event shows a live
   "N going · N maybe · N can't make it" summary (rsvp_summary + my_rsvp on hydrate_event).
 - Recurring events: an event can repeat Weekly or Monthly, ending after a set number of times OR on a
-  chosen date; concrete occurrences share a series_id (monthly clamps short months); editing/deleting
-  any occurrence affects the whole series; the emailed .ics carries an RRULE. 🔁 badge on the calendar.
+  chosen date; concrete occurrences share a series_id (monthly clamps short months); deleting asks
+  "just this one" (skip one date) or "the whole series"; the emailed .ics carries an RRULE. 🔁 badge.
+- RSVP reminders: the host sees who hasn't replied ("Waiting on …") and can send a gentle nudge that
+  posts a reminder in the family chat + pushes those members (POST /api/events/{id}/nudge).
+- Home Emergency Pin: the Emergency card auto-floats to the top of Home (in a red "Active SOS" or
+  "documents expiring soon" state) whenever an SOS is active or a Vault document is expiring.
+- Emergency Info shortcut: each member profile has an "Emergency Info 🚑" link to their medical card.
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

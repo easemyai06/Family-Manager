@@ -166,7 +166,14 @@ export default function Home() {
   const me = home?.me;
   const persona = personaOf(me);
   const compact = !!prefs.compact;
-  const order = useMemo(() => (home ? applyPrefs(ORDER[persona], prefs) : []), [home, persona, prefs]);
+  const order = useMemo(() => {
+    if (!home) return [];
+    let o = applyPrefs(ORDER[persona], prefs);
+    // Auto-pin the Emergency card to the top when something needs attention.
+    const urgent = (home.active_sos?.length || 0) > 0 || (home.vault_expiring?.length || 0) > 0;
+    if (urgent) o = ["emergency", ...o.filter((k) => k !== "emergency")];
+    return o;
+  }, [home, persona, prefs]);
 
   const filteredTasks = useMemo(() => {
     const all = home?.tasks || [];
@@ -207,7 +214,7 @@ export default function Home() {
       case "important":
         return <VaultSection {...p} items={home?.vault_expiring || []} />;
       case "emergency":
-        return <EmergencySection {...p} />;
+        return <EmergencySection {...p} activeSos={home?.active_sos || []} expiring={home?.vault_expiring || []} />;
       case "recap":
         return <EveningRecapSection {...p} summary={home?.today_summary} />;
       case "brief":
@@ -867,17 +874,27 @@ function VaultSection({ items, go, c, compact }: any) {
   );
 }
 
-function EmergencySection({ go, c, compact }: any) {
+function EmergencySection({ go, c, compact, activeSos = [], expiring = [] }: any) {
+  const sos = activeSos.length > 0;
+  const expCount = expiring.length;
+  const urgent = sos || expCount > 0;
+  const subtitle = sos
+    ? `🚨 ${activeSos[0]?.member_name || "Someone"} needs help — tap to respond`
+    : expCount > 0
+    ? `${expCount} document${expCount > 1 ? "s" : ""} expiring soon — review now`
+    : "Contacts, medical cards & Family SOS";
   return (
     <SectionShell compact={compact}>
       <Pressable onPress={() => go("/emergency")} testID="home-emergency">
-        <Card c={c} style={styles.emergRow}>
-          <View style={[styles.emergIcon, { backgroundColor: "#E86A6A22" }]}>
-            <Ionicons name="medkit" size={20} color="#E86A6A" />
+        <Card c={c} style={[styles.emergRow, urgent && { borderColor: "#E86A6A", borderWidth: 1.5 }]}>
+          <View style={[styles.emergIcon, { backgroundColor: urgent ? "#E86A6A" : "#E86A6A22" }]}>
+            <Ionicons name={sos ? "warning" : "medkit"} size={20} color={urgent ? "#fff" : "#E86A6A"} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppText size={14} weight="bold">Emergency Center</AppText>
-            <AppText size={12} color={c.onSurfaceTertiary}>Contacts, medical cards & Family SOS</AppText>
+            <AppText size={14} weight="bold" color={urgent ? "#C74B4B" : c.onSurface}>
+              {sos ? "Active SOS" : expCount > 0 ? "Emergency Center" : "Emergency Center"}
+            </AppText>
+            <AppText size={12} color={urgent ? "#C74B4B" : c.onSurfaceTertiary} numberOfLines={2}>{subtitle}</AppText>
           </View>
           <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
         </Card>

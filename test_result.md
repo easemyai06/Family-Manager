@@ -1103,3 +1103,89 @@ frontend_batch16:
 agent_communication_batch16:
     -agent: "main"
     -message: "Batch #16 = Recurring Events + Notice 'Seen by' + Trusted Emergency Access. Account: board@fam.com / secret123 (navigate IN-APP; dismiss first-load affection overlay; the only real logged-in user is Raj/admin). BACKEND to test: (1) POST /api/events with repeat='weekly'&repeat_count=4 -> creates 4 events sharing series_id (GET /events?start=&end= to see them); repeat='monthly'&repeat_count=3 spans short months (Jan31->Feb28->Mar31); repeat_end_date instead of count bounds by date; DELETE one occurrence removes the whole series; GET /events/{id}/invite.ics contains an RRULE line. (2) POST /api/notices/{id}/seen adds caller to seen_by (idempotent); GET /notices/{id} returns seen_count+seen_members+seen(bool); /api/home notices carry seen_count. (3) /api/emergency/delegates GET/POST/DELETE (parents-only; POST a child -> 400; POST unknown -> 404); after granting, a delegate viewer can VIEW (not edit) vault items owned-by/covering a child even if visibility=parents. FRONTEND to test (in-app nav): (a) Calendar FAB -> New Event -> set Repeat=Weekly -> choose 'End after N times' stepper (repeat-count-plus) or 'End on a date' -> Save -> the event appears on multiple weeks with a 🔁 Weekly badge; delete one -> all gone. (b) Open a noticeboard note detail -> a 'Seen by 1' row (notice-seen-toggle) expands to show who viewed; board card shows an eye+count. (c) More > Protect > Emergency Center -> Trusted Access (emergency-access) -> toggle an adult relative ON (access-toggle-<id>) then OFF. Do NOT retest unrelated older features."
+
+# ============ Feature Batch #17 (Home Emergency Pin + Skip Occurrence + Emergency Info shortcut + RSVP Reminders) ============
+backend_batch17:
+  - task: "Home active_sos + auto Emergency pin in /api/home"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "/api/home now returns active_sos[] (hydrated) and, when an SOS is active, needs_attention[0] is a high-priority 'SOS' card (route /emergency). Frontend floats the Emergency card to the top when active_sos or vault_expiring is non-empty. Verified via curl: trigger SOS -> active_sos len 1, needs_attention[0].key='sos'; resolve -> 0."
+  - task: "Skip a single occurrence of a recurring event (DELETE ?scope=single|series)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "DELETE /api/events/{id}?scope=single removes just that occurrence; scope=series (default) removes the whole series. Verified via curl: weekly x4 -> delete one with scope=single -> 3 remain; scope=series -> 0 remain."
+  - task: "RSVP reminders (awaiting list in hydrate_event + POST /api/events/{id}/nudge)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "hydrate_event returns awaiting[] (invited members with no RSVP) + awaiting_count. POST /api/events/{id}/nudge (owner or parent/admin only, else 403) posts a gentle reminder into the family chat mentioning the awaiting members + best-effort push to them; returns {nudged, names}, excluding the host. Verified via curl: awaiting_count=3; after owner RSVPs going, nudge -> nudged=2 (Priya, Aarav), family chat last_message='⏰ RSVP reminder'."
+
+frontend_batch17:
+  - task: "Home auto-pinned/urgent Emergency card"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "order memo floats 'emergency' to the top when home.active_sos or home.vault_expiring is non-empty (injected even for child persona). EmergencySection shows a red 'Active SOS' variant (member needs help) or 'N documents expiring soon' subtitle; else the normal Emergency Center card. testID home-emergency unchanged."
+  - task: "Skip-occurrence delete choice on Calendar"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Deleting a recurring event (repeat!='none') opens a modal: 'Just this one' (del-scope-single -> DELETE ?scope=single) or 'All events in the series' (del-scope-series -> scope=series) or Cancel (del-scope-cancel). Non-recurring events delete immediately as before."
+  - task: "RSVP reminder row on event cards"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "For a host (owner or admin/parent), an event with awaiting_count>0 shows '⏳ Waiting on <names>' + a 'Remind' button (rsvp-nudge-<eventId>) that calls /nudge and shows a toast (calendar-toast). "
+  - task: "Emergency Info shortcut on member profile"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/member/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Member profile adds an 'Emergency Info 🚑' button (member-emergency-info) -> /emergency/medical/<member_id> (that member's medical card)."
+
+agent_communication_batch17:
+    -agent: "main"
+    -message: "Batch #17 = Home Emergency Pin + Skip Occurrence + Emergency Info shortcut + RSVP Reminders. Account: board@fam.com / secret123 (in-app nav; only Raj/admin is logged in). BACKEND: (1) trigger POST /api/emergency/sos -> GET /api/home has active_sos[] + needs_attention[0].key='sos'; resolve -> gone. (2) create recurring event (repeat=weekly,repeat_count=4); DELETE /api/events/{id}?scope=single leaves 3; scope=series removes all. (3) GET /events returns awaiting/awaiting_count; POST /api/events/{id}/nudge (host only, 403 otherwise) returns {nudged,names} and posts '⏰ RSVP reminder' to family chat (excludes host + members who already RSVP'd). FRONTEND (in-app nav, log in first, dismiss affection overlay): (a) After triggering an SOS from Emergency, Home shows the Emergency card floated to top in a red 'Active SOS' state; (b) Calendar: delete a 🔁 recurring event -> modal 'Just this one'(del-scope-single) / 'All events'(del-scope-series); (c) On an event you host with people who haven't replied, a '⏳ Waiting on…' row + 'Remind' (rsvp-nudge-<id>) shows a toast; (d) Member profile has 'Emergency Info 🚑' (member-emergency-info) -> medical card. Do NOT retest unrelated older features."

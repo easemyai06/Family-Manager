@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,9 +25,12 @@ export default function Calendar() {
   const insets = useSafeAreaInsets();
   const { member } = useAuth();
   const myId = member?.member_id;
+  const isHost = member?.role === "admin" || member?.role === "parent";
   const [month, setMonth] = useState(dayjs());
   const [selected, setSelected] = useState(dayjs().format("YYYY-MM-DD"));
   const [events, setEvents] = useState<any[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<any>(null);
+  const [toast, setToast] = useState("");
 
   const load = useCallback(async () => {
     const start = month.startOf("month").startOf("week").format("YYYY-MM-DD");
@@ -59,11 +62,42 @@ export default function Calendar() {
 
   const selectedEvents = (byDate[selected] || []).sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
 
-  const delEvent = async (id: string) => {
-    setEvents((prev) => prev.filter((e) => e.event_id !== id));
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  };
+
+  const delEvent = (e: any) => {
+    if (e.repeat && e.repeat !== "none") {
+      setPendingDelete(e);
+      return;
+    }
+    doDelete(e.event_id, "single");
+  };
+
+  const doDelete = async (id: string, scope: "single" | "series") => {
+    setPendingDelete(null);
+    if (scope === "series") {
+      const target = events.find((e) => e.event_id === id);
+      const sid = target?.series_id;
+      setEvents((prev) => prev.filter((e) => (sid ? e.series_id !== sid : e.event_id !== id)));
+    } else {
+      setEvents((prev) => prev.filter((e) => e.event_id !== id));
+    }
     try {
-      await api(`/events/${id}`, { method: "DELETE" });
+      await api(`/events/${id}?scope=${scope}`, { method: "DELETE" });
     } catch {}
+    load();
+  };
+
+  const nudge = async (eventId: string) => {
+    try {
+      const res = await api<{ nudged: number; names: string[] }>(`/events/${eventId}/nudge`, { method: "POST" });
+      if (res.nudged > 0) flashToast(`⏰ Reminder sent to ${res.names.join(", ")}`);
+      else flashToast("Everyone has already replied 🎉");
+    } catch {
+      flashToast("Couldn't send the reminder");
+    }
   };
 
   const rsvp = async (eventId: string, status: string) => {
@@ -220,8 +254,26 @@ export default function Calendar() {
                     {`${e.rsvp_summary.going} going · ${e.rsvp_summary.maybe} maybe · ${e.rsvp_summary.declined} can't make it`}
                   </AppText>
                 ) : null}
+                {(() => {
+                  const awaitingOthers = (e.awaiting || []).filter((m: any) => m.member_id !== myId);
+                  return isHost && awaitingOthers.length > 0 ? (
+                    <View style={styles.awaitRow}>
+                      <AppText size={11} color={c.onSurfaceSecondary} style={{ flex: 1 }} numberOfLines={1}>
+                        ⏳ Waiting on {awaitingOthers.map((m: any) => m.name).join(", ")}
+                      </AppText>
+                      <Pressable
+                        onPress={() => nudge(e.event_id)}
+                        style={[styles.nudgeBtn, { backgroundColor: c.brandTertiary }]}
+                        testID={`rsvp-nudge-${e.event_id}`}
+                      >
+                        <Ionicons name="notifications-outline" size={13} color={c.onBrandTertiary} />
+                        <AppText size={11} weight="bold" color={c.onBrandTertiary}>Remind</AppText>
+                      </Pressable>
+                    </View>
+                  ) : null;
+                })()}
               </View>
-              <Pressable onPress={() => delEvent(e.event_id)} hitSlop={8} testID={`del-event-${e.event_id}`}>
+              <Pressable onPress={() => delEvent(e)} hitSlop={8} testID={`del-event-${e.event_id}`}>
                 <Ionicons name="trash-outline" size={18} color={c.onSurfaceTertiary} />
               </Pressable>
             </View>
@@ -236,6 +288,43 @@ export default function Calendar() {
       >
         <Ionicons name="add" size={30} color="#fff" />
       </Pressable>
+
+      {/* delete a recurring event: this one vs the whole series */}
+      <Modal visible={!!pendingDelete} transparent animationType="fade" onRequestClose={() => setPendingDelete(null)}>
+        <Pressable style={styles.backdrop} onPress={() => setPendingDelete(null)}>
+          <Pressable style={[styles.delCard, { backgroundColor: c.surface }]} onPress={(ev) => ev.stopPropagation()}>
+            <AppText family="display" weight="bold" size={17} center>Delete repeating event</AppText>
+            <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 6 }}>
+              {`“${pendingDelete?.title}” repeats ${pendingDelete?.repeat === "weekly" ? "weekly" : "monthly"}.`}
+            </AppText>
+            <Pressable
+              onPress={() => doDelete(pendingDelete.event_id, "single")}
+              style={[styles.delOpt, { borderColor: c.border }]}
+              testID="del-scope-single"
+            >
+              <Ionicons name="calendar-outline" size={18} color={c.onSurface} />
+              <AppText size={15} weight="semibold">Just this one</AppText>
+            </Pressable>
+            <Pressable
+              onPress={() => doDelete(pendingDelete.event_id, "series")}
+              style={[styles.delOpt, { borderColor: c.error }]}
+              testID="del-scope-series"
+            >
+              <Ionicons name="repeat" size={18} color={c.error} />
+              <AppText size={15} weight="semibold" color={c.error}>All events in the series</AppText>
+            </Pressable>
+            <Pressable onPress={() => setPendingDelete(null)} style={styles.delCancel} testID="del-scope-cancel">
+              <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>Cancel</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {toast ? (
+        <View style={[styles.toast, { backgroundColor: c.surfaceInverse }, shadow(3)]} testID="calendar-toast">
+          <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>{toast}</AppText>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -262,5 +351,12 @@ const styles = StyleSheet.create({
   avatarRow: { flexDirection: "row", marginTop: spacing.sm },
   rsvpRow: { flexDirection: "row", gap: 6, marginTop: spacing.sm, flexWrap: "wrap" },
   rsvpPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
+  awaitRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 6 },
+  nudgeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
   fab: { position: "absolute", right: spacing.lg, bottom: 90, width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  delCard: { width: "100%", maxWidth: 360, borderRadius: radius.lg, padding: spacing.xl },
+  delOpt: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, borderWidth: 1.5, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  delCancel: { alignItems: "center", paddingVertical: spacing.md, marginTop: spacing.xs },
+  toast: { position: "absolute", alignSelf: "center", bottom: 100, maxWidth: "88%", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
 });

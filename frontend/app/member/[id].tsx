@@ -105,6 +105,12 @@ export default function MemberProfile() {
             onPress={() => router.push(`/birthday/${member.member_id}`)}
             testID="member-birthday-wishes"
           />
+          <Button
+            label="Emergency Info 🚑"
+            variant="secondary"
+            onPress={() => router.push(`/emergency/medical/${member.member_id}`)}
+            testID="member-emergency-info"
+          />
         </View>
 
         {details.length ? (
