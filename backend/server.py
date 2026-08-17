@@ -771,7 +771,40 @@ async def update_profile(body: ProfileIn, user: dict = Depends(get_current_user)
     return {"user": public_user(u)}
 
 
-@api.get("/families/invite")
+@api.delete("/auth/account")
+async def delete_account(user: dict = Depends(get_current_user)):
+    """
+    Permanently delete the signed-in user's account (App Store / Play Store requirement).
+    - Family organizer (admin): the whole family space + all its data is removed.
+    - Anyone else: only their own login + member profile + preferences are removed.
+    """
+    uid = user["user_id"]
+    fid = user.get("family_id")
+    mine = await member_for_user(user)
+    is_admin = bool(mine and mine.get("role") == "admin")
+
+    if fid and is_admin:
+        # gather every user linked to this family (for prefs cleanup) BEFORE purging
+        fam_users = await db.users.find({"family_id": fid}, {"user_id": 1, "_id": 0}).to_list(1000)
+        fuids = [u.get("user_id") for u in fam_users if u.get("user_id")]
+        # purge every collection that stores data for this family
+        for name in await db.list_collection_names():
+            try:
+                await db[name].delete_many({"family_id": fid})
+            except Exception:
+                pass
+        await db.families.delete_one({"family_id": fid})
+        if fuids:
+            await db.dashboard_prefs.delete_many({"user_id": {"$in": fuids}})
+        # make sure this user is gone even if they weren't tagged with family_id
+        await db.users.delete_one({"user_id": uid})
+    else:
+        if mine:
+            await db.members.delete_one({"member_id": mine["member_id"], "family_id": fid})
+        await db.users.delete_one({"user_id": uid})
+        await db.dashboard_prefs.delete_many({"user_id": uid})
+
+    return {"ok": True, "scope": "family" if is_admin else "self"}
 async def get_invite(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     fam = await db.families.find_one({"family_id": fid}, {"_id": 0})

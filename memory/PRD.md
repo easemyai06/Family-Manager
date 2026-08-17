@@ -71,6 +71,11 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Emergency Info shortcut: each member profile has an "Emergency Info 🚑" link to their medical card.
 - Medical quick view: the Emergency Center screen shows a "Medical at a Glance" list (each member's
   blood group + allergies, tap for the full card) via GET /api/emergency/medical, for fast access.
+- Store compliance (App Store / Play Store): More > Support & Legal adds Help & Support
+  (mailto info@easemyai.com), in-app Privacy Policy + Terms of Use (publisher Ease My Ai Pvt Ltd,
+  governing law India), and Account & Data with in-app Account Deletion (DELETE /api/auth/account —
+  organizer purges the whole family space; member deletes only self). App version shown in More.
+  NOTE: stores also require a PUBLIC Privacy Policy URL entered in the listing console.
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

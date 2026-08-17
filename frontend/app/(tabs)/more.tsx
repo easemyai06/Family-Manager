@@ -9,6 +9,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
 import { api } from "@/src/lib/api";
+import Constants from "expo-constants";
 
 type Row = {
   key: string;
@@ -210,6 +211,17 @@ export default function More() {
           </View>
         </View>
 
+        {/* support & legal */}
+        <Section
+          title="ℹ️ Support & Legal"
+          rows={[
+            { key: "support", label: "Help & Support", icon: "help-buoy", color: "#7FA9C9", route: "/legal/support" },
+            { key: "account", label: "Account & Data", icon: "person-circle", color: "#8AB07D", route: "/account" },
+            { key: "privacy", label: "Privacy Policy", icon: "shield-checkmark", color: "#9B8AC9", route: "/legal/privacy" },
+            { key: "terms", label: "Terms of Use", icon: "document-text", color: "#D98E5A", route: "/legal/terms" },
+          ]}
+        />
+
         {/* logout */}
         <View style={styles.section}>
           <Pressable onPress={logout} style={[styles.card, styles.logout, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="logout-btn">
@@ -219,6 +231,10 @@ export default function More() {
             </AppText>
           </Pressable>
         </View>
+
+        <AppText size={12} color={c.onSurfaceTertiary} center style={{ marginTop: spacing.lg }}>
+          FamilyHome v{Constants.expoConfig?.version || "1.0.0"} · by Ease My Ai Pvt Ltd
+        </AppText>
       </ScrollView>
 
       {note ? (

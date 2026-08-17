@@ -1218,3 +1218,32 @@ frontend_batch18:
 agent_communication_batch18:
     -agent: "main"
     -message: "Batch #18 = Medical Quick View. GET /api/emergency/medical curl-verified; Emergency hub 'Medical at a Glance' screenshot-verified in-app (Board Demo B+, Aarav O+ Peanuts). Small additive change, self-tested."
+
+# ============ Feature Batch #19 (App Store / Play Store compliance essentials) ============
+backend_batch19:
+  - task: "DELETE /api/auth/account — in-app account deletion (Apple 5.1.1(v))"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Organizer (role=admin): purges every collection by family_id + families doc + dashboard_prefs of all family users. Member-only: deletes just their user + linked member + prefs. Auth token invalid afterwards. Verified via curl with THROWAWAY accounts (never the demo family): self-delete -> scope 'self', me=401, email reusable; admin+family+data -> scope 'family', me=401. Demo family board@fam.com untouched."
+frontend_batch19:
+  - task: "Support & Legal in More + Privacy/Terms/Support/Account screens + version"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/more.tsx, frontend/app/legal/{privacy,terms,support}.tsx, frontend/app/account/index.tsx, frontend/src/components/LegalPage.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "More tab adds 'Support & Legal' section: Help & Support (mailto info@easemyai.com), Account & Data, Privacy Policy, Terms of Use + 'FamilyHome v1.0.0 · by Ease My Ai Pvt Ltd' footer. Account & Data (SCREENSHOT-VERIFIED in-app) shows name/email/version + Danger Zone Delete Account with a type-DELETE confirm modal (organizer sees whole-family warning), then logs out. Publisher Ease My Ai Pvt Ltd, contact info@easemyai.com, governing law India. Self-tested (curl + screenshot)."
+agent_communication_batch19:
+    -agent: "main"
+    -message: "Batch #19 = store-compliance essentials (Privacy Policy, Terms of Use, Help & Support, in-app Account Deletion, app version). Backend delete curl-verified both scopes with isolated throwaway accounts. Account & Data screen screenshot-verified in-app. NOTE for user: stores also need a PUBLIC Privacy Policy URL in the listing console (offer to export a hostable HTML page)."
