@@ -63,7 +63,7 @@ export function mediaUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith("/api/")) {
     const sep = url.includes("?") ? "&" : "?";
-    return `${BACKEND_ORIGIN}${url}${sep}token=${mediaToken || authToken || ""}`;
+    return `${BACKEND_ORIGIN}${url}${sep}token=${mediaToken || ""}`;
   }
   return url;
 }
@@ -79,7 +79,7 @@ export function mediaImageSource(
     const full = `${BACKEND_ORIGIN}${url}`;
     if (Platform.OS === "web") {
       const sep = url.includes("?") ? "&" : "?";
-      return { uri: `${full}${sep}token=${mediaToken || authToken || ""}` };
+      return { uri: `${full}${sep}token=${mediaToken || ""}` };
     }
     return authToken ? { uri: full, headers: { Authorization: `Bearer ${authToken}` } } : { uri: full };
   }

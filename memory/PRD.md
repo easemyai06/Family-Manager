@@ -99,6 +99,11 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   Requires user to upload Firebase google-services.json to /app/frontend/ and only delivers on a
   real device after Publish + build (app.json android.googleServicesFile wired; EMERGENT_PUSH_KEY
   placeholder is auto-set at deploy — never edit it).
+- Security Audit #2 re-hardening: serve_file now also enforces Vault per-item visibility (a member
+  can't fetch a parents-only Vault file by direct URL); login lockout is keyed on email+IP with
+  X-Forwarded-For (no global-IP lock, can't be used to lock a victim from another network); media
+  URLs never fall back to the login token. Verified by testing agent (iteration_20: 17/17 backend +
+  image regression clean). Residual low-risk items (CORS wildcard, public .ics by design) documented.
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

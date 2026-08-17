@@ -247,15 +247,21 @@ async def get_current_user(authorization: Optional[str] = Header(None),
 # ---------------------------------------------------------------------------
 THROTTLE_WINDOW = timedelta(minutes=10)
 ACCOUNT_LOCK = timedelta(minutes=10)
-IP_LOCK = timedelta(minutes=5)
 THROTTLE_RETENTION = timedelta(days=1)
 ACCOUNT_LIMIT = 5
-IP_LIMIT = 30
 # Real bcrypt hash used when a user doesn't exist, so timing doesn't leak account existence.
 DUMMY_BCRYPT_HASH = pwd_context.hash("fixed-unusable-dummy-password")
 
 
 def _client_ip(request: Request) -> str:
+    # Behind the k8s ingress the real client is in X-Forwarded-For; use the
+    # left-most entry so distinct clients don't collapse onto the shared peer IP
+    # (which would let 30 bad logins lock sign-in for everyone).
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
     return request.client.host if request.client else "unknown"
 
 
@@ -269,9 +275,8 @@ async def _throttle_lock(tkey: str) -> Optional[datetime]:
     return until if until > datetime.now(timezone.utc) else None
 
 
-async def _reject_if_locked(email_key: str, ip_key: str) -> None:
-    e_lock, i_lock = await asyncio.gather(_throttle_lock(email_key), _throttle_lock(ip_key))
-    locks = [x for x in (e_lock, i_lock) if x]
+async def _reject_if_locked(*keys: str) -> None:
+    locks = [x for x in await asyncio.gather(*[_throttle_lock(k) for k in keys]) if x]
     if locks:
         until = max(locks)
         secs = max(1, int((until - datetime.now(timezone.utc)).total_seconds()))
@@ -279,9 +284,8 @@ async def _reject_if_locked(email_key: str, ip_key: str) -> None:
                             headers={"Retry-After": str(secs)})
 
 
-async def _record_failure(tkey: str, kind: str) -> None:
-    limit = ACCOUNT_LIMIT if kind == "email" else IP_LIMIT
-    lock_ms = int((ACCOUNT_LOCK if kind == "email" else IP_LOCK).total_seconds() * 1000)
+async def _record_failure(tkey: str) -> None:
+    lock_ms = int(ACCOUNT_LOCK.total_seconds() * 1000)
     window_ms = int(THROTTLE_WINDOW.total_seconds() * 1000)
     retention_ms = int(THROTTLE_RETENTION.total_seconds() * 1000)
     in_new_window = {"$or": [
@@ -290,14 +294,13 @@ async def _record_failure(tkey: str, kind: str) -> None:
     ]}
     pipeline = [
         {"$set": {
-            "kind": kind,
             "failed_count": {"$cond": [in_new_window, 1, {"$add": [{"$ifNull": ["$failed_count", 0]}, 1]}]},
             "window_started_at": {"$cond": [in_new_window, "$$NOW", "$window_started_at"]},
             "updated_at": "$$NOW",
             "expires_at": {"$add": ["$$NOW", retention_ms]},
         }},
         {"$set": {
-            "locked_until": {"$cond": [{"$gte": ["$failed_count", limit]}, {"$add": ["$$NOW", lock_ms]}, None]},
+            "locked_until": {"$cond": [{"$gte": ["$failed_count", ACCOUNT_LIMIT]}, {"$add": ["$$NOW", lock_ms]}, None]},
         }},
     ]
     await db.auth_throttles.find_one_and_update(
@@ -709,15 +712,17 @@ async def register(body: RegisterIn):
 async def login(body: LoginIn, request: Request):
     email = body.email.lower().strip()
     ip = _client_ip(request)
-    email_key, ip_key = f"email:{email}", f"ip:{ip}"
-    await _reject_if_locked(email_key, ip_key)
+    # Key the lockout on email+IP so an attacker can't lock a victim out from a
+    # different network, and a shared ingress IP can never globally block sign-in.
+    key = f"acct:{email}:{ip}"
+    await _reject_if_locked(key)
     u = await db.users.find_one({"email": email})
     stored = u.get("password_hash") if (u and u.get("password_hash")) else DUMMY_BCRYPT_HASH
     ok = pwd_context.verify(body.password, stored)
     if not u or not ok:
-        await asyncio.gather(_record_failure(email_key, "email"), _record_failure(ip_key, "ip"))
+        await _record_failure(key)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
-    await _clear_failures(email_key, ip_key)
+    await _clear_failures(key)
     return {"token": make_token(u["user_id"]), "user": public_user(u)}
 
 
@@ -4265,14 +4270,10 @@ async def serve_file(path: str, authorization: Optional[str] = Header(None),
     payload = _decode_token(raw) if raw else None
     if not payload:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # family scope comes from the (short-lived) media token, or a full user token
-    if payload.get("scope") == "media":
-        viewer_fid = payload.get("family_id")
-    else:
-        u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
-        if not u:
-            raise HTTPException(status_code=401, detail="Not authenticated")
-        viewer_fid = u.get("family_id")
+    u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
+    if not u:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    viewer_fid = u.get("family_id")  # authoritative family from the live user record
     rec = await db.media.find_one({"storage_path": path}, {"_id": 0})
     if not rec:
         raise HTTPException(status_code=404, detail="File not found")
@@ -4282,6 +4283,13 @@ async def serve_file(path: str, authorization: Optional[str] = Header(None),
         owner_fid = owner.get("family_id") if owner else None
     if owner_fid and owner_fid != viewer_fid:
         raise HTTPException(status_code=404, detail="File not found")
+    # If this file belongs to a Vault item, honour that item's per-item visibility.
+    vault_item = await db.vault_items.find_one(
+        {"family_id": owner_fid, "files.url": f"/api/files/{path}"}, {"_id": 0})
+    if vault_item:
+        viewer = await _secure_viewer(u)
+        if not _can_view_secure(vault_item, viewer):
+            raise HTTPException(status_code=404, detail="File not found")
     try:
         content, ct = await run_in_threadpool(_get_object, path)
     except Exception:

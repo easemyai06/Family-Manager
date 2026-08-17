@@ -1,0 +1,32 @@
+{
+  "summary": "Batch #22 re-hardening verification (SEC-002b login lockout DoS + SEC-001b /api/files per-item Vault authz + regression) — ALL PASS. Backend: 17/17 pytest cases in /app/backend/tests/test_batch22_sec002b_sec001b.py. (SEC-002b) With X-Forwarded-For=11.11.11.11 a throwaway probe email + wrong password returns 401 five times and 429 on the 6th with a Retry-After header (measured 594s ~ 10 min). The SAME fake email retried with X-Forwarded-For=22.22.22.22 returns 401 (NOT 429), proving per-(email+IP) segmentation and that a victim can't be locked out from another network. board@fam.com/secret123 still returns 200 even from the 'attacker' IP 11.11.11.11 (different email key). Extra assertion: two XFF values that share the same tail hop (`33.x.x.x, 10.0.0.1` vs `44.x.x.x, 10.0.0.1`) map to distinct lockout keys, confirming the left-most XFF entry is used. (SEC-001b) Uploaded a probe JPEG as board@; GET /api/files/{path} returns 401 with no token, 200 with board's full Bearer, 200 with ?token=<media_token from /auth/me>, and 404 when a throwaway user from a DIFFERENT family (registered + POST /api/families + torn down via DELETE /api/auth/account) sends their token — no cross-family read. Media-token scope: /api/home and /api/auth/me both reject the media_token as Bearer with 401 (file-only scope). Regression: /auth/me still returns media_token; /home, /families/members, /events, /notices, /vault/items, /emergency/medical all 200 with a normal full Bearer. Frontend (Expo web @ 375x812, board@fam.com/secret123, first-load overlay auto-dismissed): Home 10/0 broken images, Family tab 16/0 broken, Priya member Profile 18/0 broken; 0 failed /api/files/* responses network-side. The Vault per-item visibility check + media-token URL wiring did NOT regress SmartImage/photos anywhere.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch22_sec002b_sec001b.py",
+    "/app/test_reports/pytest/pytest_batch22_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:256-265 _client_ip correctly reads the left-most X-Forwarded-For entry with a request.client.host fallback; combined with `key = f\"acct:{email}:{ip}\"` at server.py:717 the lockout is (email+IP)-scoped — no global ingress-IP lock, no cross-network victim lockout. Verified end-to-end.",
+    "server.py:287-307 _record_failure uses a MongoDB aggregation pipeline with `$$NOW` to reset the counter when the window elapses and set `locked_until` only when failed_count >= ACCOUNT_LIMIT (5). Atomic upsert avoids races. `_clear_failures` on successful login wipes the key so honest users aren't punished for a wrong-then-right sequence.",
+    "server.py:4262-4298 serve_file first enforces family ownership on the media record (owner_fid==viewer_fid) then adds a per-item Vault visibility check via `_can_view_secure` — a Vault file whose item is not visible to the requester surfaces as 404. Non-Vault media just falls through to storage — no regression, confirmed by the successful upload+fetch flow on Home/Family/Profile.",
+    "server.py:4266-4269 dual-source token (Authorization Bearer OR ?token= query) is correct for <img>/<video> on web where headers cannot be set. Since the media token is scope='media' and short-lived (7 days), putting it in a query string is an acceptable risk trade-off — the long-lived login token no longer appears in URLs.",
+    "server.py:236-238 get_current_user rejects scope=='media' before the user lookup — media tokens can never be used against any authed API endpoint, verified against /home and /auth/me both returning 401.",
+    "frontend/src/lib/api.ts (unchanged since batch #21): media token cached in module scope and refreshed from /auth/me. Web media URLs now prefer the media token; the authToken fallback is only used in the transitional window before /auth/me lands. Low-priority nit still: consider `Platform.OS === 'web' && !mediaToken` to avoid ever leaking the login token in a query string; not a regression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch22_sec002b_sec001b.py (new — 17 pytest cases: TestLoginLockoutSegmentation×4, TestMediaTokenScope×2, TestFilesAccess×4, TestRegressionAuthedGets×7)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% — Home 10/0 broken, Family 16/0 broken, Profile 18/0 broken; 0 failed /api/files/* responses"},
+  "seed_data_creation": "Throwaway probes only: probe_<uuid>@x.com (unregistered — never persisted, only exercised failure path), probe_lm_<uuid>@x.com (same), TEST_xfam_<uuid>@x.com (registered + POST /api/families to give own family + fully torn down via DELETE /api/auth/account). A single small probe.jpg (~150 B) was uploaded to Emergent Object Storage under board@'s family for the /api/files test — negligible leftover, no PII.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "For lockout tests ALWAYS supply an X-Forwarded-For header with a unique left-most IP and a throwaway email; without XFF the k8s ingress collapses everyone onto a shared peer IP and 5 bad attempts can pollute the lockout key for real accounts sharing that ingress. NEVER brute-force board@fam.com — 5 wrong attempts locks it for 10 minutes. Use `probe_<uuid>@x.com` (unregistered) for the pure 5x401→429 test — the account doesn't need to exist because DUMMY_BCRYPT_HASH is always compared to avoid timing leaks. Sharma demo member avatars are Unsplash CDN URLs, so an image count of `files=0` in the /api/files/ stats snapshot is expected — the presence of 0 broken images is what matters. First-load 'Tap to relive this memory' affection overlay auto-dismisses when you tap any tab (Home/Family/etc.).",
+  "rca_of_issue": "N/A — SEC-002b (per-email+IP lockout, left-most XFF) and SEC-001b (serve_file per-item Vault authz + no-token/cross-family enforcement) both verified. Independent confirmation matches main-agent's curl results: ipA 5x401→429, same email ipB=401, board unaffected, serve_file admin Bearer=200 / media_token query=200 / no-token=401 / cross-family=404, and /api/home rejects media_token with 401. No regression on core authed GETs or SmartImage on Home/Family/Profile."
+}

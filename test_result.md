@@ -1410,3 +1410,39 @@ frontend_batch21:
 agent_communication_batch21:
     -agent: "main"
     -message: "Batch #21. Login: board@fam.com/secret123 (NOTE: 5 wrong logins/email now => 429 for 10 min; use correct creds). BACKEND to verify: (1) login rate limit 429 after 5 wrong (use a THROWAWAY email so you don't lock board), Retry-After header present, valid login still 200, successful login resets; (2) media token: GET /api/auth/me returns media_token; that media_token used as Bearer on /api/home => 401; GET /api/files/{path}?token=<media_token> => 200; normal endpoints still work with the full token. (3) regression: normal login/me/home/events/notices/vault still OK. FRONTEND: More > Preferences > Notifications (more-notifications) opens a screen; on WEB it shows 'Available in the mobile app' (push is native-only). Confirm images/avatars still load everywhere (media-token change). Do NOT retest unrelated older features. Native push delivery can't be tested on web/preview."
+
+# ============ Security Audit #2 + Fixes (re-hardening) ============
+security_batch2:
+  - task: "SEC-001b — serve_file now enforces Vault per-item visibility (_can_view_secure)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "serve_file resolves the live user (both media + full tokens carry user_id), family-scopes, and if the path belongs to a vault_items.files[].url it re-applies _can_view_secure via _secure_viewer (delegate-aware). Prevents an in-family member from fetching a parents-only Vault file by direct URL. Curl: admin fetch 200, media-token fetch 200 (no regression). Non-parent-denied path relies on _can_view_secure (already 403-tested on vault metadata)."
+  - task: "SEC-002b — login lockout DoS hardening (email+IP key, XFF-aware, no global IP lock)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "_client_ip now uses left-most X-Forwarded-For (k8s ingress) so distinct clients don't collapse onto a shared peer IP. Lockout keyed on acct:{email}:{ip} only (removed the global per-IP 30-fail lock that could block all sign-ins; removed IP_LOCK/IP_LIMIT). Curl: 5x401->429 from ipA; SAME email from ipB still 401 (not locked) => targeted-DoS defended; board valid login 200; recovers on success."
+  - task: "P3 — media URLs never fall back to the long-lived login token"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/api.ts"
+    priority: "low"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "mediaUrl + mediaImageSource(web) now use mediaToken || '' (dropped authToken fallback). Native images still use Authorization header (full token, not in URL). media_token is populated on /auth/me at app open before screens render."
+agent_communication_security2:
+    -agent: "main"
+    -message: "Security Audit #2 re-hardening. Verify (BACKEND): (1) Login throttle keyed on email+IP with XFF: send POST /api/auth/login with header X-Forwarded-For: 11.11.11.11 + a FAKE email + wrong pw 5x -> 6th=429 (Retry-After); the SAME fake email with X-Forwarded-For: 22.22.22.22 must be 401 (NOT 429) — proves a victim isn't locked from another network + no global lock; board@fam.com/secret123 valid login stays 200; success clears the lock. (2) serve_file still serves files to the owning family (admin token + media token both 200), no-token=401, cross-family=404 (register a throwaway user + POST /api/families, then DELETE /api/auth/account to clean up). (3) media token still rejected on normal APIs (Bearer media_token on /api/home => 401). REGRESSION (FRONTEND): images/avatars still load on Home/Family/Profile (media-token-only web URLs). Do NOT brute-force board's real email. Do NOT retest unrelated features."
