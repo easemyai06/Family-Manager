@@ -330,6 +330,7 @@ class NoticeIn(BaseModel):
     expiry_date: Optional[str] = None       # YYYY-MM-DD
     priority: str = "normal"                # normal | high
     pinned: bool = False
+    photo_url: Optional[str] = None
 
 
 class NoticePatch(BaseModel):
@@ -338,6 +339,7 @@ class NoticePatch(BaseModel):
     expiry_date: Optional[str] = None
     priority: Optional[str] = None
     pinned: Optional[bool] = None
+    photo_url: Optional[str] = None
 
 
 class NoticeReactionIn(BaseModel):
@@ -346,6 +348,10 @@ class NoticeReactionIn(BaseModel):
 
 class NoticeReplyIn(BaseModel):
     text: str
+
+
+class RsvpIn(BaseModel):
+    status: str  # going | maybe | declined
 
 
 class DashboardPrefsIn(BaseModel):
@@ -1019,7 +1025,8 @@ async def affection_timeline(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Calendar / events
 # ---------------------------------------------------------------------------
-async def hydrate_event(e: dict) -> dict:
+async def hydrate_event(e: dict, viewer: Optional[dict] = None) -> dict:
+    raw_rsvps = e.get("rsvps") or {}
     e = clean(dict(e))
     parts = []
     for pid in e.get("participant_ids", []):
@@ -1029,6 +1036,17 @@ async def hydrate_event(e: dict) -> dict:
     e["participants"] = parts
     if e.get("owner_member_id"):
         e["owner"] = await db.members.find_one({"member_id": e["owner_member_id"]}, {"_id": 0})
+    summary = {"going": 0, "maybe": 0, "declined": 0}
+    rsvp_list = []
+    for mid, st in raw_rsvps.items():
+        if st in summary:
+            summary[st] += 1
+        m = await db.members.find_one({"member_id": mid}, {"_id": 0})
+        if m:
+            rsvp_list.append({"member": _member_card(m), "status": st})
+    e["rsvps"] = rsvp_list
+    e["rsvp_summary"] = summary
+    e["my_rsvp"] = raw_rsvps.get(viewer["member_id"]) if viewer else None
     return e
 
 
@@ -1123,11 +1141,35 @@ async def send_event_invites(e: dict, base_url: str) -> None:
 @api.get("/events")
 async def list_events(user: dict = Depends(get_current_user), start: Optional[str] = None, end: Optional[str] = None):
     fid = require_family(user)
+    viewer = await member_for_user(user)
     q = {"family_id": fid}
     if start and end:
         q["date"] = {"$gte": start, "$lte": end}
     events = await db.events.find(q, {"_id": 0}).sort("date", 1).to_list(500)
-    return [await hydrate_event(e) for e in events]
+    return [await hydrate_event(e, viewer) for e in events]
+
+
+@api.post("/events/{event_id}/rsvp")
+async def rsvp_event(event_id: str, body: RsvpIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    if body.status not in ("going", "maybe", "declined"):
+        raise HTTPException(status_code=400, detail="Invalid RSVP status")
+    e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
+    if not e:
+        raise HTTPException(status_code=404, detail="Event not found")
+    invited = set(e.get("participant_ids") or [])
+    if e.get("owner_member_id"):
+        invited.add(e["owner_member_id"])
+    if mine["member_id"] not in invited:
+        raise HTTPException(status_code=403, detail="Only invited members can RSVP")
+    rsvps = e.get("rsvps") or {}
+    rsvps[mine["member_id"]] = body.status
+    await db.events.update_one({"event_id": event_id, "family_id": fid}, {"$set": {"rsvps": rsvps}})
+    e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
+    return await hydrate_event(e, mine)
 
 
 @api.post("/events")
@@ -1874,7 +1916,8 @@ async def home(user: dict = Depends(get_current_user)):
         notices.append({
             "notice_id": d["notice_id"], "title": d.get("title"), "note": d.get("note"),
             "priority": d.get("priority", "normal"), "pinned": bool(d.get("pinned")),
-            "expiry_date": d.get("expiry_date"),
+            "expiry_date": d.get("expiry_date"), "photo_url": d.get("photo_url"),
+            "reply_count": len(d.get("replies", []) or []),
             "owner": _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0})),
         })
 
@@ -1964,7 +2007,7 @@ async def create_notice(body: NoticeIn, user: dict = Depends(get_current_user)):
         "notice_id": new_id("ntc_"), "family_id": fid, "title": body.title.strip(),
         "note": (body.note or "").strip() or None, "expiry_date": body.expiry_date,
         "priority": body.priority if body.priority in ("normal", "high") else "normal",
-        "pinned": bool(body.pinned), "owner_member_id": mine["member_id"],
+        "pinned": bool(body.pinned), "photo_url": body.photo_url, "owner_member_id": mine["member_id"],
         "reactions": [], "replies": [], "created_at": now_iso(),
     }
     await db.notices.insert_one(doc)

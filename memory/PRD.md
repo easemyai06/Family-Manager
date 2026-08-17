@@ -58,6 +58,12 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   Star Week(7)/On Fire(14)/Legend(30) shown on Home Kids & My-chores cards.
 - Event email + calendar invite: POST /api/events emails invited members (Emergent Resend, best-effort)
   with an "Add to your calendar" link to GET /api/events/{id}/invite.ics (public .ics VEVENT).
+- Event RSVP: invited members tap Going / Maybe / Can't make it right on a calendar event card
+  (POST /api/events/{id}/rsvp; only invited members/owner, else 403); each event shows a live
+  "N going · N maybe · N can't make it" summary (rsvp_summary + my_rsvp on hydrate_event).
+- Notice photos: attach a photo (permission slip, party flyer) to a noticeboard note; the image
+  shows on the board list, the note detail, and the Home noticeboard preview thumbnail (photo_url
+  on notices, image picker in create modal).
   PATCH /families/members/{id} + PATCH /auth/profile.
 - Feed: photo/text posts, 7 reaction types (toggle), comments, post detail, create post w/ image upload.
 - Stories: 24h stories bar + create.

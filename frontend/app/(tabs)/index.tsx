@@ -733,6 +733,7 @@ function NoticeboardSection({ notices, fam, unread, router, go, c, compact }: an
                   <AppText size={14} weight="bold" numberOfLines={1}>{n.title}</AppText>
                   {n.note ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{n.note}</AppText> : null}
                 </View>
+                {n.photo_url ? <SmartImage uri={n.photo_url} style={styles.noticeThumb} /> : null}
                 {n.reply_count ? (
                   <View style={styles.noticeMeta}>
                     <Ionicons name="chatbubble-outline" size={13} color={c.onSurfaceTertiary} />
@@ -1040,6 +1041,7 @@ const styles = StyleSheet.create({
   comeIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 
   noticeRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  noticeThumb: { width: 40, height: 40, borderRadius: radius.sm },
   noticeMeta: { flexDirection: "row", alignItems: "center", gap: 3 },
   dotUrgent: { width: 10, height: 10, borderRadius: 5 },
   msgRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },

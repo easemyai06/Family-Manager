@@ -9,13 +9,22 @@ import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { useAuth } from "@/src/auth/AuthContext";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+
+const RSVP_OPTS: { k: string; label: string; icon: any; tone: "success" | "warning" | "error" }[] = [
+  { k: "going", label: "Going", icon: "checkmark-circle", tone: "success" },
+  { k: "maybe", label: "Maybe", icon: "help-circle", tone: "warning" },
+  { k: "declined", label: "Can't", icon: "close-circle", tone: "error" },
+];
 
 export default function Calendar() {
   const { c } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { member } = useAuth();
+  const myId = member?.member_id;
   const [month, setMonth] = useState(dayjs());
   const [selected, setSelected] = useState(dayjs().format("YYYY-MM-DD"));
   const [events, setEvents] = useState<any[]>([]);
@@ -55,6 +64,16 @@ export default function Calendar() {
     try {
       await api(`/events/${id}`, { method: "DELETE" });
     } catch {}
+  };
+
+  const rsvp = async (eventId: string, status: string) => {
+    setEvents((prev) => prev.map((e) => (e.event_id === eventId ? { ...e, my_rsvp: status } : e)));
+    try {
+      const updated = await api(`/events/${eventId}/rsvp`, { method: "POST", body: { status } });
+      setEvents((prev) => prev.map((e) => (e.event_id === eventId ? updated : e)));
+    } catch {
+      load();
+    }
   };
 
   return (
@@ -169,6 +188,30 @@ export default function Calendar() {
                     ))}
                   </View>
                 ) : null}
+                {((e.participant_ids || []).includes(myId) || e.owner_member_id === myId) ? (
+                  <View style={styles.rsvpRow}>
+                    {RSVP_OPTS.map((o) => {
+                      const active = e.my_rsvp === o.k;
+                      const col = o.tone === "success" ? c.success : o.tone === "warning" ? c.warning : c.error;
+                      return (
+                        <Pressable
+                          key={o.k}
+                          onPress={() => rsvp(e.event_id, o.k)}
+                          style={[styles.rsvpPill, { backgroundColor: active ? col : "transparent", borderColor: active ? col : c.border }]}
+                          testID={`rsvp-${o.k}-${e.event_id}`}
+                        >
+                          <Ionicons name={o.icon} size={13} color={active ? "#fff" : col} />
+                          <AppText size={11} weight="bold" color={active ? "#fff" : c.onSurfaceSecondary}>{o.label}</AppText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                {(e.rsvp_summary?.going || e.rsvp_summary?.maybe || e.rsvp_summary?.declined) ? (
+                  <AppText size={11} color={c.onSurfaceTertiary} style={{ marginTop: 4 }}>
+                    {`${e.rsvp_summary.going} going · ${e.rsvp_summary.maybe} maybe · ${e.rsvp_summary.declined} can't make it`}
+                  </AppText>
+                ) : null}
               </View>
               <Pressable onPress={() => delEvent(e.event_id)} hitSlop={8} testID={`del-event-${e.event_id}`}>
                 <Ionicons name="trash-outline" size={18} color={c.onSurfaceTertiary} />
@@ -209,5 +252,7 @@ const styles = StyleSheet.create({
   eventBar: { width: 5, height: "100%", minHeight: 44, borderRadius: 3 },
   eventMeta: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4, flexWrap: "wrap" },
   avatarRow: { flexDirection: "row", marginTop: spacing.sm },
+  rsvpRow: { flexDirection: "row", gap: 6, marginTop: spacing.sm, flexWrap: "wrap" },
+  rsvpPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
   fab: { position: "absolute", right: spacing.lg, bottom: 90, width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
 });

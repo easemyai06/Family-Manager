@@ -975,3 +975,56 @@ frontend_batch14:
 agent_communication_batch14:
     -agent: "main"
     -message: "Batch #14 = 4 features. Account: board@fam.com / secret123. IMPORTANT: navigate IN-APP (log in, then tap through) — do NOT hard-deep-link to /notice or /notice/<id> via a fresh page load, there is a known web auth-bootstrap race that bounces such deep links to Welcome (in-app navigation works fine). BACKEND to test: (1) POST /api/notices then POST /api/notices/{id}/react {emoji:'❤️'} -> reaction_summary shows count 1 mine true; tap same emoji again -> removed; POST /api/notices/{id}/replies {text} -> reply_count increments, GET /api/notices/{id} returns replies[] with member cards. (2) GET /api/home kids[] include streak + streak_badge. (3) POST /api/events with participant_ids -> 200 (event creation MUST succeed even though the Resend proxy returns 422 for the demo's fake emails — email is best-effort/non-blocking); GET /api/events/{id}/invite.ics returns 200 text/calendar starting 'BEGIN:VCALENDAR' with a VEVENT. FRONTEND to test (in-app nav): from Home 'Family noticeboard' tap 'Open board' -> /notice; FAB (fab-add-notice) -> fill notice-title -> notice-save -> note appears; tap the note (notice-open-<id>) -> detail (/notice/[id]); tap react-❤️ (chip highlights + count); type in notice-reply-input + notice-reply-send -> reply appears in the list; delete own note (notice-del-<id>) from the board. Also confirm Home 'Kids & chores' renders without errors (streak pills appear only when a child has a 3+ day all-chores streak, which the fresh demo won't have — so absence is fine). Do NOT retest unrelated older features."
+
+# ============ Feature Batch #15 (Event RSVP + Notice photos) ============
+backend_batch15:
+  - task: "Event RSVP (POST /api/events/{id}/rsvp) + hydrate_event rsvp data"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "events store rsvps as {member_id: status}. POST /api/events/{id}/rsvp {status: going|maybe|declined} — only INVITED members (participant_ids or owner) may RSVP (else 403); invalid status -> 400. hydrate_event(e, viewer) now returns rsvps[] (member cards+status), rsvp_summary {going,maybe,declined}, my_rsvp. list_events passes the viewer. Verified via curl: RSVP going -> my_rsvp=going, summary going=1."
+  - task: "Notice photo attachment (photo_url on notices)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "NoticeIn/NoticePatch accept photo_url; create_notice persists it; hydrate + GET /api/home notices include photo_url. Verified via curl."
+
+frontend_batch15:
+  - task: "Event RSVP UI on Calendar event cards"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Each event card shows Going/Maybe/Can't pills (rsvp-<status>-<eventId>) for the current user when invited; active pill fills with its colour; a summary line 'N going · N maybe · N can't make it' appears. SCREENSHOT-VERIFIED: tapping Going fills the pill green and shows '1 going · 0 maybe · 0 can't make it'."
+  - task: "Notice photo picker + display"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/notice/index.tsx, frontend/app/notice/[id].tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Create-note modal has 'Attach a photo' (notice-photo) via expo-image-picker + uploadMedia, with preview + remove (notice-photo-remove). Photo shown on the board card, notice detail (/notice/[id]) and the Home noticeboard preview thumbnail. Native image upload can't be exercised on web; verify the picker button renders and a notice WITH a photo_url (set via API) shows its image on the board/detail/home."
+
+agent_communication_batch15:
+    -agent: "main"
+    -message: "Batch #15 = Event RSVP + Notice photos. Account: board@fam.com / secret123 (navigate IN-APP; dismiss first-load affection overlay). BACKEND: (1) POST /api/events/{id}/rsvp {status:'going'} by an INVITED member returns rsvp_summary/my_rsvp; a NON-invited member gets 403; invalid status -> 400. (2) POST /api/notices with {photo_url:'https://...'} persists and GET /api/notices returns photo_url. FRONTEND: RSVP already screenshot-verified (Going pill fills, summary updates) — just re-confirm no regression on the Calendar tab. For notice photos, create a note WITH a photo (set photo_url via API is fine) and confirm the image renders on the board list, the note detail, and the Home noticeboard preview thumbnail; also confirm the 'Attach a photo' button (notice-photo) appears in the create modal. Do NOT retest unrelated older features."

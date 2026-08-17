@@ -3,12 +3,14 @@ import { View, StyleSheet, Pressable, FlatList, Modal, TextInput, ScrollView } f
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import dayjs from "dayjs";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
-import { api } from "@/src/lib/api";
+import { api, uploadMedia } from "@/src/lib/api";
 import { useAuth } from "@/src/auth/AuthContext";
 
 const EXPIRY_PRESETS = [
@@ -31,6 +33,7 @@ export default function Noticeboard() {
   const [expiryDays, setExpiryDays] = useState<number | null>(null);
   const [high, setHigh] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -51,12 +54,26 @@ export default function Noticeboard() {
     setExpiryDays(null);
     setHigh(false);
     setPinned(false);
+    setLocalPhoto(null);
+  };
+
+  const pickPhoto = async () => {
+    const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+    let status = perm.status;
+    if (status !== "granted" && perm.canAskAgain) {
+      status = (await ImagePicker.requestMediaLibraryPermissionsAsync()).status;
+    }
+    if (status !== "granted") return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+    if (!result.canceled && result.assets?.[0]) setLocalPhoto(result.assets[0].uri);
   };
 
   const create = async () => {
     if (!title.trim() || saving) return;
     setSaving(true);
     try {
+      let photo_url: string | null = null;
+      if (localPhoto) photo_url = (await uploadMedia(localPhoto, "image")).url;
       await api("/notices", {
         method: "POST",
         body: {
@@ -65,6 +82,7 @@ export default function Noticeboard() {
           expiry_date: expiryDays ? dayjs().add(expiryDays, "day").format("YYYY-MM-DD") : null,
           priority: high ? "high" : "normal",
           pinned,
+          photo_url,
         },
       });
       setOpen(false);
@@ -131,6 +149,7 @@ export default function Noticeboard() {
                   ) : null}
                 </View>
                 {n.note ? <AppText size={14} color={c.onSurfaceSecondary} style={{ marginTop: 4 }}>{n.note}</AppText> : null}
+                {n.photo_url ? <SmartImage uri={n.photo_url} style={styles.cardPhoto} /> : null}
                 <View style={styles.byRow}>
                   <Avatar uri={n.owner?.photo_url} name={n.owner?.name} size={20} color={n.owner?.color} />
                   <AppText size={12} color={c.onSurfaceTertiary} style={{ flex: 1 }}>
@@ -193,6 +212,19 @@ export default function Noticeboard() {
               style={[styles.input, { backgroundColor: c.surfaceSecondary, color: c.onSurface, borderColor: c.border, height: 90, textAlignVertical: "top" }]}
               testID="notice-note"
             />
+            {localPhoto ? (
+              <View style={styles.photoWrap}>
+                <SmartImage uri={localPhoto} style={styles.photoPreview} />
+                <Pressable onPress={() => setLocalPhoto(null)} style={styles.photoRemove} testID="notice-photo-remove">
+                  <Ionicons name="close-circle" size={26} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={pickPhoto} style={[styles.photoBtn, { borderColor: c.border, backgroundColor: c.surfaceSecondary }]} testID="notice-photo">
+                <Ionicons name="image-outline" size={20} color={c.brand} />
+                <AppText size={13} weight="semibold" color={c.onSurfaceSecondary}>Attach a photo (flyer, permission slip…)</AppText>
+              </Pressable>
+            )}
             <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>Expires</AppText>
             <View style={styles.chipRow}>
               {EXPIRY_PRESETS.map((p) => {
@@ -248,6 +280,11 @@ const styles = StyleSheet.create({
   sheet: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, maxHeight: "85%" },
   handle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: "#D6CEBE", marginBottom: spacing.md },
   input: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.sm },
+  photoBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderStyle: "dashed", paddingVertical: 14, paddingHorizontal: spacing.md, marginTop: spacing.sm },
+  photoWrap: { marginTop: spacing.sm },
+  photoPreview: { width: "100%", height: 160, borderRadius: radius.md },
+  photoRemove: { position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 13 },
+  cardPhoto: { width: "100%", height: 150, borderRadius: radius.md, marginTop: spacing.sm },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8, borderWidth: 1 },
   toggleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md },

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -79,6 +80,7 @@ export default function NoticeDetail() {
             ) : null}
           </View>
           {n.note ? <AppText size={15} color={c.onSurfaceSecondary} style={{ marginTop: spacing.sm }}>{n.note}</AppText> : null}
+          {n.photo_url ? <SmartImage uri={n.photo_url} style={styles.detailPhoto} /> : null}
           <View style={styles.byRow}>
             <Avatar uri={n.owner?.photo_url} name={n.owner?.name} size={22} color={n.owner?.color} />
             <AppText size={12} color={c.onSurfaceTertiary} style={{ flex: 1 }}>
@@ -153,6 +155,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   urgent: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
   byRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.md },
+  detailPhoto: { width: "100%", height: 200, borderRadius: radius.md, marginTop: spacing.md },
   reactBar: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
   reactChip: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8, borderWidth: 1 },
   replyRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },

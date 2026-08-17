@@ -1,0 +1,29 @@
+{
+  "summary": "Batch #15 (Event RSVP + Notice photos) tested end-to-end. Backend: 11/11 pytest cases pass in /app/backend/tests/test_batch15_rsvp_notice_photo.py — RSVP going/maybe/declined update rsvp_summary + my_rsvp + rsvps[member card], invalid status returns 400, missing event returns 404, non-invited member returns 403, list_events hydrates rsvp_summary + my_rsvp for viewer, notice photo_url persists through POST /notices, GET /notices list, GET /notices/{id}, and GET /home notices preview. Frontend (Expo web preview @ 375x667, board@fam.com/secret123): Calendar tab shows Going/Maybe/Can't pills with correct testIDs (rsvp-<status>-<eventId>); tapping Going fills the pill green and the summary reads '1 going · 0 maybe · 0 can\\'t make it', tapping Maybe fills it yellow and summary updates to '0 going · 1 maybe · 0 can\\'t make it'. Noticeboard list card, notice detail (/notice/[id].tsx) and Home 'Family noticeboard' preview all render the notice photo (matching photo_url src). Create-note modal shows the 'Attach a photo (flyer, permission slip…)' button with testID notice-photo. No regressions observed on calendar month grid, agenda list, delete event, or create-event FAB.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch15_rsvp_notice_photo.py",
+    "/app/test_reports/pytest/pytest_batch15_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend RSVP endpoint correctly guards non-invited members (403) and validates status against the allowed set (400) before touching the DB — good defensive ordering.",
+    "hydrate_event injects rsvp_summary+my_rsvp into every list/detail response, so the Calendar UI can render without a second round-trip — clean.",
+    "notice/index.tsx: pickPhoto uses ImagePicker but on web the media library picker is not supported — main agent has correctly noted native-only. The create-modal 'Attach a photo' button still renders on web (verified) so testing coverage is fine."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch15_rsvp_notice_photo.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "During UI testing I created and then deleted one event (evt_b4cb6a25b33f44a3 'UITEST_ RSVP tonight') and one notice (ntc_2fb510f5dab4481c 'UITEST_ Photo notice'). All backend test fixtures also self-clean (create → yield → delete). No residual TEST_ data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "board@fam.com / secret123 works. For RSVP UI: create an event that has the logged-in user as owner_member_id (with today's date) via POST /api/events, then the Calendar tab agenda for today will show the RSVP pills (testIDs rsvp-going-<eventId> / rsvp-maybe-<eventId> / rsvp-declined-<eventId>) and the summary line updates in-place. For notice photo UI on web (where ImagePicker is native-only) set photo_url via POST /api/notices with pinned:true so it appears in the Home 'Family noticeboard' preview. In-app navigation from Home requires scrolling to the noticeboard section before 'Open board' becomes visible. Do NOT deep-link /notice on a fresh page load — the app bounces to /welcome due to auth bootstrap timing.",
+  "rca_of_issue": "N/A — feature verification, no bugs found."
+}
