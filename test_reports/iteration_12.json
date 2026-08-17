@@ -1,0 +1,42 @@
+{
+  "summary": "Batch #12 (Family Dashboard redesign + manual member availability status) tested end-to-end. Backend pytest: 18/18 pass. PATCH /api/families/members/{id}/status: self can set/clear own status; admin Raj can set another member's status; response reflects status/status_emoji/status_label/status_note/status_updated_at (status=null clears everything). GET /api/home returns ALL required new keys — meals_today (shape {slot, recipe} sorted breakfast>lunch>dinner), tasks (each carries item_id/title/priority/due_date/days_until_due/overdue/assignee/scope with scope in {mine,kids,family}), kids ({member,done,total}), shopping_preview ({name,quantity,list_id,list_name}), coming_up (merged events+birthdays each with int 'days', verified sorted ascending), vault_expiring (only title/kind/days_until_expiry with 0<=days<=60; VERIFIED NO policy_number/provider/coverage/coverage_amount leaks), wishlist_reminder ({member,days,wishes}), latest_post (single hydrated post_id), family_chat ({chat_id,last_message,pinned}), needs_attention (each with key/icon/tone/title/subtitle/route; chores->/chores, shopping->/shopping, vault->/vault, bday_*->/birthday/<id>). Legacy regression keys all still present (family, me, members, events_today, pending_chores, upcoming_birthdays, unread_messages, on_this_day, family_streak, shopping_pending). Members array carries new status fields for every member; seeded statuses verified (Raj=work, Priya=home, Aarav=school, Anaya=home, Meera=available). Frontend (Expo web, 390x844): Login dashdemo@fam.com -> Family Dashboard renders (NOT a post feed, verified NO create-post FAB). Header has home-search + home-chat (badge=5) + home-avatar. Status strip shows all 5 members with emoji + label; tap status-mine opens editor modal, tap status-opt-work + type status-note + tap status-save -> strip reflects 'At work'; status-clear removes the status (strip text no longer contains 'At work'). Needs-attention cards navigate correctly (attn-chores->/chores, attn-shopping->/shopping, attn-vault->/vault, attn-bday_<id>->/birthday/<id>). Task filter chips task-filter-family/mine/kids all switch (Kids shows 'No open tasks here'). Coming Up: 6 comeup-* cards render. home-noticeboard/home-memory/home-emergency/home-latest-post all present and tappable. 3 home-wish-<id> cards render. Quick Actions grid: all 6 tiles route correctly (quick-event->/event/create, quick-task->/todos, quick-shopping->/shopping, quick-memory->/timeline/create, quick-message->/chat, quick-love->/affection/send). Affection overlay did not appear during this run (already dismissed in earlier session). No red-screen errors, only expected expo-notifications web warnings and one 'props.pointerEvents is deprecated' RN Web warning (not a functional issue).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "pointerEvents prop (RN Web console warning)",
+        "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-fatal but should be migrated when convenient. Source: likely one of the overlay/ScrollView components used on Home."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch12_dashboard.py",
+    "/app/test_reports/pytest/pytest_batch12_results.xml"
+  ],
+  "action_items": [
+    "(Nice-to-have) Replace deprecated `pointerEvents` prop usage with `style={{ pointerEvents: ... }}` to silence RN Web warning.",
+    "(Hygiene, ongoing) server.py is now 3846 lines — consider splitting Home aggregation, Vault, Emergency, Recipes into routers as noted in prior iterations."
+  ],
+  "critical_code_review_comments": [
+    "server.py:568-586 (set_member_status) — 'status_updated_at' is set to now_iso() only when body.status is truthy; when clearing (status=None) the field is set to None. Behaviour is consistent but consumers reading status_updated_at need to expect null on cleared members. Documented in Member model implicitly.",
+    "server.py:573 — 'You can only update your own status' error is fine, but a child role trying to set a sibling's status returns the same 403 with the identical message; a slightly clearer copy ('Only parents/admins can set another member's status') would help debugging.",
+    "server.py:1457-1464 (vault_expiring) — correctly returns only {item_id,title,kind,days_until_expiry} and respects _can_view_secure; verified in pytest that policy_number/provider/coverage/coverage_amount are stripped.",
+    "server.py:1466-1477 (wishlist_reminder) — uses _can_view_wish to hide reserved wishes from the owner and children. Test coverage only verifies the shape (viewer=Raj who is not the birthday owner). Recommend an additional pytest that logs in AS the birthday member and asserts reservation fields are hidden — not required for this batch since dashdemo only has the Raj user linked.",
+    "server.py:1500-1531 (needs_attention) — only ONE birthday attention card is appended (break after first <=7 days). If two members have birthdays within 7 days only the closest is surfaced. Acceptable, matches spec ('nearest-birthday member')."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch12_dashboard.py (new — 18 pytest cases across TestMemberStatus, TestHomeNewKeys, TestHomeRegression)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% of web-testable flows"},
+  "seed_data_creation": "No new seed data; pytest self-heals Raj's status back to 'work' after clearing. UI test also left Raj at status=work (matching the original seed). No TEST_ artefacts remain in the DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch #12 (Family Dashboard + manual availability status) is stable on dashdemo@fam.com / secret123. Frontend env var is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Key testIDs for Home: status-mine, status-opt-<key>, status-note, status-save, status-clear, attn-chores/shopping/vault/bday_<id>, task-filter-family/mine/kids, comeup-<i>, home-noticeboard/memory/emergency/latest-post, home-wish-<id>, quick-event/task/shopping/memory/message/love, home-search/chat/avatar. GET /api/auth/me returns {user:{...}, member:{...}} (nested), not a flat user object — used that in the pytest fixture. Affection overlay ('Priya sent you a Hug') only fires the first time an account loads Home; on subsequent sessions it may be absent (that's OK). Alert.alert-based dialogs still don't fire on RN Web (unchanged from batch #11).",
+  "rca_of_issue": ""
+}

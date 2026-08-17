@@ -761,3 +761,45 @@ frontend_batch11:
 agent_communication_batch11:
     -agent: "main"
     -message: "Batch #11 = Phase B Family Vault (70-72,81-82) + Phase C Emergency Center (73-80,83-84) + birthday wishlist surfacing. Account: protectdemo@fam.com / secret123 (seeded: 5 vault folders, 4 vault items incl 2 expiring insurance policies; 10 emergency contacts, 3 instructions, a family plan, medical cards for Aarav O+/Peanuts & Raj B+). TEST BACKEND: vault folders/items CRUD + visibility (adult-only create 403; permission 403 on view/edit), /vault/expiries?days=90 (2 items). emergency contacts CRUD (critical sort), instructions (parent-only add/edit 403 for others — but demo only-Raj-is-admin so test allowed path), plan GET/PUT, medical GET/PUT, POST /emergency/sos (creates alert + posts to family chat + returns notified/push_ok), sos/active + resolve. TEST FRONTEND (in-app nav): More tab shows 6 pillars; 🛡️ Protect now has Family Vault + Emergency Center (no longer 'Soon'). VAULT: open -> PIN setup (type 1234 then 1234 via vault-key-* to set, then it unlocks) -> Upcoming Expiries + Folders; open a folder -> item -> insurance details; vault-add-btn -> create modal (toggle Document/Insurance, pick folder, expiry YYYY-MM-DD, save); vault-lock-btn re-locks (re-open asks PIN 1234). EMERGENCY: hub SOS button (confirm dialog -> sends; on web location may be blank, that's fine), Quick Call, Contacts (⭐critical first, add-contact-btn -> save; toggle critical), What To Do (expand steps; add-instruction-btn), Family Plan (edit-plan-btn -> save), Medical Cards (open a member -> edit -> save). Biometric unlock, SOS location & tap-to-call are NATIVE-ONLY (don't fail on web). Do NOT retest unrelated older features."
+
+# ============ Feature Batch #12 (Home Redesign → Family Dashboard + manual member status) ============
+backend_batch12:
+  - task: "Manual member status (PATCH /api/families/members/{id}/status) + seeded demo statuses"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New MemberStatusIn model + PATCH /api/families/members/{member_id}/status. Self can set own status; a parent/admin can set anyone's (else 403). Fields: status key, status_emoji, status_label, status_note (all clearable with status:null). Seed now sets demo statuses (Raj=work, Priya=home, Aarav=school, Anaya=home, Meera=available). Verified via curl: set travelling/note OK; self-only guard."
+  - task: "Extended /api/home aggregation for the Family Dashboard"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/home now also returns: meals_today (today's slot+recipe), tasks (open to-do items across all lists w/ assignee/due/overdue/scope mine|kids|family), kids (per-child chore done/total today), shopping_preview (unchecked items + names), coming_up (future events 30d + upcoming birthdays merged/sorted), vault_expiring (viewer-scoped, <=60d, TITLE+days+kind ONLY — no policy numbers), wishlist_reminder (nearest birthday member's top wishes via hydrate_wish — reservation-safe), latest_post (single hydrated peek), family_chat (pinned + last_message), needs_attention (prioritised list w/ route/tone). Members now carry status fields. Verified via curl on fresh seed: all keys present with expected values."
+
+frontend_batch12:
+  - task: "Family Dashboard Home screen (role-aware sections, replaces social feed)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx, frontend/src/lib/statuses.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Rebuilt Home from a FlatList social feed into a role-ordered dashboard (ScrollView). Header shows date + greeting + family name + search (home-search) + chat (home-chat, unread badge) + avatar (home-avatar). Family Status strip: each member card (status-<id>, own = status-mine) shows avatar + status emoji/label; tapping own opens a status editor modal (status-opt-<key>, status-note, status-save, status-clear -> PATCH). Sections render by persona (parent/child/grandparent) and hide when empty: Needs Attention (attn-<key> -> route), Today at a glance, Family Tasks (task-filter-mine/kids/family), Kids & chores (praise-<id> -> send love), My chores (child), Meals, Shopping, Coming Up (comeup-<i>), Family Noticeboard (home-noticeboard -> family chat), Memory of the Day (home-memory), Wish List Reminder (home-wish-<id>), Important Information (Vault expiries), Emergency (home-emergency), Daily Brief, Latest Post peek (home-latest-post), Quick Actions (quick-<key>). Smoke screenshot confirms all 13 sections in DOM after login. Affection overlay + On This Day nudge retained. Removed old stories bar + create-post FAB from Home."
+
+agent_communication_batch12:
+    -agent: "main"
+    -message: "Batch #12 = Home redesign into a role-aware Family Dashboard + manual member status. Account: dashdemo@fam.com / secret123 (full Sharma demo; members have seeded statuses). TEST BACKEND: (1) PATCH /api/families/members/{id}/status — set your own status (200) with emoji/label/note; setting ANOTHER member's status as a NON parent/admin should 403 (note: demo's only logged-in user is Raj=admin, so admin CAN set others — verify admin path works, and verify self-set works). status:null clears. (2) GET /api/home returns the new keys: meals_today, tasks (with scope + overdue + days_until_due), kids (done/total), shopping_preview, coming_up (events+birthdays sorted by days), vault_expiring (ONLY title/days/kind, NO policy_number), wishlist_reminder (reservation hidden from owner/children), latest_post, family_chat (pinned+last_message), needs_attention (route+tone). TEST FRONTEND (in-app nav, log in first): Home renders the dashboard (NOT a feed); status strip -> tap your own card (status-mine) -> modal -> pick a status (status-opt-work) + optional note -> status-save -> your status updates on the strip; Needs Attention cards navigate (attn-chores -> /chores, attn-shopping -> /shopping, attn-vault -> /vault, birthday -> /birthday/<id>); task filter chips switch lists; Kids & chores show progress bars; Coming Up horizontal cards; Family Noticeboard -> family chat; Memory of the Day -> timeline detail; Wish List Reminder -> wish detail; Emergency Center card -> /emergency; Quick Actions tiles route correctly. NOTE: an unseen affection overlay ('Priya sent you a Hug') appears on first Home load — dismiss it ('Tap to close') before interacting; this is expected. Push/voice/biometric/SOS-location remain native-only. Do NOT retest unrelated older features unless regression-suspected."

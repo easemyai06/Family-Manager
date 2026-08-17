@@ -31,8 +31,17 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 ## Implemented (2026-06)
 - Auth: register/login (JWT), Google Sign-In (Emergent), /auth/me, logout, global 401 handler.
 - Onboarding: create family / join by code / seed demo "Sharma Family".
-- Home dashboard: greeting, quick actions, Today's Plan (events/chores/shopping), birthday banner,
-  stories bar, Family Moments feed.
+- Home dashboard (REDESIGNED 2026-06 → Family Operating System): role-aware Family Dashboard
+  (not a social feed). Sections, ordered by persona (parent/child/grandparent): Family header
+  (date/greeting/family + search/chat/avatar), Family Status strip (manual availability per
+  member — home/work/school/available/busy/travelling/vacation/activity; tap own to set, no
+  location), Needs Attention (overdue/due tasks, pending chores, shopping, expiring Vault items,
+  upcoming birthday), Today at a Glance (agenda), Family Tasks (All/Mine/Kids filter), Kids &
+  Chores (progress + praise/star), Today's Meals, Shopping preview, Coming Up (events+birthdays),
+  Family Noticeboard (family chat pinned + last message + unread), Memory of the Day (On This
+  Day), Wish List Reminder (nearest birthday, reservation-safe), Important Information (Vault
+  expiry summary — no policy numbers), Emergency quick access, Daily Brief (counts), Latest Post
+  peek (single, no endless feed), Quick Actions. Powered by one aggregated GET /api/home.
 - Feed: photo/text posts, 7 reaction types (toggle), comments, post detail, create post w/ image upload.
 - Stories: 24h stories bar + create.
 - Affection (signature): Send Some Love (recipient + type + note), full-screen Reanimated animation

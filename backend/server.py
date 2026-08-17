@@ -192,6 +192,13 @@ class MemberPatch(BaseModel):
     hobbies: Optional[str] = None
 
 
+class MemberStatusIn(BaseModel):
+    status: Optional[str] = None          # home|work|school|travelling|busy|available|vacation|custom (None clears)
+    status_emoji: Optional[str] = None
+    status_label: Optional[str] = None
+    status_note: Optional[str] = None
+
+
 class MediaItem(BaseModel):
     url: str
     type: str = "image"  # image | video
@@ -555,6 +562,27 @@ async def patch_member(member_id: str, body: MemberPatch, user: dict = Depends(g
     updates = {k: v for k, v in body.dict().items() if v is not None}
     if updates:
         await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
+    return await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+
+
+@api.patch("/families/members/{member_id}/status")
+async def set_member_status(member_id: str, body: MemberStatusIn, user: dict = Depends(get_current_user)):
+    """Manually set a family member's availability status. Self, or a parent/admin for anyone."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine or (mine["member_id"] != member_id and mine.get("role") not in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="You can only update your own status")
+    m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    updates = {
+        "status": body.status,
+        "status_emoji": body.status_emoji,
+        "status_label": body.status_label,
+        "status_note": (body.status_note or "").strip() or None,
+        "status_updated_at": now_iso() if body.status else None,
+    }
+    await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
     return await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
 
 
@@ -1361,6 +1389,147 @@ async def home(user: dict = Depends(get_current_user)):
 
     family_streak = _streak_from_dates(await _family_activity_dates(fid))
 
+    my_id = mine["member_id"] if mine else None
+
+    # --- Today's planned meals -------------------------------------------------
+    monday = date.today() - timedelta(days=date.today().weekday())
+    week_start = monday.isoformat()
+    day_idx = date.today().weekday()
+    slot_order = {"breakfast": 0, "lunch": 1, "dinner": 2}
+    meals_today = []
+    for e in await db.meal_plans.find({"family_id": fid, "week_start": week_start, "day": day_idx}, {"_id": 0}).to_list(10):
+        r = await db.recipes.find_one({"recipe_id": e["recipe_id"], "family_id": fid}, {"_id": 0})
+        if r:
+            meals_today.append({"slot": e["slot"], "recipe": _recipe_card(r)})
+    meals_today.sort(key=lambda x: slot_order.get(x["slot"], 9))
+
+    # --- Open family tasks (across all to-do lists) ----------------------------
+    list_names = {l["list_id"]: l["name"] for l in await db.todo_lists.find({"family_id": fid}, {"_id": 0}).to_list(100)}
+    child_ids = {m["member_id"] for m in members if m.get("is_child") or m.get("role") == "child"}
+    tasks = []
+    for it in await db.todo_items.find({"family_id": fid, "done": {"$ne": True}}, {"_id": 0}).sort("due_date", 1).to_list(300):
+        assignee = None
+        aid = it.get("assignee_member_id")
+        if aid:
+            assignee = _member_card(await db.members.find_one({"member_id": aid}, {"_id": 0}))
+        du = _days_until(it.get("due_date")) if it.get("due_date") else None
+        tasks.append({
+            "item_id": it["item_id"], "list_id": it.get("list_id"), "list_name": list_names.get(it.get("list_id")),
+            "title": it.get("title"), "priority": it.get("priority", "normal"),
+            "due_date": it.get("due_date"), "days_until_due": du,
+            "overdue": du is not None and du < 0,
+            "assignee": assignee,
+            "scope": "mine" if aid == my_id else ("kids" if aid in child_ids else "family"),
+        })
+
+    # --- Kids' chore progress today -------------------------------------------
+    kids = []
+    for m in members:
+        if m.get("is_child") or m.get("role") == "child":
+            my_chores = [ch for ch in chores if ch.get("owner_member_id") == m["member_id"]]
+            done = 0
+            for ch in my_chores:
+                if await db.chore_completions.find_one({"chore_id": ch["chore_id"], "date": t}):
+                    done += 1
+            kids.append({"member": _member_card(m), "done": done, "total": len(my_chores)})
+
+    # --- Shopping preview ------------------------------------------------------
+    shopping_preview = []
+    for l in shopping:
+        for u in await db.shopping_items.find({"list_id": l["list_id"], "checked": False}, {"_id": 0}).sort("created_at", 1).to_list(20):
+            shopping_preview.append({"name": u["name"], "quantity": u.get("quantity"),
+                                     "list_id": l["list_id"], "list_name": l.get("name")})
+    shopping_preview = shopping_preview[:6]
+
+    # --- Coming up: future events (30d) + upcoming birthdays -------------------
+    end_iso = (date.today() + timedelta(days=30)).isoformat()
+    coming_up = []
+    for e in await db.events.find({"family_id": fid, "date": {"$gt": t, "$lte": end_iso}}, {"_id": 0}).sort("date", 1).to_list(50):
+        coming_up.append({"kind": "event", "event_id": e["event_id"], "title": e["title"],
+                          "date": e["date"], "color": e.get("color"), "days": _days_until(e["date"])})
+    for b in upcoming_birthdays:
+        coming_up.append({"kind": "birthday", "member": _member_card(b["member"]),
+                          "title": f"{b['member']['name']}'s birthday", "days": b["days"]})
+    coming_up.sort(key=lambda x: x.get("days") if x.get("days") is not None else 999)
+    coming_up = coming_up[:8]
+
+    # --- Vault expiring (viewer-scoped, summary only, no sensitive fields) -----
+    vault_expiring = []
+    for d in await db.vault_items.find({"family_id": fid, "expiry_date": {"$ne": None}}, {"_id": 0}).to_list(2000):
+        du = _days_until(d.get("expiry_date"))
+        if du is not None and 0 <= du <= 60 and _can_view_secure(d, mine):
+            vault_expiring.append({"item_id": d["item_id"], "title": d.get("title"),
+                                   "kind": d.get("kind"), "days_until_expiry": du})
+    vault_expiring.sort(key=lambda x: x["days_until_expiry"])
+    vault_expiring = vault_expiring[:5]
+
+    # --- Wish list reminder for the nearest birthday (reservation-safe) --------
+    wishlist_reminder = None
+    if upcoming_birthdays:
+        b = upcoming_birthdays[0]
+        bm = b["member"]
+        docs = await db.wish_items.find(
+            {"family_id": fid, "owner_member_id": bm["member_id"], "is_family": {"$ne": True}},
+            {"_id": 0}).sort("priority", -1).to_list(50)
+        visible = [d for d in docs if _can_view_wish(d, mine)]
+        top = [await hydrate_wish(d, mine) for d in visible[:3]]
+        if top:
+            wishlist_reminder = {"member": _member_card(bm), "days": b["days"], "wishes": top}
+
+    # --- Latest post peek ------------------------------------------------------
+    latest = await db.posts.find({"family_id": fid}, {"_id": 0}).sort("created_at", -1).to_list(1)
+    latest_post = await hydrate_post(latest[0], fid, my_id) if latest else None
+
+    # --- Family chat peek: pinned + last message -------------------------------
+    family_chat_peek = None
+    fchat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if fchat:
+        pinned = None
+        pid = fchat.get("pinned_message_id")
+        if pid:
+            pm = await db.messages.find_one({"message_id": pid}, {"_id": 0})
+            if pm:
+                sender = await db.members.find_one({"member_id": pm["sender_member_id"]}, {"_id": 0})
+                pinned = {"text": pm.get("text") or "📷 Photo", "sender": _member_card(sender)}
+        family_chat_peek = {"chat_id": fchat["chat_id"], "last_message": fchat.get("last_message"), "pinned": pinned}
+
+    # --- Needs attention (prioritised) -----------------------------------------
+    def _plural(n):
+        return "s" if n != 1 else ""
+    needs_attention = []
+    overdue_tasks = [tk for tk in tasks if tk["overdue"]]
+    if overdue_tasks:
+        needs_attention.append({"key": "tasks_overdue", "icon": "alert-circle", "tone": "error",
+                                "title": f"{len(overdue_tasks)} overdue task{_plural(len(overdue_tasks))}",
+                                "subtitle": overdue_tasks[0]["title"], "route": "/todos"})
+    due_today = [tk for tk in tasks if tk.get("days_until_due") == 0]
+    if due_today:
+        needs_attention.append({"key": "tasks_due", "icon": "time", "tone": "warning",
+                                "title": f"{len(due_today)} task{_plural(len(due_today))} due today",
+                                "subtitle": due_today[0]["title"], "route": "/todos"})
+    if pending_chores:
+        needs_attention.append({"key": "chores", "icon": "checkbox", "tone": "info",
+                                "title": f"{pending_chores} chore{_plural(pending_chores)} left today",
+                                "subtitle": "Review the kids' chores", "route": "/chores"})
+    if shopping_pending:
+        names = ", ".join([s["name"] for s in shopping_preview[:3]])
+        needs_attention.append({"key": "shopping", "icon": "cart", "tone": "success",
+                                "title": f"{shopping_pending} item{_plural(shopping_pending)} to buy",
+                                "subtitle": names or "Shopping list", "route": "/shopping"})
+    if vault_expiring:
+        v = vault_expiring[0]
+        needs_attention.append({"key": "vault", "icon": "lock-closed", "tone": "warning",
+                                "title": f"{v['title']} expires in {v['days_until_expiry']} day{_plural(v['days_until_expiry'])}",
+                                "subtitle": "Family Vault", "route": "/vault"})
+    for b in upcoming_birthdays:
+        if b["days"] <= 7:
+            when = "today" if b["days"] == 0 else f"in {b['days']} day{_plural(b['days'])}"
+            needs_attention.append({"key": f"bday_{b['member']['member_id']}", "icon": "gift", "tone": "brand",
+                                    "title": f"{b['member']['name']}'s birthday {when}",
+                                    "subtitle": "Send a wish or a gift",
+                                    "route": f"/birthday/{b['member']['member_id']}"})
+            break
+
     return {
         "family": fam,
         "me": mine,
@@ -1374,6 +1543,16 @@ async def home(user: dict = Depends(get_current_user)):
         "unread_messages": unread_messages,
         "on_this_day": on_this_day,
         "family_streak": family_streak,
+        "meals_today": meals_today,
+        "tasks": tasks,
+        "kids": kids,
+        "shopping_preview": shopping_preview,
+        "coming_up": coming_up,
+        "vault_expiring": vault_expiring,
+        "wishlist_reminder": wishlist_reminder,
+        "latest_post": latest_post,
+        "family_chat": family_chat_peek,
+        "needs_attention": needs_attention,
     }
 
 
@@ -3198,14 +3377,25 @@ async def seed_demo(user: dict = Depends(get_current_user)):
         ("Meera", "Grandma", "adult", "#8AB07D", "1956-06-04", IMG["grandma"], False, "Rajma Rice", "Sage", "Gardening, Stories", False),
     ]
     mem_ids = {}
+    STATUS_SEED = {
+        "Raj": ("work", "💼", "At work"),
+        "Priya": ("home", "🏡", "At home"),
+        "Aarav": ("school", "🏫", "At school"),
+        "Anaya": ("home", "🏡", "At home"),
+        "Meera": ("available", "🌿", "Available"),
+    }
     for name, rel, role, color, bday, photo, is_child, food, fav_color, hobbies, is_me in members_def:
         mid = new_id("mem_")
         mem_ids[name] = mid
+        _st = STATUS_SEED.get(name)
         await db.members.insert_one({
             "member_id": mid, "family_id": fid, "name": name, "relationship": rel, "role": role,
             "color": color, "birthday": bday, "photo_url": photo, "is_child": is_child,
             "linked_user_id": user["user_id"] if is_me else None, "favorite_food": food,
-            "favorite_color": fav_color, "hobbies": hobbies, "created_at": now_iso(),
+            "favorite_color": fav_color, "hobbies": hobbies,
+            "status": _st[0] if _st else None, "status_emoji": _st[1] if _st else None,
+            "status_label": _st[2] if _st else None, "status_note": None,
+            "status_updated_at": now_iso() if _st else None, "created_at": now_iso(),
         })
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"family_id": fid}})
 
