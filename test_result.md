@@ -1353,3 +1353,60 @@ security_deferred_notes:
 agent_communication_security:
     -agent: "main"
     -message: "Security audit CONDITIONAL PASS -> fixed SEC-001/002/003 + P3 member-add. Verified by testing agent (iteration_18): 13/13 backend + frontend image regression clean. Deferred P3 CORS/rate-limit/chat-scoping noted."
+
+# ============ Batch #21 (Signed Media Links + Login Rate Limiting + Push Notification option) ============
+backend_batch21:
+  - task: "Login brute-force rate limiting (MongoDB-backed per-email + per-IP lockout)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/auth/login now throttled: 5 failed attempts/email -> 429 (10-min lock); 30/IP -> 429 (5-min lock); TTL collection auth_throttles (expireAfterSeconds index). Dummy bcrypt hash used for unknown emails (timing). Success clears both keys. Curl-verified: 5x401 then 429 with Retry-After~599; valid login unaffected; recovers after a single wrong attempt+correct."
+  - task: "Short-lived media token (signed media links) — removes long-lived JWT from media URLs"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "make_media_token (scope='media', family_id, 7d) returned by GET /api/auth/me. get_current_user REJECTS scope=media (401) so it can't hit the API. serve_file does its own decode: accepts a media token (family from token) OR a full user token (family via user lookup), then family-scopes. Curl-verified: /auth/me returns media_token; media token on /home=401; file fetch via ?token=<media_token>=200; full-token header fetch=200."
+  - task: "register-push binds to caller (from Batch security) unaffected by media-token change"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Unchanged; still requires auth. In preview returns 500 (placeholder EMERGENT_PUSH_KEY) which is expected."
+frontend_batch21:
+  - task: "Media token wiring (api.ts mediaUrl/mediaImageSource + AuthContext)"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/api.ts, frontend/src/auth/AuthContext.tsx, frontend/src/components/ui/SmartImage.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "AuthContext.applyMe stores media_token via setMediaToken (cleared on logout). mediaUrl (audio/docs) + mediaImageSource(web) use the media token in ?token= (fallback authToken); native images use Authorization header (token never in URL). SCREENSHOT: Home images 10 total / 0 broken (no regression)."
+  - task: "Notifications settings screen + More > Preferences > Notifications"
+    implemented: true
+    working: true
+    file: "frontend/app/settings/notifications.tsx, frontend/app/(tabs)/more.tsx, frontend/src/lib/push.ts, frontend/app.json"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "SCREENSHOT-VERIFIED on web: Notifications screen shows status card + 'YOU'LL BE NOTIFIED ABOUT' list; web shows 'Available in the mobile app'. push.ts split: registerForPush (silent, only if already granted — no login prompt), enablePush (contextual request w/ granted/denied/blocked), getPushStatus. Toggle On -> enablePush; blocked -> Open Settings (Linking). app.json android.googleServicesFile added. Real push delivery needs google-services.json + deploy + device build."
+agent_communication_batch21:
+    -agent: "main"
+    -message: "Batch #21. Login: board@fam.com/secret123 (NOTE: 5 wrong logins/email now => 429 for 10 min; use correct creds). BACKEND to verify: (1) login rate limit 429 after 5 wrong (use a THROWAWAY email so you don't lock board), Retry-After header present, valid login still 200, successful login resets; (2) media token: GET /api/auth/me returns media_token; that media_token used as Bearer on /api/home => 401; GET /api/files/{path}?token=<media_token> => 200; normal endpoints still work with the full token. (3) regression: normal login/me/home/events/notices/vault still OK. FRONTEND: More > Preferences > Notifications (more-notifications) opens a screen; on WEB it shows 'Available in the mobile app' (push is native-only). Confirm images/avatars still load everywhere (media-token change). Do NOT retest unrelated older features. Native push delivery can't be tested on web/preview."

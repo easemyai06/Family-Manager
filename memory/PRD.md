@@ -90,8 +90,15 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   SEC-002 /api/files/{path} is family-scoped (BOLA); SEC-003 the long-lived JWT is no longer put in
   image URLs on native (expo-image Authorization header; web keeps ?token=); POST /families/members
   is admin/parent-only. Verified by testing agent (13/13 backend + frontend image regression clean).
-- Deferred (low risk): CORS allowlist, login rate-limiting, chat-membership scoping on reactions,
-  and a future short-lived signed-URL/media-token scheme (residual SEC-003 for web/docs/audio).
+- Deferred (low risk): CORS allowlist, chat-membership scoping on reactions.
+- Batch #21 hardening: login brute-force rate limiting (5/email→10-min lock, 30/IP→5-min, Mongo TTL);
+  short-lived media tokens (scope='media', 7d, family-scoped) so the long-lived login JWT never rides
+  in a media URL (web/documents/audio) — media tokens are rejected by the API; native images use an
+  Authorization header. Verified by testing agent (iteration_19: 13/13 backend + image regression).
+- Notifications: More > Preferences > Notifications lets a user turn on phone push (Emergent-managed).
+  Requires user to upload Firebase google-services.json to /app/frontend/ and only delivers on a
+  real device after Publish + build (app.json android.googleServicesFile wired; EMERGENT_PUSH_KEY
+  placeholder is auto-set at deploy — never edit it).
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

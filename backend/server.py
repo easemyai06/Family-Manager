@@ -24,6 +24,7 @@ from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 from passlib.context import CryptContext
@@ -195,6 +196,24 @@ def make_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 
+# Short-lived, read-only, family-scoped token used ONLY in media URLs so the
+# long-lived login token never travels in a URL (web <img>, documents, audio).
+MEDIA_TOKEN_DAYS = 7
+
+
+def make_media_token(user_id: str, family_id: Optional[str]) -> str:
+    payload = {"user_id": user_id, "family_id": family_id, "scope": "media",
+               "exp": datetime.now(timezone.utc) + timedelta(days=MEDIA_TOKEN_DAYS)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def _decode_token(raw: str) -> Optional[dict]:
+    try:
+        return jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.PyJWTError:
+        return None
+
+
 def clean(doc: dict) -> dict:
     if doc:
         doc.pop("_id", None)
@@ -214,10 +233,79 @@ async def get_current_user(authorization: Optional[str] = Header(None),
         payload = jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGO])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # media-scoped tokens are read-only file tokens; never valid for the API
+    if payload.get("scope") == "media":
+        raise HTTPException(status_code=401, detail="Invalid token")
     user = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+
+# ---------------------------------------------------------------------------
+# Login brute-force throttle (MongoDB-backed, per-email + per-IP lockout)
+# ---------------------------------------------------------------------------
+THROTTLE_WINDOW = timedelta(minutes=10)
+ACCOUNT_LOCK = timedelta(minutes=10)
+IP_LOCK = timedelta(minutes=5)
+THROTTLE_RETENTION = timedelta(days=1)
+ACCOUNT_LIMIT = 5
+IP_LIMIT = 30
+# Real bcrypt hash used when a user doesn't exist, so timing doesn't leak account existence.
+DUMMY_BCRYPT_HASH = pwd_context.hash("fixed-unusable-dummy-password")
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+async def _throttle_lock(tkey: str) -> Optional[datetime]:
+    doc = await db.auth_throttles.find_one({"_id": tkey}, {"locked_until": 1})
+    until = doc.get("locked_until") if doc else None
+    if not until:
+        return None
+    if until.tzinfo is None:  # motor returns naive UTC
+        until = until.replace(tzinfo=timezone.utc)
+    return until if until > datetime.now(timezone.utc) else None
+
+
+async def _reject_if_locked(email_key: str, ip_key: str) -> None:
+    e_lock, i_lock = await asyncio.gather(_throttle_lock(email_key), _throttle_lock(ip_key))
+    locks = [x for x in (e_lock, i_lock) if x]
+    if locks:
+        until = max(locks)
+        secs = max(1, int((until - datetime.now(timezone.utc)).total_seconds()))
+        raise HTTPException(status_code=429, detail="Too many login attempts. Please try again later.",
+                            headers={"Retry-After": str(secs)})
+
+
+async def _record_failure(tkey: str, kind: str) -> None:
+    limit = ACCOUNT_LIMIT if kind == "email" else IP_LIMIT
+    lock_ms = int((ACCOUNT_LOCK if kind == "email" else IP_LOCK).total_seconds() * 1000)
+    window_ms = int(THROTTLE_WINDOW.total_seconds() * 1000)
+    retention_ms = int(THROTTLE_RETENTION.total_seconds() * 1000)
+    in_new_window = {"$or": [
+        {"$eq": [{"$ifNull": ["$window_started_at", None]}, None]},
+        {"$gte": ["$$NOW", {"$add": ["$window_started_at", window_ms]}]},
+    ]}
+    pipeline = [
+        {"$set": {
+            "kind": kind,
+            "failed_count": {"$cond": [in_new_window, 1, {"$add": [{"$ifNull": ["$failed_count", 0]}, 1]}]},
+            "window_started_at": {"$cond": [in_new_window, "$$NOW", "$window_started_at"]},
+            "updated_at": "$$NOW",
+            "expires_at": {"$add": ["$$NOW", retention_ms]},
+        }},
+        {"$set": {
+            "locked_until": {"$cond": [{"$gte": ["$failed_count", limit]}, {"$add": ["$$NOW", lock_ms]}, None]},
+        }},
+    ]
+    await db.auth_throttles.find_one_and_update(
+        {"_id": tkey}, pipeline, upsert=True, return_document=ReturnDocument.AFTER)
+
+
+async def _clear_failures(*keys: str) -> None:
+    await db.auth_throttles.delete_many({"_id": {"$in": list(keys)}})
 
 
 async def member_for_user(user: dict) -> Optional[dict]:
@@ -618,10 +706,18 @@ async def register(body: RegisterIn):
 
 
 @api.post("/auth/login")
-async def login(body: LoginIn):
-    u = await db.users.find_one({"email": body.email.lower()})
-    if not u or not u.get("password_hash") or not pwd_context.verify(body.password, u["password_hash"]):
+async def login(body: LoginIn, request: Request):
+    email = body.email.lower().strip()
+    ip = _client_ip(request)
+    email_key, ip_key = f"email:{email}", f"ip:{ip}"
+    await _reject_if_locked(email_key, ip_key)
+    u = await db.users.find_one({"email": email})
+    stored = u.get("password_hash") if (u and u.get("password_hash")) else DUMMY_BCRYPT_HASH
+    ok = pwd_context.verify(body.password, stored)
+    if not u or not ok:
+        await asyncio.gather(_record_failure(email_key, "email"), _record_failure(ip_key, "ip"))
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    await _clear_failures(email_key, ip_key)
     return {"token": make_token(u["user_id"]), "user": public_user(u)}
 
 
@@ -649,7 +745,8 @@ async def google_session(body: SessionIn):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     member = await member_for_user(user)
-    return {"user": public_user(user), "member": member}
+    return {"user": public_user(user), "member": member,
+            "media_token": make_media_token(user["user_id"], user.get("family_id"))}
 
 
 # ---------------------------------------------------------------------------
@@ -4158,16 +4255,32 @@ async def upload(file: UploadFile = File(...), kind: str = Form("image"), user: 
 
 
 @api.get("/files/{path:path}")
-async def serve_file(path: str, user: dict = Depends(get_current_user)):
+async def serve_file(path: str, authorization: Optional[str] = Header(None),
+                     token: Optional[str] = Query(None)):
+    raw = None
+    if authorization and authorization.lower().startswith("bearer "):
+        raw = authorization.split(" ", 1)[1].strip()
+    elif token:
+        raw = token
+    payload = _decode_token(raw) if raw else None
+    if not payload:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    # family scope comes from the (short-lived) media token, or a full user token
+    if payload.get("scope") == "media":
+        viewer_fid = payload.get("family_id")
+    else:
+        u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
+        if not u:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        viewer_fid = u.get("family_id")
     rec = await db.media.find_one({"storage_path": path}, {"_id": 0})
     if not rec:
         raise HTTPException(status_code=404, detail="File not found")
-    # Only members of the owning family may fetch the file (BOLA protection).
     owner_fid = rec.get("family_id")
     if owner_fid is None:  # legacy media uploaded before family tagging
         owner = await db.users.find_one({"user_id": rec.get("owner_id")}, {"_id": 0})
         owner_fid = owner.get("family_id") if owner else None
-    if owner_fid and owner_fid != user.get("family_id"):
+    if owner_fid and owner_fid != viewer_fid:
         raise HTTPException(status_code=404, detail="File not found")
     try:
         content, ct = await run_in_threadpool(_get_object, path)
@@ -4863,6 +4976,7 @@ async def startup():
         await db.posts.create_index("family_id")
         await db.events.create_index([("family_id", 1), ("date", 1)])
         await db.affections.create_index([("family_id", 1), ("to_member_id", 1)])
+        await db.auth_throttles.create_index("expires_at", expireAfterSeconds=0)
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:

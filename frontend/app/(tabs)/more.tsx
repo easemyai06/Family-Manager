@@ -211,6 +211,14 @@ export default function More() {
           </View>
         </View>
 
+        {/* preferences */}
+        <Section
+          title="🔔 Preferences"
+          rows={[
+            { key: "notifications", label: "Notifications", icon: "notifications", color: "#E8A33D", route: "/settings/notifications" },
+          ]}
+        />
+
         {/* support & legal */}
         <Section
           title="ℹ️ Support & Legal"

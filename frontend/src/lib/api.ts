@@ -12,6 +12,13 @@ export function getAuthToken() {
   return authToken;
 }
 
+// Short-lived, read-only, family-scoped token used ONLY in media URLs so the
+// long-lived login token never travels in a URL. Refreshed on every /auth/me.
+let mediaToken: string | null = null;
+export function setMediaToken(t: string | null) {
+  mediaToken = t;
+}
+
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
@@ -49,20 +56,21 @@ export async function api<T = any>(path: string, opts: Options = {}): Promise<T>
   return data as T;
 }
 
-// Resolve a media url to a fully-qualified, authenticated URL (used for audio,
-// documents opened externally, and web where request headers aren't available).
+// Resolve a media url to a fully-qualified URL authenticated with the
+// short-lived media token (used for audio, documents opened externally, and
+// web where request headers aren't available). Never carries the login token.
 export function mediaUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith("/api/")) {
     const sep = url.includes("?") ? "&" : "?";
-    return `${BACKEND_ORIGIN}${url}${sep}token=${authToken || ""}`;
+    return `${BACKEND_ORIGIN}${url}${sep}token=${mediaToken || authToken || ""}`;
   }
   return url;
 }
 
 // Build an expo-image source for a media url. On native we send the bearer
-// token as a request header (so the long-lived token never appears in the URL);
-// on web (<img> can't set headers) we fall back to the token query param.
+// token as a request header (never in the URL); on web (<img> can't set
+// headers) we fall back to the short-lived media token as a query param.
 export function mediaImageSource(
   url: string | null | undefined
 ): { uri: string; headers?: Record<string, string> } | undefined {
@@ -71,7 +79,7 @@ export function mediaImageSource(
     const full = `${BACKEND_ORIGIN}${url}`;
     if (Platform.OS === "web") {
       const sep = url.includes("?") ? "&" : "?";
-      return { uri: `${full}${sep}token=${authToken || ""}` };
+      return { uri: `${full}${sep}token=${mediaToken || authToken || ""}` };
     }
     return authToken ? { uri: full, headers: { Authorization: `Bearer ${authToken}` } } : { uri: full };
   }

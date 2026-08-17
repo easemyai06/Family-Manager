@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { storage } from "@/src/utils/storage";
-import { api, setAuthToken, setUnauthorizedHandler } from "@/src/lib/api";
+import { api, setAuthToken, setMediaToken, setUnauthorizedHandler } from "@/src/lib/api";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -48,9 +48,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initializing, setInitializing] = useState(true);
 
   const applyMe = useCallback(async () => {
-    const data = await api<{ user: User; member: Member }>("/auth/me");
+    const data = await api<{ user: User; member: Member; media_token?: string }>("/auth/me");
     setUser(data.user);
     setMember(data.member);
+    setMediaToken(data.media_token || null);
   }, []);
 
   const bootstrap = useCallback(async () => {
@@ -139,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     setAuthToken(null);
+    setMediaToken(null);
     await storage.secureRemove(TOKEN_KEY);
     setUser(null);
     setMember(null);

@@ -1,0 +1,32 @@
+{
+  "summary": "Batch #21 verification (login rate limit + media_token + Notifications screen + image regression) — ALL PASS. Backend: 13/13 pytest cases in /app/backend/tests/test_batch21_rate_limit_media_token.py. (a) Login rate limit: 5 wrong-password attempts with a throwaway email TEST_ratelimit_probe_<uuid>@x.com return 401 each; 6th returns 429 with Retry-After header (measured 599s, ~10min lock). Correct board@fam.com/secret123 login returns 200 and is unaffected. Success-clears-counter test verified: after 2x wrong + 1x correct login, 4 subsequent wrong attempts still return 401 (never hit 429). (b) media_token: GET /api/auth/me returns a 'media_token' string field. Using media_token as Bearer on /api/home returns 401 ('media' scope rejected by get_current_user). Uploaded a tiny probe.jpg via POST /api/upload, then GET /api/files/{path}?token=<media_token> returned 200 with the file bytes; GET /api/files/{path} with full user token in Authorization header returned 200; GET /api/files/{path} with NO token returned 401. (c) Regression: /api/auth/me + 6 core authed GETs (/home, /families/members, /events, /notices, /vault/items, /emergency/medical) all 200 with a normal full Bearer token. Frontend (Expo web @ 375x812, board@fam.com/secret123, dismissed 'Tap to relive' overlay): Home 10/0 broken, Family 16/0 broken, member Profile 18/0 broken — the media-token wiring did not break image loading. Notifications screen (/settings/notifications) opens from More → Notifications (testID more-notifications), renders the 'Notifications' heading, the 'Push notifications / Available in the mobile app' status card (web is unsupported — expected), and the YOU'LL BE NOTIFIED ABOUT list with all 5 items (On This Day memories, family chat, RSVP, noticeboard, SOS). No red screen, no unrelated console errors, no failed /api/* requests.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch21_rate_limit_media_token.py",
+    "/app/test_reports/pytest/pytest_batch21_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:204-207 make_media_token embeds scope='media' + family_id + 7-day exp — correctly signed with same JWT_SECRET so /api/files can decode without an extra secret. Read-only guard at server.py:237-238 rejects media-scoped tokens on any get_current_user-protected route (verified via /api/home 401).",
+    "server.py:257-308 login throttle is MongoDB-backed with per-email + per-IP counters, 10-min account lock and 5-min IP lock, aggregation pipeline resets counter when window elapses. _clear_failures on success wipes both keys — success-clears-counter regression verified end-to-end.",
+    "server.py:255 DUMMY_BCRYPT_HASH runs pwd_context.verify even when the user doesn't exist so timing doesn't leak account existence — good hardening, complements the rate limit.",
+    "server.py:4257-4290 /api/files decodes token from either Authorization header or ?token= query; media-scoped tokens carry family_id inside the JWT so no user lookup is needed for family-scope check on the media path (fast + auth-DB-independent). Full user tokens still do a users.find_one — correct.",
+    "frontend/src/lib/api.ts:16-20,62-87 media token stored in module var, set from /auth/me on every mount; mediaImageSource uses ?token=<mediaToken || authToken> on web and Authorization header on native. Web fallback to authToken is only for the transitional window before the first /auth/me refresh — acceptable, but consider gating on Platform.OS === 'web' && !mediaToken to explicitly avoid leaking the login token in query strings; today it still would if a media call happens before /auth/me lands. Not a regression, low priority.",
+    "app/settings/notifications.tsx renders correctly on web with the 'Available in the mobile app' copy; status card uses '#8AB07D' green when 'granted' — good contrast. All alert rows use Ionicons with 22*22 background circles — touch target size is fine because rows are non-interactive on this screen."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch21_rate_limit_media_token.py (new — 13 pytest cases across TestLoginRateLimit, TestMediaToken, TestAuthCoreRegression)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% — Home/Family/Profile 0 broken images, Notifications screen renders with heading + web copy + all 5 alert rows"},
+  "seed_data_creation": "Throwaway probe emails TEST_ratelimit_probe_<uuid>@x.com and TEST_clr_<uuid>@fam.com used only for the 429 lockout and counter-clear tests; the clr account was registered and torn down via DELETE /api/auth/account. The ratelimit_probe emails were never registered (they only exercised the failure path), so no user or family artifact was created. A one-off probe.jpg was uploaded to Emergent Object Storage by board@fam.com for the /api/files test (small ~150-byte JPEG). This is a leftover but negligible; no PII.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login testIDs unchanged: login-email-input / login-password-input / login-submit-btn. 'I already have an account' switches from the register screen. First-load 'Tap to relive this memory' affection overlay dismisses via clicking the close 'x' on the top card OR any tab button — DO NOT click center-screen. Notifications route: /settings/notifications, entered via [data-testid=\"more-notifications\"] which needs a scroll to bottom of More screen first. Web push status will always be 'unsupported' → shows 'Available in the mobile app' — that's the expected copy, not a bug. Sharma demo member avatars are Unsplash CDN URLs (not /api/files/), so filesCount:0 in a rendered <img> stats snapshot is normal. IMPORTANT: DO NOT brute-force board@fam.com — 5 wrong attempts will lock it for 10 minutes. Always use a throwaway TEST_<uuid>@x.com for lockout tests.",
+  "rca_of_issue": "N/A — Batch #21 verification. All three deliverables (login rate limiting, signed short-lived media tokens, Notifications settings screen) confirmed working end-to-end; media-token wiring did not regress any /api/files or SmartImage flow across Home/Family/Profile."
+}
