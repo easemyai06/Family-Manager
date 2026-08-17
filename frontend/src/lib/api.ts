@@ -49,7 +49,8 @@ export async function api<T = any>(path: string, opts: Options = {}): Promise<T>
   return data as T;
 }
 
-// Resolve a media url to a fully-qualified, authenticated URL.
+// Resolve a media url to a fully-qualified, authenticated URL (used for audio,
+// documents opened externally, and web where request headers aren't available).
 export function mediaUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined;
   if (url.startsWith("/api/")) {
@@ -57,6 +58,24 @@ export function mediaUrl(url: string | null | undefined): string | undefined {
     return `${BACKEND_ORIGIN}${url}${sep}token=${authToken || ""}`;
   }
   return url;
+}
+
+// Build an expo-image source for a media url. On native we send the bearer
+// token as a request header (so the long-lived token never appears in the URL);
+// on web (<img> can't set headers) we fall back to the token query param.
+export function mediaImageSource(
+  url: string | null | undefined
+): { uri: string; headers?: Record<string, string> } | undefined {
+  if (!url) return undefined;
+  if (url.startsWith("/api/")) {
+    const full = `${BACKEND_ORIGIN}${url}`;
+    if (Platform.OS === "web") {
+      const sep = url.includes("?") ? "&" : "?";
+      return { uri: `${full}${sep}token=${authToken || ""}` };
+    }
+    return authToken ? { uri: full, headers: { Authorization: `Bearer ${authToken}` } } : { uri: full };
+  }
+  return { uri: url };
 }
 
 // Upload a local file (image/video/audio) via multipart, returns { url, path, type }.

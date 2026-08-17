@@ -1,18 +1,19 @@
 import React from "react";
 import { Image, ImageProps } from "expo-image";
-import { mediaUrl } from "@/src/lib/api";
+import { mediaImageSource } from "@/src/lib/api";
 
 interface Props extends Omit<ImageProps, "source"> {
   uri?: string | null;
 }
 
-// Resolves internal (/api/files/...) urls with an auth token and renders
-// external urls (unsplash etc.) directly. Uses expo-image for caching + blurhash.
+// Resolves internal (/api/files/...) urls with auth (bearer header on native,
+// token query on web) and renders external urls (unsplash etc.) directly.
+// Uses expo-image for caching + blurhash.
 export function SmartImage({ uri, style, contentFit = "cover", ...rest }: Props) {
-  const resolved = mediaUrl(uri);
+  const source = mediaImageSource(uri);
   return (
     <Image
-      source={resolved ? { uri: resolved } : undefined}
+      source={source}
       style={style}
       contentFit={contentFit}
       transition={200}

@@ -699,6 +699,9 @@ async def list_members(user: dict = Depends(get_current_user)):
 @api.post("/families/members")
 async def add_member(body: MemberIn, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can add family members")
     count = await db.members.count_documents({"family_id": fid})
     member = {
         "member_id": new_id("mem_"), "family_id": fid, "name": body.name.strip(),
@@ -4148,8 +4151,8 @@ async def upload(file: UploadFile = File(...), kind: str = Form("image"), user: 
         logger.exception("upload failed")
         raise HTTPException(status_code=502, detail=f"Upload failed: {e}")
     await db.media.insert_one({
-        "media_id": new_id("md_"), "owner_id": user["user_id"], "storage_path": result["path"],
-        "content_type": ct, "kind": kind, "created_at": now_iso(),
+        "media_id": new_id("md_"), "owner_id": user["user_id"], "family_id": user.get("family_id"),
+        "storage_path": result["path"], "content_type": ct, "kind": kind, "created_at": now_iso(),
     })
     return {"path": result["path"], "url": f"/api/files/{result['path']}", "type": kind}
 
@@ -4158,6 +4161,13 @@ async def upload(file: UploadFile = File(...), kind: str = Form("image"), user: 
 async def serve_file(path: str, user: dict = Depends(get_current_user)):
     rec = await db.media.find_one({"storage_path": path}, {"_id": 0})
     if not rec:
+        raise HTTPException(status_code=404, detail="File not found")
+    # Only members of the owning family may fetch the file (BOLA protection).
+    owner_fid = rec.get("family_id")
+    if owner_fid is None:  # legacy media uploaded before family tagging
+        owner = await db.users.find_one({"user_id": rec.get("owner_id")}, {"_id": 0})
+        owner_fid = owner.get("family_id") if owner else None
+    if owner_fid and owner_fid != user.get("family_id"):
         raise HTTPException(status_code=404, detail="File not found")
     try:
         content, ct = await run_in_threadpool(_get_object, path)
@@ -4177,8 +4187,11 @@ class RegisterPushBody(BaseModel):
 
 
 @api.post("/register-push", status_code=201)
-async def register_push(body: RegisterPushBody):
-    resp = await _push_client.post("/api/v1/push/users/register", json=body.model_dump())
+async def register_push(body: RegisterPushBody, user: dict = Depends(get_current_user)):
+    # Bind the device registration to the authenticated caller (ignore any
+    # client-supplied user_id) so nobody can attach a device to another account.
+    payload = {"user_id": user["user_id"], "platform": body.platform, "device_token": body.device_token}
+    resp = await _push_client.post("/api/v1/push/users/register", json=payload)
     if resp.status_code == 401:
         raise HTTPException(500, "EMERGENT_PUSH_KEY missing or invalid")
     if resp.status_code >= 500:

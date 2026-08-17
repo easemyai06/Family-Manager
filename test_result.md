@@ -1304,3 +1304,52 @@ frontend_batch20:
 agent_communication_batch20:
     -agent: "main"
     -message: "Batch #20 = Data Export + Hostable Policy Pages + Medical on SOS. All backend curl-verified; SOS banner + medical chips screenshot-verified in-app (B+). Public legal URLs in prod: /api/legal/privacy & /api/legal/terms. Native data-export file share only fully testable on device/build."
+
+# ============ Security Audit + Fixes (iteration_18) ============
+security_batch:
+  - task: "SEC-001 (HIGH) — /api/register-push now requires auth + binds to caller"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Added Depends(get_current_user); ignores client body user_id, uses authenticated caller's user_id. Testing agent: no-auth=401 (fixed), authed non-401 (500 only due to placeholder EMERGENT_PUSH_KEY in preview, expected)."
+  - task: "SEC-002 (MEDIUM) — /api/files/{path} family-scoped (BOLA fix)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "upload stores family_id on media; serve_file rejects cross-family (legacy media backfills owner->family). Testing agent: same-family=200, no-auth=401, cross-family=404, web ?token= path=200."
+  - task: "SEC-003 (MEDIUM) — long-lived JWT removed from image URLs on native"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/api.ts, frontend/src/components/ui/SmartImage.tsx"
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New mediaImageSource(): native uses Authorization request header (token no longer in URL); web keeps ?token= (<img> can't set headers). SmartImage updated. Testing agent: 0 broken imgs across Home/Family/Profile. NOTE: audio (expo-audio) + documents opened via Linking.openURL still use mediaUrl(?token=) by necessity (external openers); acceptable, smaller surface."
+  - task: "P3 — POST /api/families/members restricted to admin/parent"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "low"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Added role check. Testing agent: admin add=200."
+security_deferred_notes:
+    -agent: "main"
+    -message: "Deliberately NOT changed (low risk / would risk breaking preview+prod): CORS allow_origins='*' with bearer (not cookie) auth — P3, low impact; no rate limiting on /auth/login|register — P3 (needs middleware); message react/reply chat-membership scoping — P3 own-family-only. Recommend a future signed-URL / short-lived media-token scheme to also cover web image URLs + documents + audio (SEC-003 residual)."
+agent_communication_security:
+    -agent: "main"
+    -message: "Security audit CONDITIONAL PASS -> fixed SEC-001/002/003 + P3 member-add. Verified by testing agent (iteration_18): 13/13 backend + frontend image regression clean. Deferred P3 CORS/rate-limit/chat-scoping noted."

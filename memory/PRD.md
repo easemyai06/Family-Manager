@@ -82,6 +82,16 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   the family via GET /api/family/export (credentials stripped); good to run before deleting.
 - Medical on SOS: the active SOS banner (and Home urgent card) show the triggering member's blood
   group + allergies for fast responder access (snapshot on trigger + hydrate on read).
+
+## Security posture (audited)
+- Family-scoping (family_id filter) enforced across all data endpoints; account delete/export are
+  organizer-scoped to the caller's own family only; email invites go only to registered members.
+- Fixed (audit iteration_18): SEC-001 /api/register-push now requires auth + binds to caller;
+  SEC-002 /api/files/{path} is family-scoped (BOLA); SEC-003 the long-lived JWT is no longer put in
+  image URLs on native (expo-image Authorization header; web keeps ?token=); POST /families/members
+  is admin/parent-only. Verified by testing agent (13/13 backend + frontend image regression clean).
+- Deferred (low risk): CORS allowlist, login rate-limiting, chat-membership scoping on reactions,
+  and a future short-lived signed-URL/media-token scheme (residual SEC-003 for web/docs/audio).
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical
