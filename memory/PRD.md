@@ -69,6 +69,8 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Home Emergency Pin: the Emergency card auto-floats to the top of Home (in a red "Active SOS" or
   "documents expiring soon" state) whenever an SOS is active or a Vault document is expiring.
 - Emergency Info shortcut: each member profile has an "Emergency Info 🚑" link to their medical card.
+- Medical quick view: the Emergency Center screen shows a "Medical at a Glance" list (each member's
+  blood group + allergies, tap for the full card) via GET /api/emergency/medical, for fast access.
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

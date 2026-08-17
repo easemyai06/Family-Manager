@@ -6,6 +6,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { AppText } from "@/src/components/ui/AppText";
+import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -25,15 +26,21 @@ export default function EmergencyHome() {
   const insets = useSafeAreaInsets();
   const [contacts, setContacts] = useState<any[]>([]);
   const [active, setActive] = useState<any[]>([]);
+  const [medical, setMedical] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [toast, setToast] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [cs, a] = await Promise.all([api("/emergency/contacts"), api("/emergency/sos/active")]);
+      const [cs, a, md] = await Promise.all([
+        api("/emergency/contacts"),
+        api("/emergency/sos/active"),
+        api("/emergency/medical"),
+      ]);
       setContacts(cs);
       setActive(a);
+      setMedical(md);
     } catch {}
   }, []);
 
@@ -44,6 +51,7 @@ export default function EmergencyHome() {
   );
 
   const critical = contacts.filter((c2) => c2.critical).slice(0, 3);
+  const medicalKnown = medical.filter((m) => m.blood_group || m.allergies);
 
   const doSos = async () => {
     setConfirm(false);
@@ -154,6 +162,45 @@ export default function EmergencyHome() {
           </View>
         ) : null}
 
+        {/* medical at a glance */}
+        {medicalKnown.length > 0 ? (
+          <View style={{ marginTop: spacing.xl }} testID="medical-quick-view">
+            <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
+              MEDICAL AT A GLANCE
+            </AppText>
+            {medicalKnown.map((m) => (
+              <Pressable
+                key={m.member.member_id}
+                onPress={() => router.push(`/emergency/medical/${m.member.member_id}`)}
+                style={[styles.medRow, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+                testID={`medquick-${m.member.member_id}`}
+              >
+                <Avatar uri={m.member.photo_url} name={m.member.name} size={40} color={m.member.color} />
+                <View style={{ flex: 1 }}>
+                  <AppText family="display" weight="bold" size={15}>
+                    {m.member.name}
+                  </AppText>
+                  {m.allergies ? (
+                    <View style={styles.allergyRow}>
+                      <Ionicons name="warning" size={13} color="#E86A6A" />
+                      <AppText size={12} weight="semibold" color="#C74B4B" numberOfLines={1} style={{ flex: 1 }}>
+                        Allergies: {m.allergies}
+                      </AppText>
+                    </View>
+                  ) : (
+                    <AppText size={12} color={c.onSurfaceTertiary}>No known allergies</AppText>
+                  )}
+                </View>
+                {m.blood_group ? (
+                  <View style={[styles.bloodBadge, { backgroundColor: "#E86A6A" }]}>
+                    <AppText size={15} weight="bold" color="#fff">{m.blood_group}</AppText>
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {/* shortcuts */}
         <View style={styles.grid}>
           {SHORTCUTS.map((s) => (
@@ -214,6 +261,9 @@ const styles = StyleSheet.create({
   sos: { borderRadius: radius.lg, alignItems: "center", paddingVertical: spacing["3xl"] },
   callRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   callBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#4CAF50", borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  medRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  allergyRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  bloodBadge: { minWidth: 44, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.xl },
   shortcut: { width: "47%", borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg, gap: spacing.sm },
   shortcutIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },

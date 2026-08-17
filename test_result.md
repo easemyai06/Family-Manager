@@ -1189,3 +1189,32 @@ frontend_batch17:
 agent_communication_batch17:
     -agent: "main"
     -message: "Batch #17 = Home Emergency Pin + Skip Occurrence + Emergency Info shortcut + RSVP Reminders. Account: board@fam.com / secret123 (in-app nav; only Raj/admin is logged in). BACKEND: (1) trigger POST /api/emergency/sos -> GET /api/home has active_sos[] + needs_attention[0].key='sos'; resolve -> gone. (2) create recurring event (repeat=weekly,repeat_count=4); DELETE /api/events/{id}?scope=single leaves 3; scope=series removes all. (3) GET /events returns awaiting/awaiting_count; POST /api/events/{id}/nudge (host only, 403 otherwise) returns {nudged,names} and posts '⏰ RSVP reminder' to family chat (excludes host + members who already RSVP'd). FRONTEND (in-app nav, log in first, dismiss affection overlay): (a) After triggering an SOS from Emergency, Home shows the Emergency card floated to top in a red 'Active SOS' state; (b) Calendar: delete a 🔁 recurring event -> modal 'Just this one'(del-scope-single) / 'All events'(del-scope-series); (c) On an event you host with people who haven't replied, a '⏳ Waiting on…' row + 'Remind' (rsvp-nudge-<id>) shows a toast; (d) Member profile has 'Emergency Info 🚑' (member-emergency-info) -> medical card. Do NOT retest unrelated older features."
+
+# ============ Feature Batch #18 (Medical Quick View on Emergency screen) ============
+backend_batch18:
+  - task: "GET /api/emergency/medical — quick medical list (blood group + allergies)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New fixed route declared BEFORE /emergency/medical/{member_id}. Returns per-member {member card, blood_group, allergies, has_card}, members with real info sorted first. Verified via curl: Board Demo B+, Aarav O+/Peanuts, others null."
+frontend_batch18:
+  - task: "Medical at a Glance section on Emergency hub"
+    implemented: true
+    working: true
+    file: "frontend/app/emergency/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "SCREENSHOT-VERIFIED in-app: Emergency screen shows 'MEDICAL AT A GLANCE' with member rows (blood-group badge + ⚠ allergies), tap (medquick-<id>) -> full medical card. Only members with blood_group or allergies shown. Self-tested (curl + screenshot) — small single-screen additive change, no testing agent needed."
+agent_communication_batch18:
+    -agent: "main"
+    -message: "Batch #18 = Medical Quick View. GET /api/emergency/medical curl-verified; Emergency hub 'Medical at a Glance' screenshot-verified in-app (Board Demo B+, Aarav O+ Peanuts). Small additive change, self-tested."

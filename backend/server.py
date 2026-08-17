@@ -3823,6 +3823,26 @@ async def save_family_plan(body: FamilyPlanIn, user: dict = Depends(get_current_
     return clean(await db.family_plans.find_one({"family_id": fid}, {"_id": 0}))
 
 
+@api.get("/emergency/medical")
+async def list_medical_cards(user: dict = Depends(get_current_user)):
+    """Quick medical view for every member: blood group + allergies (for the SOS screen)."""
+    fid = require_family(user)
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    cards = {c["member_id"]: c for c in await db.medical_cards.find({"family_id": fid}, {"_id": 0}).to_list(500)}
+    out = []
+    for m in members:
+        card = cards.get(m["member_id"]) or {}
+        out.append({
+            "member": _member_card(m),
+            "blood_group": card.get("blood_group"),
+            "allergies": card.get("allergies"),
+            "has_card": bool(card),
+        })
+    # members with real info first (blood group or allergies)
+    out.sort(key=lambda x: not (x["blood_group"] or x["allergies"]))
+    return out
+
+
 @api.get("/emergency/medical/{member_id}")
 async def get_medical_card(member_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
