@@ -211,3 +211,13 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Admin panel (roles/permissions/devices), accessibility polish.
 ### Refactor (tech debt)
 - server.py is ~3.7k lines — consider splitting into routers (vault, emergency, wishlists, chat, …).
+
+
+## App Store Screenshots (marketing assets) — June 2026
+- Generated polished, marketing-style store screenshots from the REAL app (Sharma demo family, clean data).
+- 8 screens each for Apple (1290×2796) and Google Play (1080×1920): Home, Calendar/RSVP, Family, Chores & Stars, Family Chat, Emergency/SOS, Rewards, Our Family Story.
+- Style: dark device frame + on-brand warm gradient + benefit-led caption (no emoji in captions; text-only for clean rendering).
+- Output: `/app/store_assets/apple`, `/app/store_assets/google`, raw captures in `/app/store_assets/raw`, docs in `/app/store_assets/README.md`.
+- Tooling: `scripts/capture_screens.py` + `scripts/capture_chat_fresh.py` (Playwright captures) and `scripts/compose.py` (PIL compositor).
+- No sensitive data exposed (fictional demo family only). Chat captured from a fresh seeded account to avoid TEST_SOS demo noise.
+
