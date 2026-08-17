@@ -104,6 +104,26 @@ export default function EmergencyHome() {
             <AppText size={14} weight="bold" color="#fff">
               🚨 {a.member_name} triggered an SOS
             </AppText>
+            {(a.blood_group || a.allergies) ? (
+              <View style={styles.sosMedRow}>
+                {a.blood_group ? (
+                  <View style={styles.sosMedChip}>
+                    <Ionicons name="water" size={12} color="#fff" />
+                    <AppText size={12} weight="bold" color="#fff">
+                      {a.blood_group}
+                    </AppText>
+                  </View>
+                ) : null}
+                {a.allergies ? (
+                  <View style={[styles.sosMedChip, { flexShrink: 1 }]}>
+                    <Ionicons name="warning" size={12} color="#fff" />
+                    <AppText size={12} weight="bold" color="#fff" numberOfLines={1}>
+                      Allergies: {a.allergies}
+                    </AppText>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
             {a.location ? (
               <Pressable onPress={() => Linking.openURL(a.location.maps_url)}>
                 <AppText size={13} color="#fff" style={{ textDecorationLine: "underline", marginTop: 4 }}>
@@ -262,6 +282,8 @@ const styles = StyleSheet.create({
   callRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   callBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#4CAF50", borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   medRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  sosMedRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
+  sosMedChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.22)", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   allergyRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   bloodBadge: { minWidth: 44, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.xl },

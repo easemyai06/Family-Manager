@@ -805,6 +805,114 @@ async def delete_account(user: dict = Depends(get_current_user)):
         await db.dashboard_prefs.delete_many({"user_id": uid})
 
     return {"ok": True, "scope": "family" if is_admin else "self"}
+
+
+@api.get("/family/export")
+async def export_family(user: dict = Depends(get_current_user)):
+    """Organizer-only: a full JSON copy of the family's data (e.g. before deleting)."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not (mine and mine.get("role") == "admin"):
+        raise HTTPException(status_code=403, detail="Only the family organizer can export data")
+    fam = await db.families.find_one({"family_id": fid}, {"_id": 0})
+    collections: dict = {}
+    for name in sorted(await db.list_collection_names()):
+        if name == "families":
+            continue
+        try:
+            docs = await db[name].find({"family_id": fid}, {"_id": 0}).to_list(10000)
+        except Exception:
+            docs = []
+        if not docs:
+            continue
+        if name == "users":  # never export credentials
+            for d in docs:
+                d.pop("password_hash", None)
+        collections[name] = docs
+    return {
+        "app": "FamilyHome",
+        "publisher": "Ease My Ai Pvt Ltd",
+        "exported_at": now_iso(),
+        "family": fam,
+        "collections": collections,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public legal pages (no auth) — hostable Privacy Policy / Terms for the stores
+# ---------------------------------------------------------------------------
+def _legal_html(title: str, updated: str, intro: str, sections: list) -> str:
+    body = "".join(f"<h2>{h}</h2><p>{p}</p>" for h, p in sections)
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{title} · FamilyHome</title>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; background:#FBF7F2; color:#2b2b2b;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6; }}
+  .wrap {{ max-width:760px; margin:0 auto; padding:40px 22px 72px; }}
+  .brand {{ color:#E05A5A; font-weight:800; letter-spacing:.3px; }}
+  h1 {{ font-size:28px; margin:8px 0 4px; }}
+  .updated {{ color:#8a8a8a; font-size:13px; margin-bottom:24px; }}
+  .intro {{ font-size:16px; color:#444; }}
+  h2 {{ font-size:18px; margin:28px 0 6px; }}
+  p {{ margin:0 0 4px; color:#333; }}
+  a {{ color:#E05A5A; }}
+  footer {{ margin-top:44px; padding-top:18px; border-top:1px solid #eadfd4; color:#8a8a8a; font-size:13px; }}
+</style></head>
+<body><div class="wrap">
+  <div class="brand">FamilyHome</div>
+  <h1>{title}</h1>
+  <div class="updated">Last updated: {updated}</div>
+  <p class="intro">{intro}</p>
+  {body}
+  <footer>FamilyHome · by Ease My Ai Pvt Ltd · <a href="mailto:info@easemyai.com">info@easemyai.com</a></footer>
+</div></body></html>"""
+
+
+_PRIVACY_SECTIONS = [
+    ("1. Information you provide", "When you create an account we collect your name, email address and a securely hashed password. Inside the app you may add family content such as posts, photos and videos, calendar events, chores, shopping and to-do lists, meal plans, recipes, memories, wish lists, and sensitive family records like documents, insurance, medical cards and emergency contacts. You choose what to add."),
+    ("2. How we use your information", "We use your information only to provide the app&rsquo;s features to you and your family &mdash; for example to show your calendar, sync your lists, deliver family chat messages and reminders, and keep your Family Vault and emergency information available to the right people. We do not sell your personal data and we do not use it for advertising."),
+    ("3. Who can see your data", "Your content is visible only to members of your family group. Some items (such as private Vault documents, medical cards and secret gifts) have additional visibility controls that you set. A parent may grant a trusted adult view-only emergency access; this can be turned off at any time."),
+    ("4. Storage and security", "Data is stored on secure, access-controlled cloud infrastructure. Uploaded photos, videos and documents are kept in private object storage and are not publicly listed. Passwords are stored only as salted hashes. While no online service can be guaranteed 100% secure, we take reasonable technical and organisational measures to protect your data."),
+    ("5. Service providers", "We rely on trusted third parties strictly to operate the app &mdash; for example cloud hosting and database, private media storage, transactional email delivery (calendar invites), and push-notification delivery. These providers process data only on our behalf."),
+    ("6. Children", "FamilyHome is designed to be used by families. Child profiles and any information about children are created and managed by a parent or guardian within the family group. Children are not asked to provide personal information directly, and child content stays within the private family group."),
+    ("7. Data retention and deletion", "You can delete your account at any time from More &rarr; Account &amp; Data &rarr; Delete Account. Deleting a member-only account removes your login and profile. If you are the family organizer, deleting your account permanently removes the entire family space and all of its data. Deletions are permanent and cannot be undone."),
+    ("8. Your rights", "You may access, correct or delete your information from within the app, and organizers can export a full copy of their family data. To request help exercising any privacy right, contact us using the details below."),
+    ("9. Changes to this policy", "We may update this policy from time to time. Material changes will be reflected here with a new &ldquo;Last updated&rdquo; date. Continued use of the app after changes means you accept the updated policy."),
+    ("10. Contact us", "Ease My Ai Pvt Ltd &mdash; email <a href=\"mailto:info@easemyai.com\">info@easemyai.com</a> for any privacy questions or requests."),
+]
+
+_TERMS_SECTIONS = [
+    ("1. The service", "FamilyHome is a private family-organisation app that helps your family coordinate calendars, chores, lists, meals, memories, documents and emergency information. Features may change or be improved over time."),
+    ("2. Eligibility", "You must be at least 18 years old, or of legal age in your country, to create an account. By creating a family you confirm you are authorised to add and manage information about your family members, including any child profiles."),
+    ("3. Your account", "You are responsible for keeping your login credentials secure and for all activity under your account. Please provide accurate information and keep it up to date. Notify us promptly of any unauthorised use."),
+    ("4. Acceptable use", "You agree to use FamilyHome lawfully and respectfully. Do not upload content that is illegal, infringing, or that you do not have the right to share, and do not attempt to disrupt, reverse engineer or gain unauthorised access to the service or other families&rsquo; data."),
+    ("5. Your content", "You keep ownership of the content you add. You grant us a limited licence to store, process and display that content solely to operate the app for you and your family. You are responsible for the content you and your family members contribute."),
+    ("6. Privacy", "Your use of the app is also governed by our Privacy Policy, which explains how we handle your information. Please review it alongside these terms."),
+    ("7. Account deletion", "You may delete your account at any time from within the app. If you are the family organizer, deleting your account permanently removes the whole family space and its data. We may suspend or terminate accounts that violate these terms."),
+    ("8. Disclaimers", "FamilyHome is provided &ldquo;as is&rdquo;. It is a family-organisation tool and is not a substitute for professional medical, legal or emergency services. In a real emergency, always contact your local emergency number first."),
+    ("9. Limitation of liability", "To the maximum extent permitted by law, Ease My Ai Pvt Ltd is not liable for any indirect, incidental or consequential damages arising from your use of the app, or for any loss of data beyond our reasonable control."),
+    ("10. Changes and governing law", "We may update these terms; material changes will be posted here with a new date. These terms are governed by the laws of India. Questions? Email <a href=\"mailto:info@easemyai.com\">info@easemyai.com</a>."),
+]
+
+
+@api.get("/legal/privacy")
+async def public_privacy():
+    intro = "FamilyHome is operated by Ease My Ai Pvt Ltd (&ldquo;we&rdquo;, &ldquo;us&rdquo;). We built FamilyHome as a private space for your family, so protecting your information matters to us. This policy explains what we collect, why, and the choices you have."
+    return Response(content=_legal_html("Privacy Policy", "June 2026", intro, _PRIVACY_SECTIONS),
+                    media_type="text/html; charset=utf-8")
+
+
+@api.get("/legal/terms")
+async def public_terms():
+    intro = "These Terms of Use govern your use of FamilyHome, provided by Ease My Ai Pvt Ltd. By creating an account or using the app, you agree to these terms."
+    return Response(content=_legal_html("Terms of Use", "June 2026", intro, _TERMS_SECTIONS),
+                    media_type="text/html; charset=utf-8")
 async def get_invite(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     fam = await db.families.find_one({"family_id": fid}, {"_id": 0})
@@ -2058,6 +2166,8 @@ async def home(user: dict = Depends(get_current_user)):
         {"family_id": fid, "status": "active"}, {"_id": 0}).sort("created_at", -1).to_list(10)
     for a in active_sos:
         a["member"] = _member_card(await db.members.find_one({"member_id": a.get("member_id")}, {"_id": 0}))
+        if a.get("blood_group") is None and a.get("allergies") is None:
+            a["blood_group"], a["allergies"] = await _member_medical(fid, a.get("member_id"))
 
     # --- Needs attention (prioritised) -----------------------------------------
     def _plural(n):
@@ -3913,8 +4023,10 @@ async def trigger_sos(body: SosTriggerIn, user: dict = Depends(get_current_user)
     if body.latitude is not None and body.longitude is not None:
         loc = {"latitude": body.latitude, "longitude": body.longitude,
                "maps_url": f"https://www.google.com/maps?q={body.latitude},{body.longitude}"}
+    bg, allergies = await _member_medical(fid, (me or {}).get("member_id"))
     alert = {"sos_id": new_id("sos_"), "family_id": fid, "member_id": (me or {}).get("member_id"),
              "member_name": (me or {}).get("name", "Someone"), "location": loc,
+             "blood_group": bg, "allergies": allergies,
              "message": (body.message or "").strip() or None, "status": "active", "created_at": now}
     await db.sos_alerts.insert_one(alert)
 
@@ -3949,12 +4061,22 @@ async def trigger_sos(body: SosTriggerIn, user: dict = Depends(get_current_user)
     return {**clean(alert), "notified": len(recipients), "push_ok": push_ok}
 
 
+async def _member_medical(fid: str, member_id: Optional[str]):
+    """Blood group + allergies for a member (for the SOS banner)."""
+    if not member_id:
+        return (None, None)
+    card = await db.medical_cards.find_one({"family_id": fid, "member_id": member_id}, {"_id": 0})
+    return ((card or {}).get("blood_group"), (card or {}).get("allergies"))
+
+
 @api.get("/emergency/sos/active")
 async def active_sos(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     alerts = await db.sos_alerts.find({"family_id": fid, "status": "active"}, {"_id": 0}).sort("created_at", -1).to_list(20)
     for a in alerts:
         a["member"] = _member_card(await db.members.find_one({"member_id": a.get("member_id")}, {"_id": 0}))
+        if a.get("blood_group") is None and a.get("allergies") is None:
+            a["blood_group"], a["allergies"] = await _member_medical(fid, a.get("member_id"))
     return alerts
 
 

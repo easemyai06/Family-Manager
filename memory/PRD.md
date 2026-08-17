@@ -76,6 +76,12 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   governing law India), and Account & Data with in-app Account Deletion (DELETE /api/auth/account —
   organizer purges the whole family space; member deletes only self). App version shown in More.
   NOTE: stores also require a PUBLIC Privacy Policy URL entered in the listing console.
+- Public hostable legal pages: GET /api/legal/privacy & /api/legal/terms serve self-contained HTML
+  (no auth) usable as the store-listing Privacy/Terms URLs (prod: https://our-story-191.emergent.host/api/legal/privacy).
+- Data export: organizer-only "Export My Data" (More > Account & Data) downloads a full JSON copy of
+  the family via GET /api/family/export (credentials stripped); good to run before deleting.
+- Medical on SOS: the active SOS banner (and Home urgent card) show the triggering member's blood
+  group + allergies for fast responder access (snapshot on trigger + hydrate on read).
 - Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
   expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
 - Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical

@@ -879,7 +879,7 @@ function EmergencySection({ go, c, compact, activeSos = [], expiring = [] }: any
   const expCount = expiring.length;
   const urgent = sos || expCount > 0;
   const subtitle = sos
-    ? `🚨 ${activeSos[0]?.member_name || "Someone"} needs help — tap to respond`
+    ? `🚨 ${activeSos[0]?.member_name || "Someone"} needs help${activeSos[0]?.blood_group ? ` · Blood ${activeSos[0].blood_group}` : ""} — tap to respond`
     : expCount > 0
     ? `${expCount} document${expCount > 1 ? "s" : ""} expiring soon — review now`
     : "Contacts, medical cards & Family SOS";

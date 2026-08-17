@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Modal, TextInput } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
@@ -20,8 +22,47 @@ export default function AccountData() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [note, setNote] = useState("");
 
   const version = Constants.expoConfig?.version || "1.0.0";
+
+  const flash = (m: string) => {
+    setNote(m);
+    setTimeout(() => setNote(""), 3000);
+  };
+
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      const data = await api("/family/export");
+      const json = JSON.stringify(data, null, 2);
+      const filename = `familyhome-export-${new Date().toISOString().slice(0, 10)}.json`;
+      if (Platform.OS === "web") {
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = (globalThis as any).document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        flash("Your data has been downloaded.");
+      } else {
+        const file = new File(Paths.cache, filename);
+        file.create({ overwrite: true });
+        file.write(json);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Export family data" });
+        } else {
+          flash("Saved to app storage.");
+        }
+      }
+    } catch {
+      flash("Couldn't export right now. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const doDelete = async () => {
     setDeleting(true);
@@ -59,6 +100,30 @@ export default function AccountData() {
         <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: spacing.sm, marginLeft: 4 }}>
           To change your name or photo, go to your profile.
         </AppText>
+
+        {/* data export (organizer) */}
+        {isAdmin ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
+              YOUR DATA
+            </AppText>
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border, padding: spacing.lg }, shadow(1)]}>
+              <AppText family="display" weight="bold" size={16} style={{ marginBottom: 6 }}>
+                Export family data
+              </AppText>
+              <AppText size={13} color={c.onSurfaceSecondary} style={{ lineHeight: 20, marginBottom: spacing.md }}>
+                Download a complete copy of your family&rsquo;s data as a JSON file — a good idea before deleting your account.
+              </AppText>
+              <Button
+                label={exporting ? "Preparing…" : "Export My Data"}
+                variant="secondary"
+                loading={exporting}
+                onPress={exportData}
+                testID="export-data-btn"
+              />
+            </View>
+          </View>
+        ) : null}
 
         {/* danger zone */}
         <View style={{ marginTop: spacing["2xl"] }}>
@@ -127,6 +192,14 @@ export default function AccountData() {
           </View>
         </View>
       </Modal>
+
+      {note ? (
+        <View style={[styles.toast, { backgroundColor: c.surfaceInverse, bottom: insets.bottom + 30 }]} testID="account-toast">
+          <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>
+            {note}
+          </AppText>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -164,4 +237,5 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     marginTop: spacing.sm,
   },
+  toast: { position: "absolute", alignSelf: "center", maxWidth: "88%", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, ...shadow(3) },
 });

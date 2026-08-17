@@ -1247,3 +1247,60 @@ frontend_batch19:
 agent_communication_batch19:
     -agent: "main"
     -message: "Batch #19 = store-compliance essentials (Privacy Policy, Terms of Use, Help & Support, in-app Account Deletion, app version). Backend delete curl-verified both scopes with isolated throwaway accounts. Account & Data screen screenshot-verified in-app. NOTE for user: stores also need a PUBLIC Privacy Policy URL in the listing console (offer to export a hostable HTML page)."
+
+# ============ Feature Batch #20 (Data Export + Hostable Policy Pages + Medical on SOS) ============
+backend_batch20:
+  - task: "GET /api/family/export (organizer-only full JSON copy)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Admin-only (403 otherwise). Iterates all collections by family_id (31 for demo), strips password_hash from users, returns {app,publisher,exported_at,family,collections}. Curl-verified: 31 collections, no password_hash leaked."
+  - task: "Public hostable legal pages GET /api/legal/privacy & /api/legal/terms (no auth, HTML)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Self-contained styled HTML (publisher Ease My Ai Pvt Ltd, contact info@easemyai.com). Public (no auth) so they work as store-listing Privacy/Terms URLs. In production: https://our-story-191.emergent.host/api/legal/privacy and /api/legal/terms. Curl-verified HTML output."
+  - task: "Medical (blood group + allergies) on SOS alert"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "trigger_sos snapshots blood_group+allergies; active_sos + home active_sos hydrate them (fallback to current medical card). Curl-verified: sos blood_group B+."
+frontend_batch20:
+  - task: "Export My Data button on Account & Data"
+    implemented: true
+    working: true
+    file: "frontend/app/account/index.tsx"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Organizer-only 'YOUR DATA' card -> Export My Data (export-data-btn). Native: writes JSON to cache (expo-file-system File API) + Sharing.shareAsync. Web: Blob download. Toast feedback. expo-sharing installed. Native file share only testable on a real device/build."
+  - task: "Medical chips on SOS banner + Home subtitle"
+    implemented: true
+    working: true
+    file: "frontend/app/emergency/index.tsx, frontend/app/(tabs)/index.tsx"
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "SCREENSHOT-VERIFIED: active SOS banner shows a blood-group chip (B+) + allergies chip; Home urgent Emergency subtitle appends '· Blood B+'. Self-tested (curl+screenshot)."
+agent_communication_batch20:
+    -agent: "main"
+    -message: "Batch #20 = Data Export + Hostable Policy Pages + Medical on SOS. All backend curl-verified; SOS banner + medical chips screenshot-verified in-app (B+). Public legal URLs in prod: /api/legal/privacy & /api/legal/terms. Native data-export file share only fully testable on device/build."
