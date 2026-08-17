@@ -61,6 +61,14 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Event RSVP: invited members tap Going / Maybe / Can't make it right on a calendar event card
   (POST /api/events/{id}/rsvp; only invited members/owner, else 403); each event shows a live
   "N going · N maybe · N can't make it" summary (rsvp_summary + my_rsvp on hydrate_event).
+- Recurring events: an event can repeat Weekly or Monthly, ending after a set number of times OR on a
+  chosen date; concrete occurrences share a series_id (monthly clamps short months); editing/deleting
+  any occurrence affects the whole series; the emailed .ics carries an RRULE. 🔁 badge on the calendar.
+- Notice "Seen by": opening a noticeboard note marks it seen; posters see a "Seen by N" count that
+  expands to the list of who viewed it (POST /api/notices/{id}/seen; seen_count on board + Home).
+- Trusted Emergency Access: a parent grants an adult relative view-only access to every child's medical
+  cards + insurance/documents (revocable anytime) via More > Protect > Emergency Center > Trusted Access
+  (GET/POST/DELETE /api/emergency/delegates; delegates can view but not edit children's Vault items).
 - Notice photos: attach a photo (permission slip, party flyer) to a noticeboard note; the image
   shows on the board list, the note detail, and the Home noticeboard preview thumbnail (photo_url
   on notices, image picker in create modal).
@@ -150,13 +158,14 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 
 ## Backlog (prioritized)
 ### P0 (next) — PROTECT follow-ups & polish (Phases A/B/C shipped)
-- Emergency Access delegation (item 83): let admins grant a trusted member limited emergency-only
-  access to children's insurance/doctor/instructions when parents can't respond.
+- Emergency Access delegation (item 83): DONE (Batch #16) — parents grant an adult relative view-only
+  access to all children's medical + Vault insurance/documents via Emergency Center > Trusted Access.
 - Cross-app hooks (item 84): Profile → Emergency Info shortcut; Timeline milestone → linked Vault
   doc; auto "Emergency" pin on Home.
 - Vault hardening (optional): access/audit logs, re-auth before opening a single sensitive doc.
 ### P1
-- Birthdays: scheduled wishes; RSVP + recurring events; external calendar sync. Notifications center.
+- Birthdays: scheduled wishes. Recurring events DONE (Batch #16); external calendar sync (beyond .ics).
+  Notifications center.
 ### P2
 - Future Letters. AI: event import (screenshot/paste), recipe creator, memory assistant, timeline suggestions.
 - Admin panel (roles/permissions/devices), accessibility polish.

@@ -406,6 +406,9 @@ class EventIn(BaseModel):
     owner_member_id: Optional[str] = None
     participant_ids: List[str] = []
     color: Optional[str] = None
+    repeat: str = "none"                    # none | weekly | monthly
+    repeat_end_date: Optional[str] = None   # YYYY-MM-DD (inclusive)
+    repeat_count: Optional[int] = None      # number of occurrences incl. the first
 
 
 class ChoreIn(BaseModel):
@@ -580,6 +583,10 @@ class SosTriggerIn(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     message: Optional[str] = None
+
+
+class DelegateIn(BaseModel):
+    member_id: str
 
 
 
@@ -1025,6 +1032,31 @@ async def affection_timeline(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Calendar / events
 # ---------------------------------------------------------------------------
+def _add_months(d: date, n: int) -> date:
+    from calendar import monthrange
+    m = d.month - 1 + n
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return date(y, m, min(d.day, monthrange(y, m)[1]))
+
+
+def _recurrence_dates(start: date, repeat: str, end: Optional[date], count: Optional[int]) -> List[date]:
+    """Concrete occurrence dates for a repeating event. Bounded for safety."""
+    if repeat not in ("weekly", "monthly"):
+        return [start]
+    cap = count if count else (52 if end else 12)
+    cap = max(1, min(cap, 366))
+    out: List[date] = []
+    i = 0
+    while len(out) < cap:
+        d = start + timedelta(days=7 * i) if repeat == "weekly" else _add_months(start, i)
+        if end is not None and d > end:
+            break
+        out.append(d)
+        i += 1
+    return out or [start]
+
+
 async def hydrate_event(e: dict, viewer: Optional[dict] = None) -> dict:
     raw_rsvps = e.get("rsvps") or {}
     e = clean(dict(e))
@@ -1077,6 +1109,14 @@ def build_event_ics(e: dict, organizer_email: Optional[str] = None) -> str:
         "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{stamp}", dtstart, dtend,
         f"SUMMARY:{_ics_escape(e.get('title'))}",
     ]
+    if e.get("repeat") in ("weekly", "monthly"):
+        freq = "WEEKLY" if e["repeat"] == "weekly" else "MONTHLY"
+        rr = f"RRULE:FREQ={freq}"
+        if e.get("repeat_count"):
+            rr += f";COUNT={int(e['repeat_count'])}"
+        elif e.get("repeat_end_date"):
+            rr += f";UNTIL={e['repeat_end_date'][:10].replace('-', '')}T235959Z"
+        lines.append(rr)
     if e.get("location"):
         lines.append(f"LOCATION:{_ics_escape(e['location'])}")
     if e.get("notes"):
@@ -1175,16 +1215,54 @@ async def rsvp_event(event_id: str, body: RsvpIn, user: dict = Depends(get_curre
 @api.post("/events")
 async def create_event(body: EventIn, request: Request, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    viewer = await member_for_user(user)
     color = body.color
     if not color and body.owner_member_id:
         owner = await db.members.find_one({"member_id": body.owner_member_id}, {"_id": 0})
         color = owner["color"] if owner else "#FF6B6B"
-    e = {"event_id": new_id("evt_"), "family_id": fid, **body.dict(), "color": color or "#FF6B6B", "created_at": now_iso()}
-    await db.events.insert_one(e)
-    # Notify invited members by email + calendar invite (best-effort, non-blocking).
+    color = color or "#FF6B6B"
+    base = body.dict()
+    repeat = body.repeat if body.repeat in ("weekly", "monthly") else "none"
     base_url = _public_base_url(request)
+
+    try:
+        start_d = date.fromisoformat(body.date[:10])
+    except Exception:
+        start_d = None
+    span = None
+    if body.end_date and start_d:
+        try:
+            span = (date.fromisoformat(body.end_date[:10]) - start_d).days
+        except Exception:
+            span = None
+
+    if repeat != "none" and start_d:
+        end_d = None
+        if body.repeat_end_date:
+            try:
+                end_d = date.fromisoformat(body.repeat_end_date[:10])
+            except Exception:
+                end_d = None
+        occ = _recurrence_dates(start_d, repeat, end_d, body.repeat_count)
+        series_id = new_id("ser_")
+        docs = []
+        for d in occ:
+            docs.append({
+                **base, "event_id": new_id("evt_"), "family_id": fid, "color": color,
+                "series_id": series_id, "repeat": repeat, "created_at": now_iso(),
+                "date": d.isoformat(),
+                "end_date": (d + timedelta(days=span)).isoformat() if span else base.get("end_date"),
+            })
+        await db.events.insert_many(docs)
+        # one invite email for the series (first occurrence carries the RRULE .ics)
+        asyncio.create_task(send_event_invites(clean(dict(docs[0])), base_url))
+        return await hydrate_event(docs[0], viewer)
+
+    e = {"event_id": new_id("evt_"), "family_id": fid, **base, "color": color,
+         "repeat": "none", "created_at": now_iso()}
+    await db.events.insert_one(e)
     asyncio.create_task(send_event_invites(clean(dict(e)), base_url))
-    return await hydrate_event(e)
+    return await hydrate_event(e, viewer)
 
 
 @api.get("/events/{event_id}/invite.ics")
@@ -1204,15 +1282,32 @@ async def event_invite_ics(event_id: str):
 @api.patch("/events/{event_id}")
 async def update_event(event_id: str, body: EventIn, user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    await db.events.update_one({"event_id": event_id, "family_id": fid}, {"$set": body.dict()})
+    viewer = await member_for_user(user)
     e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
-    return await hydrate_event(e)
+    if not e:
+        raise HTTPException(status_code=404, detail="Event not found")
+    updates = body.dict()
+    if e.get("series_id"):
+        # editing a recurring event applies to the whole series, but each
+        # occurrence keeps its own date/end_date + recurrence rule.
+        for k in ("date", "end_date", "repeat", "repeat_end_date", "repeat_count"):
+            updates.pop(k, None)
+        await db.events.update_many({"family_id": fid, "series_id": e["series_id"]}, {"$set": updates})
+    else:
+        await db.events.update_one({"event_id": event_id, "family_id": fid}, {"$set": updates})
+    e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
+    return await hydrate_event(e, viewer)
 
 
 @api.delete("/events/{event_id}")
 async def delete_event(event_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    await db.events.delete_one({"event_id": event_id, "family_id": fid})
+    e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
+    if e and e.get("series_id"):
+        # deleting a recurring event removes the whole series
+        await db.events.delete_many({"family_id": fid, "series_id": e["series_id"]})
+    else:
+        await db.events.delete_one({"event_id": event_id, "family_id": fid})
     return {"ok": True}
 
 
@@ -1918,6 +2013,7 @@ async def home(user: dict = Depends(get_current_user)):
             "priority": d.get("priority", "normal"), "pinned": bool(d.get("pinned")),
             "expiry_date": d.get("expiry_date"), "photo_url": d.get("photo_url"),
             "reply_count": len(d.get("replies", []) or []),
+            "seen_count": len(d.get("seen_by", []) or []),
             "owner": _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0})),
         })
 
@@ -1969,6 +2065,16 @@ async def _hydrate_notice(d: dict, mine: Optional[dict] = None) -> dict:
     for rp in raw_replies:
         replies.append({**rp, "member": _member_card(await db.members.find_one({"member_id": rp.get("member_id")}, {"_id": 0}))})
     d["replies"] = replies
+    seen_ids = d.get("seen_by") or []
+    d["seen_count"] = len(seen_ids)
+    d["seen"] = bool(mine and mine["member_id"] in seen_ids)
+    seen_members = []
+    for mid in seen_ids:
+        mc = _member_card(await db.members.find_one({"member_id": mid}, {"_id": 0}))
+        if mc:
+            seen_members.append(mc)
+    d["seen_members"] = seen_members
+    d.pop("seen_by", None)
     d.pop("reactions", None)
     return d
 
@@ -2008,7 +2114,7 @@ async def create_notice(body: NoticeIn, user: dict = Depends(get_current_user)):
         "note": (body.note or "").strip() or None, "expiry_date": body.expiry_date,
         "priority": body.priority if body.priority in ("normal", "high") else "normal",
         "pinned": bool(body.pinned), "photo_url": body.photo_url, "owner_member_id": mine["member_id"],
-        "reactions": [], "replies": [], "created_at": now_iso(),
+        "reactions": [], "replies": [], "seen_by": [], "created_at": now_iso(),
     }
     await db.notices.insert_one(doc)
     return await _hydrate_notice(doc, mine)
@@ -2063,6 +2169,22 @@ async def reply_notice(notice_id: str, body: NoticeReplyIn, user: dict = Depends
     reply = {"reply_id": new_id("nr_"), "member_id": mine["member_id"],
              "text": body.text.strip(), "created_at": now_iso()}
     await db.notices.update_one({"notice_id": notice_id, "family_id": fid}, {"$push": {"replies": reply}})
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    return await _hydrate_notice(d, mine)
+
+
+@api.post("/notices/{notice_id}/seen")
+async def mark_notice_seen(notice_id: str, user: dict = Depends(get_current_user)):
+    """Record that the current member has viewed this notice (for a 'Seen by N')."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    await db.notices.update_one({"notice_id": notice_id, "family_id": fid},
+                                {"$addToSet": {"seen_by": mine["member_id"]}})
     d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
     return await _hydrate_notice(d, mine)
 
@@ -3306,6 +3428,13 @@ def _can_view_secure(item: dict, viewer: Optional[dict]) -> bool:
         return True
     if item.get("owner_member_id") and item["owner_member_id"] == viewer["member_id"]:
         return True
+    # Trusted emergency delegate: view-only access to every child's documents/insurance.
+    if viewer.get("_emergency_delegate"):
+        kids = viewer.get("_child_member_ids") or set()
+        if item.get("owner_member_id") in kids:
+            return True
+        if any(mid in kids for mid in (item.get("covered_member_ids") or [])):
+            return True
     vis = item.get("visibility", "family")
     if vis == "family":
         return True
@@ -3326,6 +3455,22 @@ def _can_edit_secure(item: dict, viewer: Optional[dict]) -> bool:
     if item.get("owner_member_id") == viewer.get("member_id"):
         return True
     return item.get("created_by") == viewer.get("member_id")
+
+
+async def _secure_viewer(user: dict) -> Optional[dict]:
+    """member_for_user + trusted-emergency-delegate context for Vault visibility."""
+    viewer = await member_for_user(user)
+    if not viewer:
+        return viewer
+    fid = user.get("family_id")
+    dele = await db.emergency_delegates.find_one(
+        {"family_id": fid, "member_id": viewer["member_id"]}, {"_id": 0})
+    if dele:
+        viewer["_emergency_delegate"] = True
+        members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+        viewer["_child_member_ids"] = {
+            m["member_id"] for m in members if m.get("is_child") or m.get("role") == "child"}
+    return viewer
 
 
 def _days_until(expiry: Optional[str]) -> Optional[int]:
@@ -3356,7 +3501,7 @@ async def hydrate_vault(item: dict, viewer: Optional[dict]) -> dict:
 async def vault_folders(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     folders = await db.vault_folders.find({"family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(200)
-    viewer = await member_for_user(user)
+    viewer = await _secure_viewer(user)
     items = await db.vault_items.find({"family_id": fid}, {"_id": 0}).to_list(5000)
     visible = [it for it in items if _can_view_secure(it, viewer)]
     counts: dict = {}
@@ -3393,7 +3538,7 @@ async def delete_vault_folder(folder_id: str, user: dict = Depends(get_current_u
 async def vault_items(folder_id: Optional[str] = None, kind: Optional[str] = None,
                       user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    viewer = await member_for_user(user)
+    viewer = await _secure_viewer(user)
     q: dict = {"family_id": fid}
     if folder_id:
         q["folder_id"] = folder_id
@@ -3431,7 +3576,7 @@ async def create_vault_item(body: VaultItemIn, user: dict = Depends(get_current_
 @api.get("/vault/expiries")
 async def vault_expiries(days: int = 180, user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    viewer = await member_for_user(user)
+    viewer = await _secure_viewer(user)
     docs = await db.vault_items.find({"family_id": fid, "expiry_date": {"$ne": None}}, {"_id": 0}).to_list(2000)
     out = []
     for d in docs:
@@ -3445,7 +3590,7 @@ async def vault_expiries(days: int = 180, user: dict = Depends(get_current_user)
 @api.get("/vault/items/{item_id}")
 async def get_vault_item(item_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    viewer = await member_for_user(user)
+    viewer = await _secure_viewer(user)
     item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
@@ -3678,6 +3823,49 @@ async def active_sos(user: dict = Depends(get_current_user)):
 async def resolve_sos(sos_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.sos_alerts.update_one({"sos_id": sos_id, "family_id": fid}, {"$set": {"status": "resolved"}})
+    return {"ok": True}
+
+
+# ---- Trusted emergency access (delegates) ----
+@api.get("/emergency/delegates")
+async def list_delegates(user: dict = Depends(get_current_user)):
+    """Adult relatives granted view-only access to every child's medical + vault info."""
+    fid = require_family(user)
+    docs = await db.emergency_delegates.find({"family_id": fid}, {"_id": 0}).to_list(50)
+    out = []
+    for d in docs:
+        m = await db.members.find_one({"member_id": d["member_id"], "family_id": fid}, {"_id": 0})
+        if m:
+            out.append({**clean(d), "member": _member_card(m)})
+    return out
+
+
+@api.post("/emergency/delegates", status_code=201)
+async def add_delegate(body: DelegateIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can grant emergency access")
+    m = await db.members.find_one({"member_id": body.member_id, "family_id": fid}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if m.get("is_child") or m.get("role") == "child":
+        raise HTTPException(status_code=400, detail="Choose an adult relative")
+    await db.emergency_delegates.update_one(
+        {"family_id": fid, "member_id": body.member_id},
+        {"$set": {"family_id": fid, "member_id": body.member_id,
+                  "granted_by": viewer["member_id"], "created_at": now_iso()}},
+        upsert=True)
+    return {"ok": True}
+
+
+@api.delete("/emergency/delegates/{member_id}")
+async def remove_delegate(member_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    if not (viewer and viewer.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can change emergency access")
+    await db.emergency_delegates.delete_one({"family_id": fid, "member_id": member_id})
     return {"ok": True}
 
 

@@ -167,6 +167,12 @@ export default function Noticeboard() {
                     <Ionicons name="chatbubble-outline" size={14} color={c.onSurfaceTertiary} />
                     <AppText size={12} color={c.onSurfaceTertiary}>{n.reply_count || 0}</AppText>
                   </View>
+                  {n.seen_count ? (
+                    <View style={styles.replyMeta}>
+                      <Ionicons name="eye-outline" size={14} color={c.onSurfaceTertiary} />
+                      <AppText size={12} color={c.onSurfaceTertiary}>{n.seen_count}</AppText>
+                    </View>
+                  ) : null}
                 </Pressable>
                 <View style={{ flex: 1 }} />
                 {mine ? (

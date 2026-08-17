@@ -1028,3 +1028,78 @@ frontend_batch15:
 agent_communication_batch15:
     -agent: "main"
     -message: "Batch #15 = Event RSVP + Notice photos. Account: board@fam.com / secret123 (navigate IN-APP; dismiss first-load affection overlay). BACKEND: (1) POST /api/events/{id}/rsvp {status:'going'} by an INVITED member returns rsvp_summary/my_rsvp; a NON-invited member gets 403; invalid status -> 400. (2) POST /api/notices with {photo_url:'https://...'} persists and GET /api/notices returns photo_url. FRONTEND: RSVP already screenshot-verified (Going pill fills, summary updates) — just re-confirm no regression on the Calendar tab. For notice photos, create a note WITH a photo (set photo_url via API is fine) and confirm the image renders on the board list, the note detail, and the Home noticeboard preview thumbnail; also confirm the 'Attach a photo' button (notice-photo) appears in the create modal. Do NOT retest unrelated older features."
+
+# ============ Feature Batch #16 (Recurring Events + Notice "Seen by" + Trusted Emergency Access) ============
+backend_batch16:
+  - task: "Recurring events (weekly/monthly, count or until date; edit/delete whole series)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "EventIn gains repeat(none|weekly|monthly), repeat_end_date, repeat_count. create_event generates concrete occurrence docs sharing a series_id (weekly=+7d, monthly=_add_months handling short months; cap: count, else 52 if until set, else 12). PATCH applies non-date fields to the whole series (keeps each occurrence's date); DELETE removes the whole series. build_event_ics adds an RRULE (FREQ=WEEKLY|MONTHLY; COUNT or UNTIL) so the single emailed .ics covers the recurrence. hydrate_event returns repeat. Verified via curl: weekly count=4 -> 4 occurrences; monthly count=3 -> Jan31/Feb28/Mar31; delete one -> whole series gone; ICS carries RRULE;UNTIL."
+  - task: "Notice 'Seen by' tracking (POST /api/notices/{id}/seen + seen_count/seen_members in hydrate + home)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "notices store seen_by[] member_ids. POST /api/notices/{id}/seen $addToSet (idempotent) the current member. _hydrate_notice returns seen_count, seen(bool for me), seen_members[] cards. GET /api/home notices preview includes seen_count. Verified via curl: seen -> count 1 members [Board Demo]; seen again -> still 1; home preview seen_count 1."
+  - task: "Trusted Emergency Access delegates (grant adult view-only access to all children's vault/medical)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "emergency_delegates collection. GET/POST/DELETE /api/emergency/delegates (parents/admin only; POST 400 for a child target, 404 unknown). _secure_viewer attaches _emergency_delegate + _child_member_ids; _can_view_secure grants view (NOT edit) to a delegate for vault items owned-by/covering a child. Used in vault_folders/items/expiries/get_vault_item. Medical GET was already family-wide readable. Verified via curl: grant Priya (201) -> listed; grant child -> 400; revoke -> 200/empty."
+
+frontend_batch16:
+  - task: "Recurring events UI in event create + repeat badge on calendar"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/event/create.tsx, frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Create modal: Repeat chips (repeat-none/weekly/monthly). When repeating, a box with mode toggle (repeat-mode-count / repeat-mode-until): count stepper (repeat-count-minus/plus) OR until-date stepper (repeat-until-prev/next). Sends repeat + repeat_count|repeat_end_date. Calendar event card shows a 🔁 Weekly/Monthly badge for series events. Deleting a series event removes the whole series (backend cascade)."
+  - task: "Notice 'Seen by' UI (expandable list on detail, count on board)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/notice/[id].tsx, frontend/app/notice/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Opening a note detail POSTs /seen. Detail shows 'Seen by N' (notice-seen-toggle) that expands to a member list (notice-seen-list). Board card footer shows an eye + count when seen_count>0."
+  - task: "Trusted Emergency Access screen (/emergency/access)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/emergency/access.tsx, frontend/app/emergency/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Emergency hub grid adds 'Trusted Access' (emergency-access). Screen lists adult relatives (children + self excluded) each with a Switch (access-toggle-<id>); ON -> POST delegate, OFF -> DELETE. Non-parents see a read-only message. Intro explains view-only access to children's medical + insurance."
+
+agent_communication_batch16:
+    -agent: "main"
+    -message: "Batch #16 = Recurring Events + Notice 'Seen by' + Trusted Emergency Access. Account: board@fam.com / secret123 (navigate IN-APP; dismiss first-load affection overlay; the only real logged-in user is Raj/admin). BACKEND to test: (1) POST /api/events with repeat='weekly'&repeat_count=4 -> creates 4 events sharing series_id (GET /events?start=&end= to see them); repeat='monthly'&repeat_count=3 spans short months (Jan31->Feb28->Mar31); repeat_end_date instead of count bounds by date; DELETE one occurrence removes the whole series; GET /events/{id}/invite.ics contains an RRULE line. (2) POST /api/notices/{id}/seen adds caller to seen_by (idempotent); GET /notices/{id} returns seen_count+seen_members+seen(bool); /api/home notices carry seen_count. (3) /api/emergency/delegates GET/POST/DELETE (parents-only; POST a child -> 400; POST unknown -> 404); after granting, a delegate viewer can VIEW (not edit) vault items owned-by/covering a child even if visibility=parents. FRONTEND to test (in-app nav): (a) Calendar FAB -> New Event -> set Repeat=Weekly -> choose 'End after N times' stepper (repeat-count-plus) or 'End on a date' -> Save -> the event appears on multiple weeks with a 🔁 Weekly badge; delete one -> all gone. (b) Open a noticeboard note detail -> a 'Seen by 1' row (notice-seen-toggle) expands to show who viewed; board card shows an eye+count. (c) More > Protect > Emergency Center -> Trusted Access (emergency-access) -> toggle an adult relative ON (access-toggle-<id>) then OFF. Do NOT retest unrelated older features."

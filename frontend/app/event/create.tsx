@@ -29,6 +29,10 @@ export default function CreateEvent() {
   const [category, setCategory] = useState("family");
   const [owner, setOwner] = useState<string | null>(null);
   const [participants, setParticipants] = useState<string[]>([]);
+  const [repeat, setRepeat] = useState<"none" | "weekly" | "monthly">("none");
+  const [repeatMode, setRepeatMode] = useState<"count" | "until">("count");
+  const [repeatCount, setRepeatCount] = useState(4);
+  const [repeatUntil, setRepeatUntil] = useState(dayjs().add(2, "month").format("YYYY-MM-DD"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -66,6 +70,9 @@ export default function CreateEvent() {
           category,
           owner_member_id: owner,
           participant_ids: Array.from(new Set([...(owner ? [owner] : []), ...participants])),
+          repeat,
+          repeat_count: repeat !== "none" && repeatMode === "count" ? repeatCount : null,
+          repeat_end_date: repeat !== "none" && repeatMode === "until" ? repeatUntil : null,
         },
       });
       router.back();
@@ -130,6 +137,72 @@ export default function CreateEvent() {
           <TextField label="Location" icon="location-outline" placeholder="Add location" value={location} onChangeText={setLocation} testID="event-location-input" />
         </View>
 
+        {/* repeat */}
+        <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
+          Repeat
+        </AppText>
+        <View style={styles.chipRow}>
+          {(["none", "weekly", "monthly"] as const).map((r) => {
+            const sel = repeat === r;
+            const label = r === "none" ? "Doesn't repeat" : r === "weekly" ? "Weekly" : "Monthly";
+            return (
+              <Pressable
+                key={r}
+                onPress={() => setRepeat(r)}
+                style={[styles.repeatChip, { backgroundColor: sel ? c.brandTertiary : c.surfaceSecondary, borderColor: sel ? c.brand : "transparent" }]}
+                testID={`repeat-${r}`}
+              >
+                <AppText size={13} weight="semibold" color={sel ? c.onBrandTertiary : c.onSurfaceSecondary}>
+                  {label}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {repeat !== "none" ? (
+          <View style={[styles.repeatBox, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+            <View style={styles.chipRow}>
+              <Pressable
+                onPress={() => setRepeatMode("count")}
+                style={[styles.repeatChip, { backgroundColor: repeatMode === "count" ? c.brand : c.surface, borderColor: c.border }]}
+                testID="repeat-mode-count"
+              >
+                <AppText size={12} weight="bold" color={repeatMode === "count" ? "#fff" : c.onSurfaceSecondary}>End after N times</AppText>
+              </Pressable>
+              <Pressable
+                onPress={() => setRepeatMode("until")}
+                style={[styles.repeatChip, { backgroundColor: repeatMode === "until" ? c.brand : c.surface, borderColor: c.border }]}
+                testID="repeat-mode-until"
+              >
+                <AppText size={12} weight="bold" color={repeatMode === "until" ? "#fff" : c.onSurfaceSecondary}>End on a date</AppText>
+              </Pressable>
+            </View>
+
+            {repeatMode === "count" ? (
+              <View style={[styles.stepperRow, { marginTop: spacing.md }]}>
+                <Pressable onPress={() => setRepeatCount((n) => Math.max(2, n - 1))} hitSlop={8} style={[styles.stepBtn, { borderColor: c.border }]} testID="repeat-count-minus">
+                  <Ionicons name="remove" size={20} color={c.onSurface} />
+                </Pressable>
+                <AppText family="display" weight="bold" size={15}>{repeatCount} times</AppText>
+                <Pressable onPress={() => setRepeatCount((n) => Math.min(52, n + 1))} hitSlop={8} style={[styles.stepBtn, { borderColor: c.border }]} testID="repeat-count-plus">
+                  <Ionicons name="add" size={20} color={c.onSurface} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={[styles.dateRow, { backgroundColor: c.surface, borderColor: c.border, marginTop: spacing.md }]}>
+                <Pressable onPress={() => setRepeatUntil((d) => dayjs(d).subtract(repeat === "weekly" ? 7 : 30, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="repeat-until-prev">
+                  <Ionicons name="chevron-back" size={22} color={c.onSurface} />
+                </Pressable>
+                <AppText family="display" weight="bold" size={14}>Until {dayjs(repeatUntil).format("D MMM YYYY")}</AppText>
+                <Pressable onPress={() => setRepeatUntil((d) => dayjs(d).add(repeat === "weekly" ? 7 : 30, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="repeat-until-next">
+                  <Ionicons name="chevron-forward" size={22} color={c.onSurface} />
+                </Pressable>
+              </View>
+            )}
+          </View>
+        ) : null}
+
         {/* category */}
         <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
           Category
@@ -185,4 +258,9 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.lg },
   timeRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   catChip: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: 10, borderWidth: 1.5, flexShrink: 0 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  repeatChip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 9, borderWidth: 1.5 },
+  repeatBox: { borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginTop: spacing.md },
+  stepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  stepBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
 });

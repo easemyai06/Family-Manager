@@ -16,6 +16,7 @@ const SHORTCUTS = [
   { key: "instructions", label: "What To Do", icon: "list", color: "#E8A33D", route: "/emergency/instructions" },
   { key: "plan", label: "Family Plan", icon: "home", color: "#8AB07D", route: "/emergency/plan" },
   { key: "medical", label: "Medical Cards", icon: "medkit", color: "#E86A6A", route: "/emergency/medical" },
+  { key: "access", label: "Trusted Access", icon: "shield-checkmark", color: "#9B8AC9", route: "/emergency/access" },
 ];
 
 export default function EmergencyHome() {

@@ -23,10 +23,15 @@ export default function NoticeDetail() {
   const [n, setN] = useState<any>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [showSeen, setShowSeen] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setN(await api(`/notices/${id}`));
+      // record that this member has now seen the note
+      try {
+        setN(await api(`/notices/${id}/seen`, { method: "POST" }));
+      } catch {}
     } catch {}
   }, [id]);
 
@@ -108,6 +113,29 @@ export default function NoticeDetail() {
           })}
         </View>
 
+        {/* seen by */}
+        {n.seen_count ? (
+          <View style={{ marginTop: spacing.md }}>
+            <Pressable onPress={() => setShowSeen((s) => !s)} style={styles.seenRow} testID="notice-seen-toggle">
+              <Ionicons name="eye-outline" size={16} color={c.onSurfaceTertiary} />
+              <AppText size={13} weight="semibold" color={c.onSurfaceSecondary}>
+                Seen by {n.seen_count}
+              </AppText>
+              <Ionicons name={showSeen ? "chevron-up" : "chevron-down"} size={15} color={c.onSurfaceTertiary} />
+            </Pressable>
+            {showSeen ? (
+              <View style={[styles.seenList, { backgroundColor: c.surface, borderColor: c.border }]} testID="notice-seen-list">
+                {(n.seen_members || []).map((m: any) => (
+                  <View key={m.member_id} style={styles.seenMember}>
+                    <Avatar uri={m.photo_url} name={m.name} size={26} color={m.color} />
+                    <AppText size={13} color={c.onSurface}>{m.name}</AppText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* replies */}
         <AppText family="display" weight="bold" size={16} style={{ marginTop: spacing.xl, marginBottom: spacing.sm }}>
           Replies {n.reply_count ? `(${n.reply_count})` : ""}
@@ -158,6 +186,9 @@ const styles = StyleSheet.create({
   detailPhoto: { width: "100%", height: 200, borderRadius: radius.md, marginTop: spacing.md },
   reactBar: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
   reactChip: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8, borderWidth: 1 },
+  seenRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  seenList: { marginTop: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, gap: spacing.sm },
+  seenMember: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   replyRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   bubble: { flex: 1, borderRadius: radius.md, borderWidth: 1, padding: spacing.md },
   inputBar: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, borderTopWidth: 1 },

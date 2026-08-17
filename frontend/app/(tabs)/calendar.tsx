@@ -170,6 +170,14 @@ export default function Calendar() {
                   <AppText size={12} color={c.onSurfaceSecondary}>
                     {e.all_day ? "All day" : `${e.start_time || ""}${e.end_time ? " – " + e.end_time : ""}`}
                   </AppText>
+                  {e.repeat && e.repeat !== "none" ? (
+                    <>
+                      <Ionicons name="repeat" size={13} color={c.brand} />
+                      <AppText size={12} weight="semibold" color={c.brand}>
+                        {e.repeat === "weekly" ? "Weekly" : "Monthly"}
+                      </AppText>
+                    </>
+                  ) : null}
                   {e.location ? (
                     <>
                       <Ionicons name="location-outline" size={13} color={c.onSurfaceTertiary} />
