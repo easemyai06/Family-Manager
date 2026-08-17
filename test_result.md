@@ -803,3 +803,100 @@ frontend_batch12:
 agent_communication_batch12:
     -agent: "main"
     -message: "Batch #12 = Home redesign into a role-aware Family Dashboard + manual member status. Account: dashdemo@fam.com / secret123 (full Sharma demo; members have seeded statuses). TEST BACKEND: (1) PATCH /api/families/members/{id}/status — set your own status (200) with emoji/label/note; setting ANOTHER member's status as a NON parent/admin should 403 (note: demo's only logged-in user is Raj=admin, so admin CAN set others — verify admin path works, and verify self-set works). status:null clears. (2) GET /api/home returns the new keys: meals_today, tasks (with scope + overdue + days_until_due), kids (done/total), shopping_preview, coming_up (events+birthdays sorted by days), vault_expiring (ONLY title/days/kind, NO policy_number), wishlist_reminder (reservation hidden from owner/children), latest_post, family_chat (pinned+last_message), needs_attention (route+tone). TEST FRONTEND (in-app nav, log in first): Home renders the dashboard (NOT a feed); status strip -> tap your own card (status-mine) -> modal -> pick a status (status-opt-work) + optional note -> status-save -> your status updates on the strip; Needs Attention cards navigate (attn-chores -> /chores, attn-shopping -> /shopping, attn-vault -> /vault, birthday -> /birthday/<id>); task filter chips switch lists; Kids & chores show progress bars; Coming Up horizontal cards; Family Noticeboard -> family chat; Memory of the Day -> timeline detail; Wish List Reminder -> wish detail; Emergency Center card -> /emergency; Quick Actions tiles route correctly. NOTE: an unseen affection overlay ('Priya sent you a Hug') appears on first Home load — dismiss it ('Tap to close') before interacting; this is expected. Push/voice/biometric/SOS-location remain native-only. Do NOT retest unrelated older features unless regression-suspected."
+
+# ============ Feature Batch #13 (Noticeboard + Customize Dashboard + Home chore widgets + Evening Recap + Edit Profile) ============
+backend_batch13:
+  - task: "Family Noticeboard CRUD (/api/notices)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/notices (active only, pinned first then newest, owner hydrated + days_until_expiry). POST /api/notices {title, note?, expiry_date?, priority normal|high, pinned}. PATCH /api/notices/{id} + DELETE /api/notices/{id} restricted to owner OR parent/admin (else 403). Expired notes auto-hidden. Seed adds 2 demo notices. Verified via curl."
+  - task: "Dashboard preferences (/api/dashboard/prefs)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET returns {order, hidden, pinned, compact} (defaults empty). PUT upserts per user_id. Verified via curl round-trip."
+  - task: "Profile update (PATCH /api/auth/profile) + member.phone + home extensions"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "PATCH /api/auth/profile updates user display name and syncs the linked member's name (email is READ-ONLY, never editable). MemberPatch now accepts phone (edited via PATCH /families/members/{id}). GET /api/home now also returns today_summary {events,chores_done,chores_total,tasks_open,loves_today,posts_today,memories_today}, notices (top 3 active) and kids[].chores [{chore_id,title,stars,done_today}]. Verified via curl."
+
+frontend_batch13:
+  - task: "Family Noticeboard screen (/notice) + Home preview"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/notice/index.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Noticeboard list screen with FAB (fab-add-notice) -> create modal (notice-title, notice-note, notice-expiry-<days|none>, notice-high, notice-pin-toggle, notice-save). Own notices show pin toggle (notice-pin-<id>) + delete (notice-del-<id>). Home 'Family noticeboard' section shows top notices (home-notice-<id>), empty state (home-notice-empty), and a family-chat peek (home-noticeboard) -> /chat/<id>. 'Open board' header action -> /notice."
+  - task: "Customize Dashboard screen (/dashboard/customize)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/dashboard/customize.tsx, frontend/src/lib/dashboard.ts, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Opened from Home header tune icon (home-customize). Per-section controls: pin (customize-pin-<key>), hide (customize-hide-<key>), reorder up/down (customize-up-<key>/customize-down-<key>), global Compact toggle (customize-compact), Reset (customize-reset), Save (customize-save -> PUT /dashboard/prefs). Home applies prefs via applyPrefs (hidden removed, pinned floated to top, compact trims previews). Persisted per user."
+  - task: "Home chore widgets (tap to complete + StarBurst)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Kids & Chores (parent) renders each child's chores as tappable chips (home-chore-<chore_id>); child persona 'My chores' renders tappable rows. Tapping toggles complete/uncomplete (POST /chores/{id}/complete|uncomplete), optimistic UI, +stars, StarBurst celebration on completion."
+  - task: "Evening Recap section (after 6pm)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Recap card renders only when local hour >= 18 using home.today_summary; 'Save today's best moment' (recap-save-moment) -> /timeline/create. NOTE: only visible in the evening — testing agent may not see it during daytime; that is expected."
+  - task: "Edit Profile screen (/member/edit)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/member/edit.tsx, frontend/app/member/[id].tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Edit Profile modal: change photo (edit-photo, expo-image-picker + uploadMedia), name (edit-name), phone (edit-phone), birthday (edit-birthday); email shown READ-ONLY. Save (edit-save) -> PATCH member + PATCH /auth/profile + refresh auth context. Entry points: own member profile header pencil (member-edit) and More profile card pencil (more-edit-profile)."
+
+agent_communication_batch13:
+    -agent: "main"
+    -message: "Batch #13 adds 5 features. Account: board@fam.com / secret123 (Sharma demo WITH 2 seeded notices). BACKEND to test: (1) /api/notices GET/POST/PATCH/DELETE — create a note, verify it lists (pinned first), verify a NON-owner non-parent gets 403 on edit/delete (demo's only user Raj is admin, so also verify admin can delete others' notes and owner can delete own), expired notes hidden. (2) /api/dashboard/prefs GET default + PUT round-trip. (3) PATCH /api/auth/profile {name} updates user + member name; email must remain unchanged/read-only. (4) GET /api/home has today_summary, notices, kids[].chores. (5) POST /chores/{id}/complete + /uncomplete still work. FRONTEND to test (log in first; dismiss the first-load affection overlay via 'Tap to close'): (a) Home shows Family Noticeboard with 'School closed' note; tap 'Open board' -> /notice; add a note via FAB (fab-add-notice -> notice-title -> notice-save) and see it appear; delete own note. (b) Home header tune icon (home-customize) -> Customize Home; hide a section (customize-hide-kids), pin one (customize-pin-today), toggle Compact (customize-compact), Save (customize-save); return to Home and confirm the hidden section is gone / pinned floated up / compact applied. (c) Home 'Kids & chores' chore chips (home-chore-<id>) toggle done with a star celebration. (d) Edit Profile: More profile pencil (more-edit-profile) OR own profile pencil (member-edit) -> /member/edit; change name+phone, Save (edit-save); confirm name updates; email field is read-only/locked. (e) Evening Recap only shows after 6pm (skip if daytime). NOTE: photo upload + native pickers can't be fully exercised on web — just confirm the screen loads & text fields save. Do NOT retest unrelated older features."

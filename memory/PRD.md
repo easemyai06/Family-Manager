@@ -42,6 +42,15 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   Day), Wish List Reminder (nearest birthday, reservation-safe), Important Information (Vault
   expiry summary — no policy numbers), Emergency quick access, Daily Brief (counts), Latest Post
   peek (single, no endless feed), Quick Actions. Powered by one aggregated GET /api/home.
+- Family Noticeboard (/notice): anyone posts a note (title, details, optional expiry + pin-to-top,
+  urgent flag); owner/parent can edit/delete; expired notes auto-hide; live preview on Home.
+- Customize Dashboard (/dashboard/customize): per-user hide / pin-to-top / reorder (up-down) of Home
+  cards + Compact view, saved via GET/PUT /api/dashboard/prefs.
+- Home chore widgets: kids' chores are tappable on Home to mark done (star celebration).
+- Evening Recap: after ~6pm a summary card (events, chores done, love shared) with a
+  "Save today's best moment" -> add memory shortcut (uses home.today_summary).
+- Edit Profile (/member/edit): update photo, name and phone (email read-only) via
+  PATCH /families/members/{id} + PATCH /auth/profile.
 - Feed: photo/text posts, 7 reaction types (toggle), comments, post detail, create post w/ image upload.
 - Stories: 24h stories bar + create.
 - Affection (signature): Send Some Love (recipient + type + note), full-screen Reanimated animation

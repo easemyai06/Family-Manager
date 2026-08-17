@@ -1,0 +1,51 @@
+{
+  "summary": "Batch #13 (Family Noticeboard + Customize Dashboard + tappable Home chores + Evening Recap + Edit Profile) tested end-to-end. Backend pytest 17/17 pass, 1 skipped by design. Frontend (Expo web, 390x844) walk-through as board@fam.com successful. /api/notices: GET returns seeded 'School closed'/'Plumber visit' notes hydrated with owner + days_until_expiry, pinned-first ordering verified; POST creates & returns 201 with owner card; PATCH toggles pinned/priority; DELETE by owner (Raj) works AND by admin (Raj is admin) deleting a non-Raj-owned notice returns 200; notes past expiry are hidden from GET (verified with expiry_date=yesterday). /api/dashboard/prefs: fresh user returns {order:[],hidden:[],pinned:[],compact:false}; PUT persists per-user (verified via subsequent GET returning saved values) and is isolated per user. PATCH /api/auth/profile: updates user.name AND linked member.name; user.email stays exactly 'board@fam.com'; sending {email: 'hacked...'} is silently ignored (ProfileIn only has 'name') and GET /auth/me confirms email unchanged. PATCH /api/families/members/{id} persists phone and GET returns it. GET /api/home now returns new keys: today_summary {events,chores_done,chores_total,tasks_open,loves_today,posts_today,memories_today} all ints; notices (top active with owner+priority+pinned); kids[].chores each carrying {chore_id,title,stars,done_today}. POST /api/chores/{id}/complete + /uncomplete toggle done_today reflected in GET /api/home. FRONTEND: Login works via login-link-btn -> login-email-input/login-password-input/login-submit-btn. Home shows 'Family noticeboard' section, seeded 'School closed' note, and 'Open board' action. Open board -> /notice screen, FAB fab-add-notice opens modal, notice-title+notice-note+notice-save creates the note and it appears in the list; delete via notice-del-<id> removes a note (verified admin Raj deleting a note not owned by him — 200 OK). Home header home-customize opens /dashboard/customize; customize-hide-kids + customize-pin-today + customize-compact + customize-save returns to Home where 'Kids & chores' heading is absent (was hidden) and 'Today at a glance' floats above 'Needs your attention' (pinned worked); after full page reload the same layout persists (prefs stored per user). customize-reset + customize-save restores default order. Edit Profile: opened via home-avatar -> /member/{id} -> member-edit pencil -> /member/edit. Screen renders Name, Phone, Birthday inputs plus a distinct Email row that is clearly displayed with a LOCK icon and is non-editable (no TextInput, just AppText). Changing edit-name + edit-phone and pressing edit-save persists and pops back. Deprecated packages: NONE detected in this batch's new files. Console errors: repeated 'A props object containing a \"key\" prop is being spread into JSX' — this is a react-native-web FlatList/renderItem warning (non-fatal) but it's noisy and should be quietened. NOTE: PATCH /api/families/members/{id} filters out None from body.dict(), so posting {phone: null} does NOT clear phone (silent no-op). Documented as a minor code-review comment.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PATCH /api/families/members/{id}",
+        "issue": "patch_member drops any field whose value is None (`updates = {k:v for k,v in body.dict().items() if v is not None}`), so callers cannot clear phone/birthday/photo_url/etc. back to null. Recommend using exclude_unset with a model_dump or a sentinel; contrast with set_member_status which explicitly persists None."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "FlatList / renderItem (react-native-web)",
+        "issue": "Console repeatedly logs: 'A props object containing a \"key\" prop is being spread into JSX'. Non-fatal, but should be silenced by passing `key` directly to the JSX element inside renderItem (or wrapping list items so key is not spread). Reference: /app/frontend/app/notice/index.tsx:104-152 (FlatList) and other lists rendered with FlatList on web. Batch #12 also flagged the deprecated `pointerEvents` prop; still present."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch13_noticeboard_prefs_profile.py",
+    "/app/test_reports/pytest/pytest_batch13_results.xml"
+  ],
+  "action_items": [
+    "(Minor) Allow PATCH /api/families/members/{id} to clear fields to null (currently None values are stripped so `{phone: null}` is a no-op).",
+    "(Nice-to-have) Silence the RN-Web console warnings: (a) 'key prop spread into JSX' inside FlatList renderItem, (b) deprecated `pointerEvents` prop still present.",
+    "(Hygiene, ongoing) server.py is 4019 lines — consider splitting Noticeboard/Dashboard-prefs/Profile/Home aggregation into routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1595 — active-notice filter uses `d['expiry_date'][:10] >= t` where `t = today_str()`. Correct for 'today or later'; matches spec 'past expiry are hidden'.",
+    "server.py:1597 — pinned-first sort uses stable sort with `not d.get('pinned')` as key AFTER a created_at-desc sort. Works but relies on Python's stable sort. Consider `sort(key=lambda d: (not d.get('pinned'), -epoch(d['created_at'])))` for clarity.",
+    "server.py:1681,1697 — PATCH & DELETE notice permission check: owner OR role in {admin,parent}. Matches spec. 403 message is 'You can't edit/delete this note'.",
+    "server.py:590 (patch_member) — strips None values from update dict. Blocks clearing fields; see minor bug.",
+    "server.py:617-630 (update_profile) — updates ONLY name; email is never accepted (ProfileIn has no email field). Correct per spec. Silently ignores extra keys because Pydantic model doesn't set extra='forbid'; sending {email: ...} returns 200 with unchanged email — non-security-critical since JWT identifies the user by user_id.",
+    "server.py:1481 — kids[].chores includes stars & done_today; matches spec.",
+    "server.py:1703-1710 (get_dashboard_prefs) — returns {order,hidden,pinned,compact} defaults on missing doc; per-user (keyed on user_id). No family_id check beyond require_family — a user in family A can't read another user's prefs since the query is on user_id.",
+    "server.py:1713-1720 (put_dashboard_prefs) — upsert on user_id with full payload replace. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch13_noticeboard_prefs_profile.py (new — 18 pytest cases: TestNoticeboard, TestDashboardPrefs, TestProfileAndPhone, TestHomeExtensions)"
+  ],
+  "success_rate": {"backend": "100% (17/17 executed, 1 skipped by design)", "frontend": "100% of web-testable flows"},
+  "seed_data_creation": "One 'TEST_ pytest UI note' created and deleted during UI flow. One board@ family's seeded 'School closed' note was deleted during the admin-deletes-other-owner pytest and then re-created with identical content in the same test's tail so demo data still shows a first-slot notice. Phone on Raj was set to '+91-98765-TEST' then cleanup attempted (PATCH null); due to the patch_member None-strip bug the value persisted — the UI test overwrote it to '+91-90000-00000' then again to the actual seeded value. Users may need to re-run /api/seed/demo to get the original phone back on demo accounts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "board@fam.com/secret123 is the primary Batch #13 test account. Note that patch_member cannot clear fields to null (see minor). Login testIDs: login-link-btn on welcome -> login-email-input, login-password-input, login-submit-btn. Home Batch #13 testIDs: home-customize (header), fab-add-notice, notice-title/notice-note/notice-save, notice-del-<id>, notice-pin-<id>, customize-hide-<key>, customize-pin-<key>, customize-up/down-<key>, customize-compact, customize-save, customize-reset, home-chore-<chore_id>, member-edit (own profile), more-edit-profile (More tab), edit-name/edit-phone/edit-birthday/edit-save, recap-save-moment (only when server hour >= 18). Evening Recap was NOT visible in this run (server hour was daytime UTC — expected per agent-to-agent note). Console has noisy 'key prop spread' warnings from FlatList on RN Web — non-functional.",
+  "rca_of_issue": ""
+}

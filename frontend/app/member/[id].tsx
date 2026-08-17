@@ -11,12 +11,14 @@ import { Button } from "@/src/components/ui/Button";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { useAuth } from "@/src/auth/AuthContext";
 import { ageFrom, formatDate } from "@/src/lib/time";
 
 export default function MemberProfile() {
   const { c } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { member: myMember } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [member, setMember] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
@@ -41,10 +43,13 @@ export default function MemberProfile() {
 
   const details = [
     member.birthday ? { icon: "gift-outline", label: "Birthday", value: `${formatDate(member.birthday, "D MMM YYYY")} · ${ageFrom(member.birthday)} yrs` } : null,
+    member.phone ? { icon: "call-outline", label: "Phone", value: member.phone } : null,
     member.favorite_food ? { icon: "fast-food-outline", label: "Favourite Food", value: member.favorite_food } : null,
     member.favorite_color ? { icon: "color-palette-outline", label: "Favourite Colour", value: member.favorite_color } : null,
     member.hobbies ? { icon: "happy-outline", label: "Hobbies", value: member.hobbies } : null,
   ].filter(Boolean) as any[];
+
+  const isMe = myMember?.member_id === member.member_id;
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
@@ -54,6 +59,11 @@ export default function MemberProfile() {
           <Pressable onPress={() => router.back()} hitSlop={12} style={[styles.back, { top: insets.top + 6 }]} testID="member-back">
             <Ionicons name="chevron-back" size={26} color="#fff" />
           </Pressable>
+          {isMe ? (
+            <Pressable onPress={() => router.push("/member/edit")} hitSlop={12} style={[styles.editTop, { top: insets.top + 6 }]} testID="member-edit">
+              <Ionicons name="create-outline" size={22} color="#fff" />
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.profileTop}>
@@ -150,6 +160,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   cover: { height: 150 },
   back: { position: "absolute", left: spacing.lg, width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center" },
+  editTop: { position: "absolute", right: spacing.lg, width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center" },
   profileTop: { alignItems: "center", marginTop: -52 },
   avatarWrap: { borderRadius: 60, padding: 4, backgroundColor: "transparent" },
   relBadge: { borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5, marginTop: spacing.sm },

@@ -154,7 +154,9 @@ export default function More() {
               {member?.relationship} · View my profile
             </AppText>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={c.onSurfaceTertiary} />
+          <Pressable onPress={() => router.push("/member/edit")} hitSlop={10} style={styles.editPencil} testID="more-edit-profile">
+            <Ionicons name="create-outline" size={20} color={c.brand} />
+          </Pressable>
         </Pressable>
 
         {PILLARS.map((p) => (
@@ -234,6 +236,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   profileCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginHorizontal: spacing.lg, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1 },
+  editPencil: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
   card: { borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },

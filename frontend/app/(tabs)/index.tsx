@@ -18,6 +18,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { AffectionAnimation } from "@/src/components/AffectionAnimation";
+import { StarBurst } from "@/src/components/StarBurst";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -25,29 +26,7 @@ import { storage } from "@/src/utils/storage";
 import { greeting, formatDate } from "@/src/lib/time";
 import { AFFECTION_MAP } from "@/src/lib/constants";
 import { STATUS_OPTIONS, statusFor } from "@/src/lib/statuses";
-
-type Persona = "parent" | "child" | "grandparent";
-
-function personaOf(me: any): Persona {
-  if (!me) return "parent";
-  const rel = (me.relationship || "").toLowerCase();
-  if (me.is_child || me.role === "child") return "child";
-  if (/grand|nani|dadi|nana|dada/.test(rel)) return "grandparent";
-  return "parent";
-}
-
-const ORDER: Record<Persona, string[]> = {
-  parent: [
-    "attention", "today", "tasks", "kids", "meals", "shopping", "comingup",
-    "messages", "memory", "wishlist", "important", "emergency", "brief", "latest", "quick",
-  ],
-  child: [
-    "today", "mychores", "mytasks", "messages", "comingup", "memory", "wishlist", "brief", "latest", "quick",
-  ],
-  grandparent: [
-    "today", "comingup", "messages", "memory", "wishlist", "emergency", "brief", "latest", "quick",
-  ],
-};
+import { personaOf, ORDER, applyPrefs, EMPTY_PREFS, DashPrefs } from "@/src/lib/dashboard";
 
 const QUICK = [
   { key: "event", emoji: "📅", label: "Add Event", route: "/event/create" },
@@ -67,10 +46,12 @@ export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [home, setHome] = useState<any>(null);
+  const [prefs, setPrefs] = useState<DashPrefs>(EMPTY_PREFS);
   const [refreshing, setRefreshing] = useState(false);
   const [incoming, setIncoming] = useState<any>(null);
   const [nudge, setNudge] = useState<any>(null);
   const [taskFilter, setTaskFilter] = useState<"mine" | "kids" | "family">("family");
+  const [celebrating, setCelebrating] = useState(false);
 
   // status editor
   const [statusOpen, setStatusOpen] = useState(false);
@@ -80,8 +61,13 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      const [h, inbox] = await Promise.all([api("/home"), api("/affection/inbox")]);
+      const [h, inbox, p] = await Promise.all([
+        api("/home"),
+        api("/affection/inbox"),
+        api<DashPrefs>("/dashboard/prefs").catch(() => EMPTY_PREFS),
+      ]);
       setHome(h);
+      setPrefs(p || EMPTY_PREFS);
       if (inbox?.unseen?.length) setIncoming(inbox.unseen[0]);
       if (h?.on_this_day?.length) {
         const key = `otdNudge:${new Date().toISOString().slice(0, 10)}`;
@@ -154,11 +140,34 @@ export default function Home() {
     setSavingStatus(false);
   };
 
+  const toggleChore = async (choreId: string, wasDone: boolean) => {
+    // optimistic update
+    setHome((prev: any) => {
+      if (!prev) return prev;
+      const kids = (prev.kids || []).map((k: any) => {
+        const chores = (k.chores || []).map((ch: any) =>
+          ch.chore_id === choreId ? { ...ch, done_today: !wasDone } : ch
+        );
+        return { ...k, chores, done: chores.filter((x: any) => x.done_today).length };
+      });
+      return { ...prev, kids };
+    });
+    if (!wasDone) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setCelebrating(true);
+    }
+    try {
+      await api(`/chores/${choreId}/${wasDone ? "uncomplete" : "complete"}`, { method: "POST" });
+    } catch {
+      load();
+    }
+  };
+
   const me = home?.me;
   const persona = personaOf(me);
-  const order = ORDER[persona];
+  const compact = !!prefs.compact;
+  const order = useMemo(() => (home ? applyPrefs(ORDER[persona], prefs) : []), [home, persona, prefs]);
 
-  const tasks = home?.tasks || [];
   const filteredTasks = useMemo(() => {
     const all = home?.tasks || [];
     if (persona === "child") return all.filter((t: any) => t.scope === "mine");
@@ -168,55 +177,45 @@ export default function Home() {
 
   const go = (r: string) => router.push(r as any);
 
-  // ---- section renderers --------------------------------------------------
   const renderSection = (key: string) => {
+    const p = { compact, c, go, router };
     switch (key) {
       case "attention":
-        return <AttentionSection key={key} items={home?.needs_attention || []} go={go} c={c} />;
+        return <AttentionSection {...p} items={home?.needs_attention || []} />;
       case "today":
-        return <TodaySection key={key} events={home?.events_today || []} go={go} c={c} />;
+        return <TodaySection {...p} events={home?.events_today || []} />;
       case "tasks":
-        return (
-          <TasksSection
-            key={key}
-            tasks={filteredTasks}
-            total={tasks.length}
-            filter={taskFilter}
-            setFilter={setTaskFilter}
-            go={go}
-            c={c}
-          />
-        );
+        return <TasksSection {...p} tasks={filteredTasks} filter={taskFilter} setFilter={setTaskFilter} />;
       case "mytasks":
-        return <MyTasksSection key={key} tasks={filteredTasks} go={go} c={c} />;
+        return <MyTasksSection {...p} tasks={filteredTasks} />;
       case "kids":
-        return <KidsSection key={key} kids={home?.kids || []} go={go} router={router} c={c} />;
+        return <KidsSection {...p} kids={home?.kids || []} onToggleChore={toggleChore} />;
       case "mychores":
-        return <MyChoresSection key={key} kids={home?.kids || []} me={me} go={go} c={c} />;
+        return <MyChoresSection {...p} kids={home?.kids || []} me={me} onToggleChore={toggleChore} />;
       case "meals":
-        return <MealsSection key={key} meals={home?.meals_today || []} go={go} c={c} />;
+        return <MealsSection {...p} meals={home?.meals_today || []} />;
       case "shopping":
-        return (
-          <ShoppingSection key={key} preview={home?.shopping_preview || []} count={home?.shopping_pending || 0} go={go} c={c} />
-        );
+        return <ShoppingSection {...p} preview={home?.shopping_preview || []} count={home?.shopping_pending || 0} />;
       case "comingup":
-        return <ComingUpSection key={key} items={home?.coming_up || []} router={router} go={go} c={c} />;
-      case "messages":
-        return <MessagesSection key={key} fam={home?.family_chat} unread={home?.unread_messages || 0} router={router} c={c} />;
+        return <ComingUpSection {...p} items={home?.coming_up || []} />;
+      case "noticeboard":
+        return <NoticeboardSection {...p} notices={home?.notices || []} fam={home?.family_chat} unread={home?.unread_messages || 0} />;
       case "memory":
-        return <MemorySection key={key} item={(home?.on_this_day || [])[0]} router={router} go={go} c={c} />;
+        return <MemorySection {...p} item={(home?.on_this_day || [])[0]} />;
       case "wishlist":
-        return <WishlistSection key={key} data={home?.wishlist_reminder} router={router} c={c} />;
+        return <WishlistSection {...p} data={home?.wishlist_reminder} />;
       case "important":
-        return <VaultSection key={key} items={home?.vault_expiring || []} go={go} c={c} />;
+        return <VaultSection {...p} items={home?.vault_expiring || []} />;
       case "emergency":
-        return <EmergencySection key={key} go={go} c={c} />;
+        return <EmergencySection {...p} />;
+      case "recap":
+        return <EveningRecapSection {...p} summary={home?.today_summary} />;
       case "brief":
-        return <BriefSection key={key} home={home} c={c} />;
+        return <BriefSection {...p} home={home} />;
       case "latest":
-        return <LatestPostSection key={key} post={home?.latest_post} router={router} c={c} />;
+        return <LatestPostSection {...p} post={home?.latest_post} />;
       case "quick":
-        return <QuickActions key={key} go={go} c={c} />;
+        return <QuickActions {...p} />;
       default:
         return null;
     }
@@ -229,7 +228,6 @@ export default function Home() {
         contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.brand} />}
       >
-        {/* On this day nudge */}
         {nudge ? (
           <Pressable onPress={openNudge} style={styles.nudgeWrap} testID="otd-nudge">
             <LinearGradient colors={["#FFE7B3", "#FFD166"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.nudge}>
@@ -251,32 +249,26 @@ export default function Home() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <AppText size={13} color={c.onSurfaceTertiary}>{formatDate(new Date().toISOString(), "dddd, D MMMM")}</AppText>
-            <AppText family="display" weight="bold" size={24}>
+            <AppText family="display" weight="bold" size={22}>
               {greeting()}, {me?.name || "Friend"}
             </AppText>
             <AppText size={13} color={c.onSurfaceSecondary}>{home?.family?.name}</AppText>
           </View>
           <HeaderIcon icon="search" onPress={() => go("/search")} c={c} testID="home-search" />
+          <HeaderIcon icon="options-outline" onPress={() => go("/dashboard/customize")} c={c} testID="home-customize" />
           <HeaderIcon icon="chatbubble-ellipses" onPress={() => go("/(tabs)/chat")} c={c} badge={home?.unread_messages} testID="home-chat" />
-          <Pressable onPress={() => me && go(`/member/${me.member_id}`)} testID="home-avatar" style={{ marginLeft: 4 }}>
-            <Avatar uri={me?.photo_url} name={me?.name} size={46} color={me?.color} ring />
+          <Pressable onPress={() => me && go(`/member/${me.member_id}`)} testID="home-avatar" style={{ marginLeft: 2 }}>
+            <Avatar uri={me?.photo_url} name={me?.name} size={44} color={me?.color} ring />
           </Pressable>
         </View>
 
-        {/* Family status strip (always) */}
-        <StatusStrip
-          members={home?.members || []}
-          me={me}
-          router={router}
-          onEditMine={openStatusEditor}
-          c={c}
-        />
+        <StatusStrip members={home?.members || []} me={me} router={router} onEditMine={openStatusEditor} c={c} />
 
-        {/* Role-ordered dashboard sections */}
-        {home ? order.map((k) => renderSection(k)) : null}
+        {home ? order.map((k) => <React.Fragment key={k}>{renderSection(k)}</React.Fragment>) : null}
       </ScrollView>
 
-      {/* affection overlay */}
+      {celebrating ? <StarBurst onDone={() => setCelebrating(false)} /> : null}
+
       {incoming ? (
         <AffectionAnimation
           visible={!!incoming}
@@ -304,10 +296,7 @@ export default function Home() {
                 <Pressable
                   key={s.key}
                   onPress={() => setStatusKey(s.key)}
-                  style={[
-                    styles.statusOpt,
-                    { backgroundColor: active ? c.brand : c.surfaceSecondary, borderColor: active ? c.brand : c.border },
-                  ]}
+                  style={[styles.statusOpt, { backgroundColor: active ? c.brand : c.surfaceSecondary, borderColor: active ? c.brand : c.border }]}
                   testID={`status-opt-${s.key}`}
                 >
                   <AppText size={18}>{s.emoji}</AppText>
@@ -344,12 +333,16 @@ export default function Home() {
 }
 
 // ===========================================================================
-// Small building blocks
+// Building blocks
 // ===========================================================================
+function SectionShell({ compact, children }: any) {
+  return <View style={{ paddingHorizontal: spacing.lg, marginTop: compact ? spacing.sm : spacing.md }}>{children}</View>;
+}
+
 function HeaderIcon({ icon, onPress, c, badge, testID }: any) {
   return (
     <Pressable onPress={onPress} hitSlop={6} style={[styles.headerIcon, { backgroundColor: c.surface, borderColor: c.border }]} testID={testID}>
-      <Ionicons name={icon} size={20} color={c.onSurface} />
+      <Ionicons name={icon} size={19} color={c.onSurface} />
       {badge ? (
         <View style={[styles.iconBadge, { backgroundColor: c.brand, borderColor: c.surface }]}>
           <AppText size={9} weight="bold" color="#fff">{badge > 9 ? "9+" : badge}</AppText>
@@ -376,7 +369,6 @@ function Card({ children, c, style }: any) {
   return <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }, shadow(1), style]}>{children}</View>;
 }
 
-// ---- Status strip ---------------------------------------------------------
 function StatusStrip({ members, me, router, onEditMine, c }: any) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusStrip}>
@@ -407,11 +399,10 @@ function StatusStrip({ members, me, router, onEditMine, c }: any) {
   );
 }
 
-// ---- Needs attention ------------------------------------------------------
-function AttentionSection({ items, go, c }: any) {
+function AttentionSection({ items, go, c, compact }: any) {
   if (!items.length) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Needs your attention" c={c} />
       <View style={{ gap: spacing.sm }}>
         {items.map((it: any) => {
@@ -432,19 +423,18 @@ function AttentionSection({ items, go, c }: any) {
           );
         })}
       </View>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Today at a glance -----------------------------------------------------
-function TodaySection({ events, go, c }: any) {
+function TodaySection({ events, go, c, compact }: any) {
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Today at a glance" action="Calendar" onAction={() => go("/(tabs)/calendar")} c={c} />
       <Card c={c}>
         {events.length ? (
           <View style={{ gap: spacing.md }}>
-            {events.slice(0, 4).map((e: any) => (
+            {events.slice(0, compact ? 2 : 4).map((e: any) => (
               <Pressable key={e.event_id} style={styles.eventRow} onPress={() => go("/(tabs)/calendar")}>
                 <View style={[styles.eventBar, { backgroundColor: e.color || c.brand }]} />
                 <View style={{ flex: 1 }}>
@@ -462,19 +452,18 @@ function TodaySection({ events, go, c }: any) {
           </View>
         )}
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Tasks (parent) --------------------------------------------------------
-function TasksSection({ tasks, total, filter, setFilter, go, c }: any) {
+function TasksSection({ tasks, filter, setFilter, go, c, compact }: any) {
   const filters: any[] = [
     { k: "family", label: "All" },
     { k: "mine", label: "Mine" },
     { k: "kids", label: "Kids" },
   ];
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Family tasks" action="All lists" onAction={() => go("/todos")} c={c} />
       <View style={styles.chipRow}>
         {filters.map((f) => (
@@ -491,7 +480,7 @@ function TasksSection({ tasks, total, filter, setFilter, go, c }: any) {
       <Card c={c}>
         {tasks.length ? (
           <View style={{ gap: spacing.md }}>
-            {tasks.slice(0, 5).map((t: any) => (
+            {tasks.slice(0, compact ? 3 : 5).map((t: any) => (
               <Pressable key={t.item_id} style={styles.taskRow} onPress={() => go("/todos")}>
                 <Ionicons name="ellipse-outline" size={18} color={t.overdue ? c.error : c.onSurfaceTertiary} />
                 <View style={{ flex: 1 }}>
@@ -509,15 +498,14 @@ function TasksSection({ tasks, total, filter, setFilter, go, c }: any) {
           <AppText size={13} color={c.onSurfaceTertiary}>No open tasks here 🎉</AppText>
         )}
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- My tasks (child) ------------------------------------------------------
-function MyTasksSection({ tasks, go, c }: any) {
+function MyTasksSection({ tasks, go, c, compact }: any) {
   if (!tasks.length) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="My tasks" action="Open" onAction={() => go("/todos")} c={c} />
       <Card c={c}>
         <View style={{ gap: spacing.md }}>
@@ -529,77 +517,103 @@ function MyTasksSection({ tasks, go, c }: any) {
           ))}
         </View>
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Kids & chores (parent) ------------------------------------------------
-function KidsSection({ kids, go, router, c }: any) {
+function KidsSection({ kids, go, router, onToggleChore, c, compact }: any) {
   if (!kids.length) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Kids & chores" action="Manage" onAction={() => go("/chores")} c={c} />
       <View style={{ gap: spacing.sm }}>
         {kids.map((k: any) => {
           const pct = k.total ? Math.round((k.done / k.total) * 100) : 0;
           const allDone = k.total > 0 && k.done === k.total;
           return (
-            <Card key={k.member.member_id} c={c} style={styles.kidRow}>
-              <Avatar uri={k.member.photo_url} name={k.member.name} size={44} color={k.member.color} />
-              <View style={{ flex: 1 }}>
-                <View style={styles.kidTop}>
-                  <AppText size={14} weight="bold">{k.member.name}</AppText>
-                  <AppText size={12} weight="semibold" color={allDone ? c.success : c.onSurfaceTertiary}>
-                    {k.total ? `${k.done}/${k.total} chores` : "No chores"}
-                  </AppText>
+            <Card key={k.member.member_id} c={c}>
+              <View style={styles.kidRow}>
+                <Avatar uri={k.member.photo_url} name={k.member.name} size={44} color={k.member.color} />
+                <View style={{ flex: 1 }}>
+                  <View style={styles.kidTop}>
+                    <AppText size={14} weight="bold">{k.member.name}</AppText>
+                    <AppText size={12} weight="semibold" color={allDone ? c.success : c.onSurfaceTertiary}>
+                      {k.total ? `${k.done}/${k.total} chores` : "No chores"}
+                    </AppText>
+                  </View>
+                  <View style={[styles.progressTrack, { backgroundColor: c.surfaceTertiary }]}>
+                    <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: allDone ? c.success : k.member.color }]} />
+                  </View>
                 </View>
-                <View style={[styles.progressTrack, { backgroundColor: c.surfaceTertiary }]}>
-                  <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: allDone ? c.success : k.member.color }]} />
-                </View>
+                <Pressable
+                  onPress={() => router.push(`/affection/send?member=${k.member.member_id}`)}
+                  style={[styles.praiseBtn, { backgroundColor: c.brandTertiary }]}
+                  testID={`praise-${k.member.member_id}`}
+                >
+                  <AppText size={16}>{allDone ? "⭐" : "🤗"}</AppText>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={() => router.push(`/affection/send?member=${k.member.member_id}`)}
-                style={[styles.praiseBtn, { backgroundColor: c.brandTertiary }]}
-                testID={`praise-${k.member.member_id}`}
-              >
-                <AppText size={16}>{allDone ? "⭐" : "🤗"}</AppText>
-              </Pressable>
+              {!compact && k.chores?.length ? (
+                <View style={styles.choreChips}>
+                  {k.chores.map((ch: any) => (
+                    <Pressable
+                      key={ch.chore_id}
+                      onPress={() => onToggleChore(ch.chore_id, ch.done_today)}
+                      style={[styles.choreChip, { backgroundColor: ch.done_today ? c.success : c.surfaceSecondary, borderColor: ch.done_today ? c.success : c.border }]}
+                      testID={`home-chore-${ch.chore_id}`}
+                    >
+                      <Ionicons name={ch.done_today ? "checkmark-circle" : "ellipse-outline"} size={14} color={ch.done_today ? "#fff" : c.onSurfaceTertiary} />
+                      <AppText size={12} weight="semibold" color={ch.done_today ? "#fff" : c.onSurfaceSecondary}>{ch.title}</AppText>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </Card>
           );
         })}
       </View>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- My chores (child) -----------------------------------------------------
-function MyChoresSection({ kids, me, go, c }: any) {
+function MyChoresSection({ kids, me, go, onToggleChore, c, compact }: any) {
   const mine = kids.find((k: any) => k.member.member_id === me?.member_id);
   if (!mine) return null;
-  const pct = mine.total ? Math.round((mine.done / mine.total) * 100) : 0;
   const allDone = mine.total > 0 && mine.done === mine.total;
   return (
-    <View style={styles.section}>
-      <SectionHead title="My chores" action="Open" onAction={() => go("/chores")} c={c} />
-      <Pressable onPress={() => go("/chores")}>
-        <Card c={c}>
-          <View style={styles.kidTop}>
-            <AppText size={15} weight="bold">{allDone ? "All done — amazing! ⭐" : `${mine.done} of ${mine.total} done`}</AppText>
-            <AppText size={22}>{allDone ? "🌟" : "💪"}</AppText>
+    <SectionShell compact={compact}>
+      <SectionHead title="My chores" action="All" onAction={() => go("/chores")} c={c} />
+      <Card c={c}>
+        <View style={styles.kidTop}>
+          <AppText size={15} weight="bold">{allDone ? "All done — amazing! ⭐" : `${mine.done} of ${mine.total} done`}</AppText>
+          <AppText size={22}>{allDone ? "🌟" : "💪"}</AppText>
+        </View>
+        {mine.chores?.length ? (
+          <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
+            {mine.chores.map((ch: any) => (
+              <Pressable key={ch.chore_id} style={styles.myChoreRow} onPress={() => onToggleChore(ch.chore_id, ch.done_today)} testID={`home-chore-${ch.chore_id}`}>
+                <Ionicons name={ch.done_today ? "checkmark-circle" : "ellipse-outline"} size={24} color={ch.done_today ? c.success : c.onSurfaceTertiary} />
+                <AppText
+                  size={14}
+                  weight="semibold"
+                  style={[{ flex: 1 }, ch.done_today && { textDecorationLine: "line-through" }]}
+                  color={ch.done_today ? c.onSurfaceTertiary : c.onSurface}
+                >
+                  {ch.title}
+                </AppText>
+                <AppText size={12} weight="bold" color={c.warning}>+{ch.stars}⭐</AppText>
+              </Pressable>
+            ))}
           </View>
-          <View style={[styles.progressTrack, { backgroundColor: c.surfaceTertiary, marginTop: spacing.sm }]}>
-            <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: allDone ? c.success : c.brand }]} />
-          </View>
-        </Card>
-      </Pressable>
-    </View>
+        ) : null}
+      </Card>
+    </SectionShell>
   );
 }
 
-// ---- Meals -----------------------------------------------------------------
-function MealsSection({ meals, go, c }: any) {
+function MealsSection({ meals, go, c, compact }: any) {
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Today's meals" action="Planner" onAction={() => go("/meals")} c={c} />
       <Pressable onPress={() => go("/meals")}>
         <Card c={c}>
@@ -629,14 +643,13 @@ function MealsSection({ meals, go, c }: any) {
           )}
         </Card>
       </Pressable>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Shopping --------------------------------------------------------------
-function ShoppingSection({ preview, count, go, c }: any) {
+function ShoppingSection({ preview, count, go, c, compact }: any) {
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Shopping" action="Open lists" onAction={() => go("/shopping")} c={c} />
       <Pressable onPress={() => go("/shopping")}>
         <Card c={c}>
@@ -659,15 +672,14 @@ function ShoppingSection({ preview, count, go, c }: any) {
           )}
         </Card>
       </Pressable>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Coming up -------------------------------------------------------------
-function ComingUpSection({ items, router, go, c }: any) {
+function ComingUpSection({ items, router, go, c, compact }: any) {
   if (!items.length) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Coming up" action="Calendar" onAction={() => go("/(tabs)/calendar")} c={c} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md, paddingVertical: 2 }}>
         {items.map((it: any, i: number) => {
@@ -689,35 +701,47 @@ function ComingUpSection({ items, router, go, c }: any) {
           );
         })}
       </ScrollView>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Messages peek ---------------------------------------------------------
-function MessagesSection({ fam, unread, router, c }: any) {
-  if (!fam) return null;
-  const last = fam.last_message;
+function NoticeboardSection({ notices, fam, unread, router, go, c, compact }: any) {
   return (
-    <View style={styles.section}>
-      <SectionHead title="Family noticeboard" c={c} />
-      <Pressable onPress={() => router.push(`/chat/${fam.chat_id}`)} testID="home-noticeboard">
-        <Card c={c}>
-          {fam.pinned ? (
-            <View style={[styles.pinRow, { borderColor: c.border }]}>
-              <Ionicons name="pin" size={15} color={c.brand} />
-              <AppText size={13} weight="semibold" numberOfLines={2} style={{ flex: 1 }}>
-                {fam.pinned.text}
-              </AppText>
-            </View>
-          ) : null}
-          <View style={styles.msgRow}>
+    <SectionShell compact={compact}>
+      <SectionHead title="Family noticeboard" action="Open board" onAction={() => go("/notice")} c={c} />
+      {notices.length ? (
+        <View style={{ gap: spacing.sm }}>
+          {notices.map((n: any) => (
+            <Pressable key={n.notice_id} onPress={() => go("/notice")} testID={`home-notice-${n.notice_id}`}>
+              <Card c={c} style={styles.noticeRow}>
+                <Ionicons name={n.pinned ? "pin" : "reader-outline"} size={18} color={n.pinned ? c.brand : c.onSurfaceTertiary} />
+                <View style={{ flex: 1 }}>
+                  <AppText size={14} weight="bold" numberOfLines={1}>{n.title}</AppText>
+                  {n.note ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{n.note}</AppText> : null}
+                </View>
+                {n.priority === "high" ? <View style={[styles.dotUrgent, { backgroundColor: c.error }]} /> : null}
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <Pressable onPress={() => go("/notice")} testID="home-notice-empty">
+          <Card c={c} style={styles.emptyRow}>
+            <AppText size={22}>📌</AppText>
+            <AppText size={13} color={c.onSurfaceTertiary} style={{ flex: 1 }}>No notes yet — pin one for the family.</AppText>
+          </Card>
+        </Pressable>
+      )}
+      {fam ? (
+        <Pressable onPress={() => router.push(`/chat/${fam.chat_id}`)} style={{ marginTop: spacing.sm }} testID="home-noticeboard">
+          <Card c={c} style={styles.msgRow}>
             <View style={[styles.msgIcon, { backgroundColor: c.brandTertiary }]}>
               <Ionicons name="chatbubbles" size={18} color={c.brand} />
             </View>
             <View style={{ flex: 1 }}>
               <AppText size={14} weight="bold">Family Chat</AppText>
               <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>
-                {last ? `${last.sender}: ${last.text || "New message"}` : "Say hello to the family 👋"}
+                {fam.last_message ? `${fam.last_message.sender}: ${fam.last_message.text || "New message"}` : "Say hello to the family 👋"}
               </AppText>
             </View>
             {unread ? (
@@ -727,18 +751,17 @@ function MessagesSection({ fam, unread, router, c }: any) {
             ) : (
               <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
             )}
-          </View>
-        </Card>
-      </Pressable>
-    </View>
+          </Card>
+        </Pressable>
+      ) : null}
+    </SectionShell>
   );
 }
 
-// ---- Memory of the day -----------------------------------------------------
-function MemorySection({ item, router, go, c }: any) {
+function MemorySection({ item, router, go, c, compact }: any) {
   if (!item) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Memory of the day" action="Family Story" onAction={() => go("/timeline")} c={c} />
       <Pressable onPress={() => router.push(`/timeline/${item.timeline_id}`)} testID="home-memory">
         <View style={[styles.memCard, { borderColor: c.border }, shadow(1)]}>
@@ -757,23 +780,20 @@ function MemorySection({ item, router, go, c }: any) {
           </LinearGradient>
         </View>
       </Pressable>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Wishlist reminder -----------------------------------------------------
-function WishlistSection({ data, router, c }: any) {
+function WishlistSection({ data, router, c, compact }: any) {
   if (!data) return null;
   const when = data.days === 0 ? "today" : `in ${data.days} day${data.days > 1 ? "s" : ""}`;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title={`${data.member.name}'s wishlist`} c={c} />
       <Card c={c}>
         <View style={styles.wishTop}>
           <AppText size={22}>🎁</AppText>
-          <AppText size={13} color={c.onSurfaceSecondary} style={{ flex: 1 }}>
-            Birthday {when} — a few gift ideas
-          </AppText>
+          <AppText size={13} color={c.onSurfaceSecondary} style={{ flex: 1 }}>Birthday {when} — a few gift ideas</AppText>
         </View>
         <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
           {data.wishes.map((w: any) => (
@@ -797,15 +817,14 @@ function WishlistSection({ data, router, c }: any) {
           ))}
         </View>
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Important info (vault) ------------------------------------------------
-function VaultSection({ items, go, c }: any) {
+function VaultSection({ items, go, c, compact }: any) {
   if (!items.length) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Important information" action="Vault" onAction={() => go("/vault")} c={c} />
       <Card c={c}>
         <View style={{ gap: spacing.md }}>
@@ -823,14 +842,13 @@ function VaultSection({ items, go, c }: any) {
           })}
         </View>
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Emergency quick access ------------------------------------------------
-function EmergencySection({ go, c }: any) {
+function EmergencySection({ go, c, compact }: any) {
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <Pressable onPress={() => go("/emergency")} testID="home-emergency">
         <Card c={c} style={styles.emergRow}>
           <View style={[styles.emergIcon, { backgroundColor: "#E86A6A22" }]}>
@@ -843,12 +861,43 @@ function EmergencySection({ go, c }: any) {
           <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
         </Card>
       </Pressable>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Daily brief -----------------------------------------------------------
-function BriefSection({ home, c }: any) {
+function EveningRecapSection({ summary, go, c, compact }: any) {
+  if (!summary) return null;
+  if (new Date().getHours() < 18) return null;
+  const items = [
+    { emoji: "📅", n: summary.events, label: "events" },
+    { emoji: "🧹", n: `${summary.chores_done}/${summary.chores_total}`, label: "chores done" },
+    { emoji: "🤗", n: summary.loves_today, label: "love shared" },
+  ];
+  return (
+    <SectionShell compact={compact}>
+      <SectionHead title="Evening recap 🌙" c={c} />
+      <View style={[styles.recapCard, { borderColor: c.border }, shadow(1)]}>
+        <LinearGradient colors={["#3A3A5A", "#2C2C44"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        <View style={styles.briefRow}>
+          {items.map((s) => (
+            <View key={s.label} style={styles.briefItem}>
+              <AppText size={20}>{s.emoji}</AppText>
+              <AppText family="display" weight="bold" size={17} color="#fff">{s.n}</AppText>
+              <AppText size={11} color="rgba(255,255,255,0.7)">{s.label}</AppText>
+            </View>
+          ))}
+        </View>
+        <AppText size={13} color="rgba(255,255,255,0.85)" style={{ marginTop: spacing.md }}>Anything worth remembering from today?</AppText>
+        <Pressable onPress={() => go("/timeline/create")} style={[styles.recapBtn, { backgroundColor: "#fff" }]} testID="recap-save-moment">
+          <Ionicons name="sparkles" size={15} color="#2C2C44" />
+          <AppText size={13} weight="bold" color="#2C2C44">{"Save today's best moment"}</AppText>
+        </Pressable>
+      </View>
+    </SectionShell>
+  );
+}
+
+function BriefSection({ home, c, compact }: any) {
   const stats = [
     { emoji: "📅", n: (home?.events_today || []).length, label: "events" },
     { emoji: "✅", n: (home?.tasks || []).length, label: "tasks" },
@@ -857,7 +906,7 @@ function BriefSection({ home, c }: any) {
     { emoji: "💬", n: home?.unread_messages || 0, label: "unread" },
   ];
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Daily brief" c={c} />
       <Card c={c}>
         <View style={styles.briefRow}>
@@ -870,15 +919,14 @@ function BriefSection({ home, c }: any) {
           ))}
         </View>
       </Card>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Latest post peek ------------------------------------------------------
-function LatestPostSection({ post, router, c }: any) {
+function LatestPostSection({ post, router, c, compact }: any) {
   if (!post) return null;
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Latest post" c={c} />
       <Pressable onPress={() => router.push(`/post/${post.post_id}`)} testID="home-latest-post">
         <Card c={c} style={styles.latestRow}>
@@ -895,14 +943,13 @@ function LatestPostSection({ post, router, c }: any) {
           </View>
         </Card>
       </Pressable>
-    </View>
+    </SectionShell>
   );
 }
 
-// ---- Quick actions ---------------------------------------------------------
-function QuickActions({ go, c }: any) {
+function QuickActions({ go, c, compact }: any) {
   return (
-    <View style={styles.section}>
+    <SectionShell compact={compact}>
       <SectionHead title="Quick actions" c={c} />
       <View style={styles.quickWrap}>
         {QUICK.map((q) => (
@@ -920,7 +967,7 @@ function QuickActions({ go, c }: any) {
           </Pressable>
         ))}
       </View>
-    </View>
+    </SectionShell>
   );
 }
 
@@ -929,15 +976,14 @@ const styles = StyleSheet.create({
   nudgeWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   nudge: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
 
-  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
-  headerIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: 6 },
+  headerIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   iconBadge: { position: "absolute", top: -3, right: -3, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
 
   statusStrip: { gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
   statusCard: { alignItems: "center", width: 70 },
   statusDot: { position: "absolute", bottom: -2, right: -2, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2 },
 
-  section: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
   secHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
 
@@ -946,18 +992,21 @@ const styles = StyleSheet.create({
 
   eventRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   eventBar: { width: 4, height: 34, borderRadius: 2 },
-  emptyRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  emptyRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
 
   chipRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   chip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6, borderWidth: 1 },
   taskRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   pri: { width: 8, height: 8, borderRadius: 4 },
 
-  kidRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  kidRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   kidTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
   progressFill: { height: 8, borderRadius: 4 },
   praiseBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  choreChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
+  choreChip: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 7, borderWidth: 1 },
+  myChoreRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
 
   mealRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   mealImg: { width: 52, height: 52, borderRadius: radius.md },
@@ -968,8 +1017,9 @@ const styles = StyleSheet.create({
   comeCard: { width: 140, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
   comeIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 
-  pinRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingBottom: spacing.md, marginBottom: spacing.md, borderBottomWidth: 1 },
-  msgRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  noticeRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  dotUrgent: { width: 10, height: 10, borderRadius: 5 },
+  msgRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   msgBadge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
 
@@ -987,6 +1037,9 @@ const styles = StyleSheet.create({
   emergRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   emergIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 
+  recapCard: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg, overflow: "hidden" },
+  recapBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.pill, paddingVertical: 12, marginTop: spacing.md },
+
   briefRow: { flexDirection: "row", justifyContent: "space-between" },
   briefItem: { alignItems: "center", gap: 2, flex: 1 },
 
@@ -996,7 +1049,6 @@ const styles = StyleSheet.create({
   quickWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   quickTile: { width: "31.5%", aspectRatio: 1.15, borderRadius: radius.lg, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 
-  // status modal
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   sheet: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg },
   sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: "#D6CEBE", marginBottom: spacing.md },

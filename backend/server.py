@@ -187,6 +187,7 @@ class MemberPatch(BaseModel):
     color: Optional[str] = None
     birthday: Optional[str] = None
     photo_url: Optional[str] = None
+    phone: Optional[str] = None
     favorite_food: Optional[str] = None
     favorite_color: Optional[str] = None
     hobbies: Optional[str] = None
@@ -197,6 +198,33 @@ class MemberStatusIn(BaseModel):
     status_emoji: Optional[str] = None
     status_label: Optional[str] = None
     status_note: Optional[str] = None
+
+
+class ProfileIn(BaseModel):
+    name: Optional[str] = None
+
+
+class NoticeIn(BaseModel):
+    title: str
+    note: Optional[str] = None
+    expiry_date: Optional[str] = None       # YYYY-MM-DD
+    priority: str = "normal"                # normal | high
+    pinned: bool = False
+
+
+class NoticePatch(BaseModel):
+    title: Optional[str] = None
+    note: Optional[str] = None
+    expiry_date: Optional[str] = None
+    priority: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
+class DashboardPrefsIn(BaseModel):
+    order: List[str] = []
+    hidden: List[str] = []
+    pinned: List[str] = []
+    compact: bool = False
 
 
 class MediaItem(BaseModel):
@@ -584,6 +612,22 @@ async def set_member_status(member_id: str, body: MemberStatusIn, user: dict = D
     }
     await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
     return await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+
+
+@api.patch("/auth/profile")
+async def update_profile(body: ProfileIn, user: dict = Depends(get_current_user)):
+    """Update the signed-in user's display name (kept in sync with their member)."""
+    updates = {}
+    if body.name and body.name.strip():
+        updates["name"] = body.name.strip()
+    if updates:
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
+        if user.get("family_id"):
+            await db.members.update_one(
+                {"family_id": user["family_id"], "linked_user_id": user["user_id"]},
+                {"$set": {"name": updates["name"]}})
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    return {"user": public_user(u)}
 
 
 @api.get("/families/invite")
@@ -1427,11 +1471,15 @@ async def home(user: dict = Depends(get_current_user)):
     for m in members:
         if m.get("is_child") or m.get("role") == "child":
             my_chores = [ch for ch in chores if ch.get("owner_member_id") == m["member_id"]]
+            chore_list = []
             done = 0
             for ch in my_chores:
-                if await db.chore_completions.find_one({"chore_id": ch["chore_id"], "date": t}):
+                d = bool(await db.chore_completions.find_one({"chore_id": ch["chore_id"], "date": t}))
+                if d:
                     done += 1
-            kids.append({"member": _member_card(m), "done": done, "total": len(my_chores)})
+                chore_list.append({"chore_id": ch["chore_id"], "title": ch.get("title"),
+                                   "stars": ch.get("stars", 1), "done_today": d})
+            kids.append({"member": _member_card(m), "done": done, "total": len(my_chores), "chores": chore_list})
 
     # --- Shopping preview ------------------------------------------------------
     shopping_preview = []
@@ -1530,6 +1578,32 @@ async def home(user: dict = Depends(get_current_user)):
                                     "route": f"/birthday/{b['member']['member_id']}"})
             break
 
+    # --- Evening recap summary -------------------------------------------------
+    chores_done_today = await db.chore_completions.count_documents({"family_id": fid, "date": t})
+    today_summary = {
+        "events": len(events_today),
+        "chores_done": chores_done_today,
+        "chores_total": len(chores),
+        "tasks_open": len(tasks),
+        "loves_today": await db.affections.count_documents({"family_id": fid, "created_at": {"$gte": t}}),
+        "posts_today": await db.posts.count_documents({"family_id": fid, "created_at": {"$gte": t}}),
+        "memories_today": await db.timeline.count_documents({"family_id": fid, "created_at": {"$gte": t}}),
+    }
+
+    # --- Family noticeboard (top active notices) -------------------------------
+    notice_docs = await db.notices.find({"family_id": fid}, {"_id": 0}).to_list(500)
+    notice_active = [d for d in notice_docs if not d.get("expiry_date") or d["expiry_date"][:10] >= t]
+    notice_active.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    notice_active.sort(key=lambda d: not d.get("pinned"))
+    notices = []
+    for d in notice_active[:3]:
+        notices.append({
+            "notice_id": d["notice_id"], "title": d.get("title"), "note": d.get("note"),
+            "priority": d.get("priority", "normal"), "pinned": bool(d.get("pinned")),
+            "expiry_date": d.get("expiry_date"),
+            "owner": _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0})),
+        })
+
     return {
         "family": fam,
         "me": mine,
@@ -1553,7 +1627,97 @@ async def home(user: dict = Depends(get_current_user)):
         "latest_post": latest_post,
         "family_chat": family_chat_peek,
         "needs_attention": needs_attention,
+        "today_summary": today_summary,
+        "notices": notices,
     }
+
+
+# ---------------------------------------------------------------------------
+# Family noticeboard + dashboard preferences
+# ---------------------------------------------------------------------------
+async def _hydrate_notice(d: dict) -> dict:
+    d = clean(dict(d))
+    d["owner"] = _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0}))
+    d["days_until_expiry"] = _days_until(d.get("expiry_date"))
+    return d
+
+
+@api.get("/notices")
+async def list_notices(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    t = today_str()
+    docs = await db.notices.find({"family_id": fid}, {"_id": 0}).to_list(500)
+    active = [d for d in docs if not d.get("expiry_date") or d["expiry_date"][:10] >= t]
+    active.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+    active.sort(key=lambda d: not d.get("pinned"))
+    return [await _hydrate_notice(d) for d in active]
+
+
+@api.post("/notices", status_code=201)
+async def create_notice(body: NoticeIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Give your note a title")
+    doc = {
+        "notice_id": new_id("ntc_"), "family_id": fid, "title": body.title.strip(),
+        "note": (body.note or "").strip() or None, "expiry_date": body.expiry_date,
+        "priority": body.priority if body.priority in ("normal", "high") else "normal",
+        "pinned": bool(body.pinned), "owner_member_id": mine["member_id"], "created_at": now_iso(),
+    }
+    await db.notices.insert_one(doc)
+    return await _hydrate_notice(doc)
+
+
+@api.patch("/notices/{notice_id}")
+async def update_notice(notice_id: str, body: NoticePatch, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    if not mine or (d.get("owner_member_id") != mine["member_id"] and mine.get("role") not in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="You can't edit this note")
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if updates:
+        await db.notices.update_one({"notice_id": notice_id, "family_id": fid}, {"$set": updates})
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    return await _hydrate_notice(d)
+
+
+@api.delete("/notices/{notice_id}")
+async def delete_notice(notice_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    if not mine or (d.get("owner_member_id") != mine["member_id"] and mine.get("role") not in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="You can't delete this note")
+    await db.notices.delete_one({"notice_id": notice_id, "family_id": fid})
+    return {"ok": True}
+
+
+@api.get("/dashboard/prefs")
+async def get_dashboard_prefs(user: dict = Depends(get_current_user)):
+    require_family(user)
+    doc = await db.dashboard_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        return {"order": [], "hidden": [], "pinned": [], "compact": False}
+    return {"order": doc.get("order", []), "hidden": doc.get("hidden", []),
+            "pinned": doc.get("pinned", []), "compact": bool(doc.get("compact"))}
+
+
+@api.put("/dashboard/prefs")
+async def put_dashboard_prefs(body: DashboardPrefsIn, user: dict = Depends(get_current_user)):
+    require_family(user)
+    await db.dashboard_prefs.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"user_id": user["user_id"], "order": body.order, "hidden": body.hidden,
+                  "pinned": body.pinned, "compact": body.compact}}, upsert=True)
+    return {"ok": True, "order": body.order, "hidden": body.hidden, "pinned": body.pinned, "compact": body.compact}
 
 
 # ---------------------------------------------------------------------------
@@ -3399,7 +3563,17 @@ async def seed_demo(user: dict = Depends(get_current_user)):
         })
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"family_id": fid}})
 
-    # posts
+    # family noticeboard
+    await db.notices.insert_many([
+        {"notice_id": new_id("ntc_"), "family_id": fid, "title": "🏫 School closed this Friday",
+         "note": "Parent-teacher meeting — no classes for the kids on Friday.",
+         "expiry_date": (today + timedelta(days=5)).isoformat(), "priority": "high", "pinned": True,
+         "owner_member_id": mem_ids["Priya"], "created_at": now_iso()},
+        {"notice_id": new_id("ntc_"), "family_id": fid, "title": "🔧 Plumber visit Saturday 10am",
+         "note": "Please keep the bathroom free in the morning.",
+         "expiry_date": (today + timedelta(days=8)).isoformat(), "priority": "normal", "pinned": False,
+         "owner_member_id": mem_ids["Raj"], "created_at": now_iso()},
+    ])
     posts = [
         ("Aarav", IMG["post1"], "Aarav won the school science competition today! 🏆 So proud of our little scientist.", "Delhi Public School", "🏆 Achievement", 6),
         ("Priya", IMG["post2"], "Sunday family lunch — nothing beats being all together ❤️", "Home", "🍽️ Everyday", 20),
