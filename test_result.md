@@ -900,3 +900,78 @@ frontend_batch13:
 agent_communication_batch13:
     -agent: "main"
     -message: "Batch #13 adds 5 features. Account: board@fam.com / secret123 (Sharma demo WITH 2 seeded notices). BACKEND to test: (1) /api/notices GET/POST/PATCH/DELETE — create a note, verify it lists (pinned first), verify a NON-owner non-parent gets 403 on edit/delete (demo's only user Raj is admin, so also verify admin can delete others' notes and owner can delete own), expired notes hidden. (2) /api/dashboard/prefs GET default + PUT round-trip. (3) PATCH /api/auth/profile {name} updates user + member name; email must remain unchanged/read-only. (4) GET /api/home has today_summary, notices, kids[].chores. (5) POST /chores/{id}/complete + /uncomplete still work. FRONTEND to test (log in first; dismiss the first-load affection overlay via 'Tap to close'): (a) Home shows Family Noticeboard with 'School closed' note; tap 'Open board' -> /notice; add a note via FAB (fab-add-notice -> notice-title -> notice-save) and see it appear; delete own note. (b) Home header tune icon (home-customize) -> Customize Home; hide a section (customize-hide-kids), pin one (customize-pin-today), toggle Compact (customize-compact), Save (customize-save); return to Home and confirm the hidden section is gone / pinned floated up / compact applied. (c) Home 'Kids & chores' chore chips (home-chore-<id>) toggle done with a star celebration. (d) Edit Profile: More profile pencil (more-edit-profile) OR own profile pencil (member-edit) -> /member/edit; change name+phone, Save (edit-save); confirm name updates; email field is read-only/locked. (e) Evening Recap only shows after 6pm (skip if daytime). NOTE: photo upload + native pickers can't be fully exercised on web — just confirm the screen loads & text fields save. Do NOT retest unrelated older features."
+
+# ============ Feature Batch #14 (Noticeboard comments/reactions + Notice reminders + Chore streaks + Event email/.ics) ============
+backend_batch14:
+  - task: "Noticeboard reactions + replies"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/notices/{id} (hydrated with reaction_summary [{emoji,count,mine}], reply_count, replies[] with member cards). POST /api/notices/{id}/react {emoji} toggles a single reaction per member (tap same=off, different=replace). POST /api/notices/{id}/replies {text} appends a reply. List + create now include reaction_summary/reply_count. Verified via curl: react ❤️ (count 1, mine true), reply (count 1, member Raj)."
+  - task: "Chore streaks (consecutive all-done days) in /api/home kids[]"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "_chore_streak counts consecutive days (ending today or yesterday) a child completed ALL their chores; _streak_badge -> Rising Star(3)/Star Week(7)/On Fire(14)/Legend(30). kids[] now include streak + streak_badge. Verified via curl (0 for fresh seed as expected)."
+  - task: "Notice expiry reminders (Home Needs Attention + morning push)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/home needs_attention now includes notices whose expiry_date == tomorrow (route /notice). run_morning_reminders pushes 'Noticeboard reminder' for notes due tomorrow (idempotent per note/day). Push only delivers on native builds."
+  - task: "Event email notification + .ics calendar invite (Emergent Resend)"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "On POST /api/events, invited members (participant_ids + owner) with a linked user email are emailed (best-effort, non-blocking via asyncio.create_task) using Emergent Resend proxy, with a first-party 'Add to your calendar' button linking to GET /api/events/{id}/invite.ics (public, returns text/calendar VCALENDAR METHOD:REQUEST). Email passes the G2/G3 guardrail gate. NOTE: the Resend proxy BLOCKS obviously-fake/undeliverable recipients (returns 422) to protect deliverability — demo users have fake emails so real delivery won't happen in test, but event creation still succeeds and the .ics endpoint returns valid VCALENDAR (curl-verified). Added EMERGENT_EMAIL_KEY + EMAIL_FROM_NAME=FamilyHome to backend/.env."
+
+frontend_batch14:
+  - task: "Notice detail screen (/notice/[id]) with reactions + replies"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/notice/[id].tsx, frontend/app/notice/index.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Board list rows are now tappable (notice-open-<id>) -> /notice/[id] and show reaction/reply meta + pin/delete footer. Detail screen shows the note, a reaction bar (react-❤️/👍/✅/🎉 toggle), replies list, and a reply input (notice-reply-input + notice-reply-send). Home noticeboard notes (home-notice-<id>) now open the detail. Backend curl-verified; board list + create modal render confirmed via screenshot. Full detail react/reply not screenshot-verified due to the known web deep-link auth-bootstrap race + harness ScrollView limits — needs testing agent via in-app navigation."
+  - task: "Chore streak badges on Home"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Kids & chores (parent) shows a 🔥/badge-emoji streak pill next to a child's name when streak>=3; My chores (child) shows a 'N day streak' pill. Driven by kids[].streak/streak_badge from /api/home."
+
+agent_communication_batch14:
+    -agent: "main"
+    -message: "Batch #14 = 4 features. Account: board@fam.com / secret123. IMPORTANT: navigate IN-APP (log in, then tap through) — do NOT hard-deep-link to /notice or /notice/<id> via a fresh page load, there is a known web auth-bootstrap race that bounces such deep links to Welcome (in-app navigation works fine). BACKEND to test: (1) POST /api/notices then POST /api/notices/{id}/react {emoji:'❤️'} -> reaction_summary shows count 1 mine true; tap same emoji again -> removed; POST /api/notices/{id}/replies {text} -> reply_count increments, GET /api/notices/{id} returns replies[] with member cards. (2) GET /api/home kids[] include streak + streak_badge. (3) POST /api/events with participant_ids -> 200 (event creation MUST succeed even though the Resend proxy returns 422 for the demo's fake emails — email is best-effort/non-blocking); GET /api/events/{id}/invite.ics returns 200 text/calendar starting 'BEGIN:VCALENDAR' with a VEVENT. FRONTEND to test (in-app nav): from Home 'Family noticeboard' tap 'Open board' -> /notice; FAB (fab-add-notice) -> fill notice-title -> notice-save -> note appears; tap the note (notice-open-<id>) -> detail (/notice/[id]); tap react-❤️ (chip highlights + count); type in notice-reply-input + notice-reply-send -> reply appears in the list; delete own note (notice-del-<id>) from the board. Also confirm Home 'Kids & chores' renders without errors (streak pills appear only when a child has a 3+ day all-chores streak, which the fresh demo won't have — so absence is fine). Do NOT retest unrelated older features."

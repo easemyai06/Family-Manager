@@ -50,6 +50,14 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Evening Recap: after ~6pm a summary card (events, chores done, love shared) with a
   "Save today's best moment" -> add memory shortcut (uses home.today_summary).
 - Edit Profile (/member/edit): update photo, name and phone (email read-only) via
+- Noticeboard reactions + replies (/notice/[id]): ❤️/👍/✅/🎉 one-per-member reactions + threaded
+  replies; board rows show reaction/reply counts.
+- Notice expiry reminders: notes expiring tomorrow appear in Home "Needs Attention" and trigger a
+  morning push (native builds).
+- Chore streaks: kids[].streak counts consecutive all-chores-done days; badges Rising Star(3)/
+  Star Week(7)/On Fire(14)/Legend(30) shown on Home Kids & My-chores cards.
+- Event email + calendar invite: POST /api/events emails invited members (Emergent Resend, best-effort)
+  with an "Add to your calendar" link to GET /api/events/{id}/invite.ics (public .ics VEVENT).
   PATCH /families/members/{id} + PATCH /auth/profile.
 - Feed: photo/text posts, 7 reaction types (toggle), comments, post detail, create post w/ image upload.
 - Stories: 24h stories bar + create.

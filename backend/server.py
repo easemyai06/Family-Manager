@@ -8,14 +8,18 @@ import os
 import re
 import uuid
 import asyncio
+import ipaddress
 import logging
+from html import escape
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta, date
 
 import jwt
 import httpx
 import requests
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Query, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
@@ -55,8 +59,124 @@ PUSH_BASE_URL = "https://integrations.emergentagent.com"
 PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
 _push_client = httpx.AsyncClient(base_url=PUSH_BASE_URL, headers={"X-Push-Key": PUSH_KEY}, timeout=10.0)
 
+# Emergent-managed email (Resend proxy). Base URL is a constant so it survives deployment.
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "FamilyHome")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
+
 app = FastAPI(title="FamilyHome API")
 api = APIRouter(prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# Email guardrail gate + sender (Resend playbook)
+# ---------------------------------------------------------------------------
+_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
+_CRED_ASK = ("reply with your password", "reply with the code", "send your password", "cvv",
+             "send us your password", "enter your password below", "confirm your card number",
+             "your full card number", "seed phrase", "recovery phrase", "verify your card",
+             "social security number", "confirm your bank details")
+_HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
+
+
+def _host_ok(host: str) -> bool:
+    if not host or "xn--" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return not any(host == s or host.endswith("." + s) for s in _SHORTENERS)
+
+
+def _same_site(shown: str, real: str) -> bool:
+    return shown == real or real.endswith("." + shown) or shown.endswith("." + real)
+
+
+class _EmailScan(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags, self.urls, self.anchors = set(), [], []
+        self._href, self._text = None, []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.add(tag.lower())
+        self.urls += [v for k, v in attrs if k.lower() in ("href", "src") and v]
+        if tag.lower() == "a":
+            self._href = dict((k.lower(), v) for k, v in attrs).get("href")
+            self._text = []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._href is not None:
+            self.anchors.append((self._href, "".join(self._text)))
+            self._href, self._text = None, []
+
+
+def _assert_safe_email(subject: str, html: str) -> None:
+    scan = _EmailScan()
+    scan.feed(html)
+    if scan.tags & {"form", "input", "textarea", "select"}:
+        raise ValueError("No forms or input fields in email (G2)")
+    body = f"{subject}\n{html}".lower()
+    for p in _CRED_ASK:
+        if p in body:
+            raise ValueError(f"Email asks the recipient for credentials: {p!r} (G2)")
+    for url in scan.urls:
+        low = url.strip().lower()
+        if low.startswith(("mailto:", "tel:", "cid:", "#")):
+            continue
+        if not low.startswith("https://"):
+            raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
+        host = urlparse(low).hostname or ""
+        if not _host_ok(host) or urlparse(low).username is not None:
+            raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+    for href, text in scan.anchors:
+        real = urlparse(href.strip().lower()).hostname or ""
+        if not real:
+            continue
+        for m in _HOSTISH.finditer(text):
+            if not _same_site(m.group(1).lower(), real):
+                raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
+
+
+async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
+    """Best-effort transactional send. Never raises — email is non-critical."""
+    if not EMAIL_KEY:
+        logger.warning("email skipped: EMERGENT_EMAIL_KEY not set")
+        return None
+    try:
+        _assert_safe_email(subject, html)
+    except ValueError as e:
+        logger.error(f"email blocked by guardrail: {e}")
+        return None
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if EMAIL_REPLY_TO:
+        payload["contact_email"] = EMAIL_REPLY_TO
+    try:
+        async with httpx.AsyncClient(timeout=30) as cl:
+            resp = await cl.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                                 headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+        resp.raise_for_status()
+        return resp.json().get("id")
+    except Exception as e:
+        logger.warning(f"email send failed (non-blocking): {e}")
+        return None
+
+
+def _public_base_url(request: Optional[Request]) -> str:
+    """Public https base URL the client reached us on (for links in emails)."""
+    if request is not None:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        proto = request.headers.get("x-forwarded-proto") or "https"
+        if host:
+            return f"{proto}://{host}"
+    return (os.environ.get("APP_PUBLIC_URL") or "https://app.emergent.sh").rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +338,14 @@ class NoticePatch(BaseModel):
     expiry_date: Optional[str] = None
     priority: Optional[str] = None
     pinned: Optional[bool] = None
+
+
+class NoticeReactionIn(BaseModel):
+    emoji: str
+
+
+class NoticeReplyIn(BaseModel):
+    text: str
 
 
 class DashboardPrefsIn(BaseModel):
@@ -904,6 +1032,94 @@ async def hydrate_event(e: dict) -> dict:
     return e
 
 
+def _ics_escape(s: Optional[str]) -> str:
+    return (s or "").replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+
+
+def build_event_ics(e: dict, organizer_email: Optional[str] = None) -> str:
+    """Build an iCalendar (.ics) REQUEST for an event so it drops into any calendar."""
+    uid = f"{e['event_id']}@familyhome"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    date_s = (e.get("date") or "")[:10]
+    end_s = (e.get("end_date") or e.get("date") or "")[:10]
+    if e.get("all_day"):
+        try:
+            end_excl = (date.fromisoformat(end_s) + timedelta(days=1)).isoformat()
+        except Exception:
+            end_excl = end_s
+        dtstart = f"DTSTART;VALUE=DATE:{date_s.replace('-', '')}"
+        dtend = f"DTEND;VALUE=DATE:{end_excl.replace('-', '')}"
+    else:
+        st = (e.get("start_time") or "09:00").replace(":", "")[:4]
+        et = (e.get("end_time") or e.get("start_time") or "10:00").replace(":", "")[:4]
+        dtstart = f"DTSTART:{date_s.replace('-', '')}T{st}00"
+        dtend = f"DTEND:{end_s.replace('-', '')}T{et}00"
+    lines = [
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FamilyHome//EN", "CALSCALE:GREGORIAN", "METHOD:REQUEST",
+        "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{stamp}", dtstart, dtend,
+        f"SUMMARY:{_ics_escape(e.get('title'))}",
+    ]
+    if e.get("location"):
+        lines.append(f"LOCATION:{_ics_escape(e['location'])}")
+    if e.get("notes"):
+        lines.append(f"DESCRIPTION:{_ics_escape(e['notes'])}")
+    if organizer_email:
+        lines.append(f"ORGANIZER:mailto:{organizer_email}")
+    lines += ["STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR"]
+    return "\r\n".join(lines) + "\r\n"
+
+
+async def send_event_invites(e: dict, base_url: str) -> None:
+    """Email invited members an event notification with a first-party .ics calendar link."""
+    invited = set(e.get("participant_ids") or [])
+    if e.get("owner_member_id"):
+        invited.add(e["owner_member_id"])
+    if not invited:
+        return
+    recipients = []
+    organizer_email = None
+    for mid in invited:
+        m = await db.members.find_one({"member_id": mid}, {"_id": 0})
+        if not m or not m.get("linked_user_id"):
+            continue
+        u = await db.users.find_one({"user_id": m["linked_user_id"]}, {"_id": 0})
+        if u and u.get("email"):
+            recipients.append((u["email"], m.get("name") or u.get("name") or "there"))
+            if mid == e.get("owner_member_id"):
+                organizer_email = u["email"]
+    if not recipients:
+        return
+
+    try:
+        when_date = date.fromisoformat(e["date"][:10]).strftime("%A, %d %B %Y")
+    except Exception:
+        when_date = e.get("date", "")
+    when_time = "All day" if e.get("all_day") else f"{e.get('start_time', '')}–{e.get('end_time', '')}".strip("–")
+    ics_url = f"{base_url.rstrip('/')}/api/events/{e['event_id']}/invite.ics"
+    subject = f"📅 {e.get('title', 'New event')} — {when_date}"
+    loc_row = (f'<tr><td style="padding:2px 0;color:#888">Location</td>'
+               f'<td style="padding:2px 0;font-weight:600">{escape(e.get("location") or "")}</td></tr>') if e.get("location") else ""
+
+    for email, name in recipients:
+        html = (
+            f'<table role="presentation" width="100%" style="max-width:520px;margin:auto;'
+            f'font-family:Arial,Helvetica,sans-serif;color:#2C2C28"><tr><td style="padding:24px">'
+            f'<p style="font-size:15px">Hi {escape(name)}, you\'re invited to a family event:</p>'
+            f'<h2 style="margin:8px 0;color:#FF6B6B">{escape(e.get("title") or "Event")}</h2>'
+            f'<table role="presentation" style="font-size:14px;margin:12px 0">'
+            f'<tr><td style="padding:2px 0;color:#888;width:90px">When</td>'
+            f'<td style="padding:2px 0;font-weight:600">{escape(when_date)} · {escape(when_time)}</td></tr>'
+            f'{loc_row}</table>'
+            f'<p style="margin:20px 0"><a href="{ics_url}" '
+            f'style="background:#FF6B6B;color:#fff;text-decoration:none;padding:12px 22px;'
+            f'border-radius:24px;font-weight:bold;display:inline-block">📅 Add to your calendar</a></p>'
+            f'<p style="font-size:12px;color:#888;margin-top:24px">Sent by FamilyHome. '
+            f'We never ask for your password or payment details by email.</p>'
+            f'</td></tr></table>'
+        )
+        await send_email(to=email, subject=subject, html=html)
+
+
 @api.get("/events")
 async def list_events(user: dict = Depends(get_current_user), start: Optional[str] = None, end: Optional[str] = None):
     fid = require_family(user)
@@ -915,7 +1131,7 @@ async def list_events(user: dict = Depends(get_current_user), start: Optional[st
 
 
 @api.post("/events")
-async def create_event(body: EventIn, user: dict = Depends(get_current_user)):
+async def create_event(body: EventIn, request: Request, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     color = body.color
     if not color and body.owner_member_id:
@@ -923,7 +1139,24 @@ async def create_event(body: EventIn, user: dict = Depends(get_current_user)):
         color = owner["color"] if owner else "#FF6B6B"
     e = {"event_id": new_id("evt_"), "family_id": fid, **body.dict(), "color": color or "#FF6B6B", "created_at": now_iso()}
     await db.events.insert_one(e)
+    # Notify invited members by email + calendar invite (best-effort, non-blocking).
+    base_url = _public_base_url(request)
+    asyncio.create_task(send_event_invites(clean(dict(e)), base_url))
     return await hydrate_event(e)
+
+
+@api.get("/events/{event_id}/invite.ics")
+async def event_invite_ics(event_id: str):
+    """Public .ics download so email 'Add to calendar' links work without an auth header."""
+    e = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not e:
+        raise HTTPException(status_code=404, detail="Event not found")
+    ics = build_event_ics(e)
+    return Response(
+        content=ics,
+        media_type="text/calendar; charset=utf-8; method=REQUEST",
+        headers={"Content-Disposition": f'attachment; filename="{event_id}.ics"'},
+    )
 
 
 @api.patch("/events/{event_id}")
@@ -1020,6 +1253,38 @@ async def chore_stars(user: dict = Depends(get_current_user)):
             out.append({"member": m, "stars": stars})
     out.sort(key=lambda x: -x["stars"])
     return out
+
+
+async def _chore_streak(fid: str, member_id: str, chore_ids: list) -> int:
+    """Consecutive days (ending today or yesterday) the child completed ALL their chores."""
+    if not chore_ids:
+        return 0
+    n = len(chore_ids)
+    comps = await db.chore_completions.find(
+        {"family_id": fid, "member_id": member_id, "chore_id": {"$in": chore_ids}}, {"_id": 0}).to_list(5000)
+    per_date: dict = {}
+    for c in comps:
+        per_date.setdefault(c["date"], set()).add(c["chore_id"])
+    all_done = {d for d, s in per_date.items() if len(s) >= n}
+    today = date.today()
+    cur = today if today.isoformat() in all_done else today - timedelta(days=1)
+    streak = 0
+    while cur.isoformat() in all_done:
+        streak += 1
+        cur -= timedelta(days=1)
+    return streak
+
+
+def _streak_badge(streak: int) -> Optional[dict]:
+    if streak >= 30:
+        return {"label": "Legend", "emoji": "👑", "milestone": 30}
+    if streak >= 14:
+        return {"label": "On Fire", "emoji": "🔥", "milestone": 14}
+    if streak >= 7:
+        return {"label": "Star Week", "emoji": "🌟", "milestone": 7}
+    if streak >= 3:
+        return {"label": "Rising Star", "emoji": "⭐", "milestone": 3}
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1479,7 +1744,10 @@ async def home(user: dict = Depends(get_current_user)):
                     done += 1
                 chore_list.append({"chore_id": ch["chore_id"], "title": ch.get("title"),
                                    "stars": ch.get("stars", 1), "done_today": d})
-            kids.append({"member": _member_card(m), "done": done, "total": len(my_chores), "chores": chore_list})
+            chore_ids = [ch["chore_id"] for ch in my_chores]
+            streak = await _chore_streak(fid, m["member_id"], chore_ids)
+            kids.append({"member": _member_card(m), "done": done, "total": len(my_chores),
+                         "chores": chore_list, "streak": streak, "streak_badge": _streak_badge(streak)})
 
     # --- Shopping preview ------------------------------------------------------
     shopping_preview = []
@@ -1569,6 +1837,12 @@ async def home(user: dict = Depends(get_current_user)):
         needs_attention.append({"key": "vault", "icon": "lock-closed", "tone": "warning",
                                 "title": f"{v['title']} expires in {v['days_until_expiry']} day{_plural(v['days_until_expiry'])}",
                                 "subtitle": "Family Vault", "route": "/vault"})
+    tomorrow_iso = (date.today() + timedelta(days=1)).isoformat()
+    exp_notices = await db.notices.find({"family_id": fid, "expiry_date": tomorrow_iso}, {"_id": 0}).to_list(20)
+    if exp_notices:
+        needs_attention.append({"key": "notice_expiring", "icon": "reader", "tone": "info",
+                                "title": f"{exp_notices[0]['title']} ends tomorrow",
+                                "subtitle": "Family noticeboard", "route": "/notice"})
     for b in upcoming_birthdays:
         if b["days"] <= 7:
             when = "today" if b["days"] == 0 else f"in {b['days']} day{_plural(b['days'])}"
@@ -1635,22 +1909,47 @@ async def home(user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Family noticeboard + dashboard preferences
 # ---------------------------------------------------------------------------
-async def _hydrate_notice(d: dict) -> dict:
+async def _hydrate_notice(d: dict, mine: Optional[dict] = None) -> dict:
     d = clean(dict(d))
     d["owner"] = _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0}))
     d["days_until_expiry"] = _days_until(d.get("expiry_date"))
+    groups = {}
+    for r in d.get("reactions", []) or []:
+        g = groups.setdefault(r.get("emoji"), {"emoji": r.get("emoji"), "count": 0, "mine": False})
+        g["count"] += 1
+        if mine and r.get("member_id") == mine["member_id"]:
+            g["mine"] = True
+    d["reaction_summary"] = list(groups.values())
+    raw_replies = d.get("replies", []) or []
+    d["reply_count"] = len(raw_replies)
+    replies = []
+    for rp in raw_replies:
+        replies.append({**rp, "member": _member_card(await db.members.find_one({"member_id": rp.get("member_id")}, {"_id": 0}))})
+    d["replies"] = replies
+    d.pop("reactions", None)
     return d
 
 
 @api.get("/notices")
 async def list_notices(user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    mine = await member_for_user(user)
     t = today_str()
     docs = await db.notices.find({"family_id": fid}, {"_id": 0}).to_list(500)
     active = [d for d in docs if not d.get("expiry_date") or d["expiry_date"][:10] >= t]
     active.sort(key=lambda d: d.get("created_at", ""), reverse=True)
     active.sort(key=lambda d: not d.get("pinned"))
-    return [await _hydrate_notice(d) for d in active]
+    return [await _hydrate_notice(d, mine) for d in active]
+
+
+@api.get("/notices/{notice_id}")
+async def get_notice(notice_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    return await _hydrate_notice(d, mine)
 
 
 @api.post("/notices", status_code=201)
@@ -1665,10 +1964,11 @@ async def create_notice(body: NoticeIn, user: dict = Depends(get_current_user)):
         "notice_id": new_id("ntc_"), "family_id": fid, "title": body.title.strip(),
         "note": (body.note or "").strip() or None, "expiry_date": body.expiry_date,
         "priority": body.priority if body.priority in ("normal", "high") else "normal",
-        "pinned": bool(body.pinned), "owner_member_id": mine["member_id"], "created_at": now_iso(),
+        "pinned": bool(body.pinned), "owner_member_id": mine["member_id"],
+        "reactions": [], "replies": [], "created_at": now_iso(),
     }
     await db.notices.insert_one(doc)
-    return await _hydrate_notice(doc)
+    return await _hydrate_notice(doc, mine)
 
 
 @api.patch("/notices/{notice_id}")
@@ -1684,7 +1984,44 @@ async def update_notice(notice_id: str, body: NoticePatch, user: dict = Depends(
     if updates:
         await db.notices.update_one({"notice_id": notice_id, "family_id": fid}, {"$set": updates})
     d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
-    return await _hydrate_notice(d)
+    return await _hydrate_notice(d, mine)
+
+
+@api.post("/notices/{notice_id}/react")
+async def react_notice(notice_id: str, body: NoticeReactionIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    reactions = [r for r in (d.get("reactions") or []) if r.get("member_id") != mine["member_id"]]
+    already = any(r.get("member_id") == mine["member_id"] and r.get("emoji") == body.emoji
+                  for r in (d.get("reactions") or []))
+    if not already:
+        reactions.append({"member_id": mine["member_id"], "emoji": body.emoji})
+    await db.notices.update_one({"notice_id": notice_id, "family_id": fid}, {"$set": {"reactions": reactions}})
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    return await _hydrate_notice(d, mine)
+
+
+@api.post("/notices/{notice_id}/replies", status_code=201)
+async def reply_notice(notice_id: str, body: NoticeReplyIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Write a reply first")
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    reply = {"reply_id": new_id("nr_"), "member_id": mine["member_id"],
+             "text": body.text.strip(), "created_at": now_iso()}
+    await db.notices.update_one({"notice_id": notice_id, "family_id": fid}, {"$push": {"replies": reply}})
+    d = await db.notices.find_one({"notice_id": notice_id, "family_id": fid}, {"_id": 0})
+    return await _hydrate_notice(d, mine)
 
 
 @api.delete("/notices/{notice_id}")
@@ -3454,6 +3791,24 @@ async def run_morning_reminders():
             except Exception as e:
                 logger.warning(f"vault expiry push failed for {fid} (non-blocking): {e}")
             await db.push_log.insert_one({"key": vkey, "created_at": now_iso()})
+
+        # Noticeboard notes expiring tomorrow -> nudge the whole family once per note
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        exp_notices = await db.notices.find(
+            {"family_id": fid, "expiry_date": tomorrow}, {"_id": 0}).to_list(50)
+        for ntc in exp_notices:
+            nkey = f"noticeexp:{ntc['notice_id']}:{today.isoformat()}"
+            if await db.push_log.find_one({"key": nkey}) or not recipients:
+                continue
+            try:
+                await send_push(recipients, {
+                    "title": "📌 Noticeboard reminder",
+                    "message": f"\"{ntc['title']}\" is due tomorrow.",
+                    "action_url": "/notice",
+                }, idempotency_key=nkey)
+            except Exception as e:
+                logger.warning(f"notice expiry push failed for {fid} (non-blocking): {e}")
+            await db.push_log.insert_one({"key": nkey, "created_at": now_iso()})
 
 
 async def morning_reminder_loop():

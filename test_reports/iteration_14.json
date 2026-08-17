@@ -1,0 +1,56 @@
+{
+  "summary": "Batch #14 (Noticeboard reactions/replies, Chore streaks on /api/home, Notice expiry reminder in needs_attention, Event email + first-party .ics calendar invite) tested end-to-end. Backend pytest: 12/12 pass. Frontend web preview (390x844) walk-through as board@fam.com: login → Home → 'Family noticeboard' section → 'Open board' → /notice → FAB 'fab-add-notice' → filled 'notice-title' with 'Movie night TEST' → 'notice-save' created the note (appears at top of list). Tapped notice-open-<id> → /notice/[id] renders; tapping 'react-❤️' highlights the chip and shows count '1'; typing into 'notice-reply-input' + tapping 'notice-reply-send' appended 'Sounds great!' with hydrated 'Board Demo' member card in Replies (1). Back → 'notice-del-<id>' removes the note from list. Home 'Kids & chores' section renders without errors; as expected on fresh demo the streak_badge is null (streak<3) so no streak pill is shown. BACKEND SPECIFIC assertions verified: (1) POST /api/notices/{id}/react with {emoji:'❤️'} returns reaction_summary containing {emoji:'❤️', count:1, mine:true}; a second call with the same emoji toggles it OFF (removes from summary); a call with a different emoji (👍) REPLACES ❤️ so member has at most one reaction. (2) POST /api/notices/{id}/replies increments reply_count and each replies[] entry is hydrated with a member card (member.member_id present); GET /api/notices/{id} preserves reply order; empty reply body returns 400. (3) GET /api/home kids[] each expose integer 'streak' >=0 and 'streak_badge' (null when streak<3, dict when >=3). (4) Creating a notice with expiry_date=tomorrow (ISO YYYY-MM-DD) surfaces a needs_attention entry {key:'notice_expiring', route:'/notice'}. (5) POST /api/events with participant_ids returns 200/201 with event_id even though outbound email to fake @fam.com addresses is blocked by the Resend proxy (email dispatch is asyncio.create_task fire-and-forget, non-blocking). GET /api/events/{id}/invite.ics returns HTTP 200 with content-type 'text/calendar; charset=utf-8; method=REQUEST' and a body starting with 'BEGIN:VCALENDAR' containing VERSION:2.0, BEGIN:VEVENT, DTSTART, SUMMARY, END:VEVENT, END:VCALENDAR; all-day events correctly emit 'DTSTART;VALUE=DATE:YYYYMMDD'; unknown event id returns 404. .ics endpoint is intentionally PUBLIC (no auth header required) so 'Add to calendar' email links work. NO deprecated packages detected in the Batch #14 additions. Non-blocking react-native-web warnings persist (already flagged in iterations 12/13): 'props.pointerEvents is deprecated' + 'A props object containing a key prop is being spread into JSX' (FlatList renderItem). One minor UI note: the New-note modal on Expo web at 390x844 places the 'notice-save' button below the fold of the sheet's inner ScrollView (the sheet has maxHeight:85% and a scrollable body). Users can scroll the sheet to reach it in-app; it's still fully tappable. Playwright required a JS-scrollIntoView shim to hit it because RN-Web ScrollView doesn't auto-scroll on Playwright.click(). Not a functional bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "notice/index.tsx — 'New note' bottom sheet modal",
+        "issue": "On a 390x844 web viewport, the 'notice-save' Pressable renders below the visible area of the sheet. The sheet has a ScrollView (styles.sheet.maxHeight='85%') so users CAN scroll to reach it, but the sheet has no bottom hint/spacer, and a shorter form (title + no note) still requires scrolling to hit Save. Consider snapping the sheet to fit content when compact, or floating the primary button pinned to the sheet's bottom (outside the ScrollView).",
+        "testID": "notice-save",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "react-native-web — FlatList renderItem",
+        "issue": "Console still logs 'A props object containing a key prop is being spread into JSX' from FlatList list items. Non-fatal, but noisy. Reference: /app/frontend/app/notice/index.tsx (FlatList) — carried over from iterations 12 & 13."
+      },
+      {
+        "component": "react-native-web — deprecated pointerEvents prop",
+        "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents' still appears in console (carried over from batch #12/#13). Likely inside a shared UI primitive (Avatar / overlay). Non-fatal."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch14_reactions_streaks_events.py",
+    "/app/test_reports/pytest/pytest_batch14_results.xml"
+  ],
+  "action_items": [
+    "(Nice-to-have) In /app/frontend/app/notice/index.tsx move the 'notice-save' Pressable OUT of the inner ScrollView and pin it to the bottom of the sheet, or reduce the sheet's paddingBottom + maxHeight so the primary CTA is visible without scrolling on 390x844 web.",
+    "(Chore, ongoing from #13) Silence the RN-Web console warnings: 'key prop spread into JSX' (FlatList renderItem) and 'props.pointerEvents is deprecated'."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1990-2006 react_notice — correctly removes any prior reaction by the same member first, then re-adds ONLY if the incoming (member_id, emoji) pair didn't already exist. Net effect: same emoji = toggle-off, different emoji = replace, exactly per spec. Uses $set of the reassembled array which is safe from concurrent writer races on a per-notice basis (last-write-wins).",
+    "server.py:2009-2024 reply_notice — validates non-empty text, then $push a reply dict with reply_id/member_id/text/created_at. GET hydrates member cards. Solid.",
+    "server.py:1258-1275 _chore_streak — counts consecutive UTC days from 'today' backwards where the member completed ALL their assigned chores; stops at first miss. Reasonable but note (a) uses today_str() (UTC) so a family in APAC completing chores at 23:00 local may see the streak drop right after midnight UTC — acceptable simplification. (b) When a member has 0 chore_ids, the loop cannot increment (early break) — returns 0, so 'no chores' correctly yields no badge.",
+    "server.py:1278-1289 _streak_badge — thresholds 3/7/14/30 with distinct emojis. Returns None for streak<3 as spec requires. Good.",
+    "server.py:1148-1159 event_invite_ics — public (no auth), correctly returns 404 for unknown event_id, sends content-type 'text/calendar; charset=utf-8; method=REQUEST' with Content-Disposition attachment.",
+    "server.py:1072-1120 send_event_invites — best-effort: fires from asyncio.create_task in create_event so send failures cannot break event creation. Resend proxy 422s on fake demo addresses are swallowed (per agent-to-agent note this is expected). Note: no retry/backoff — acceptable for MVP.",
+    "server.py:1035-1069 build_event_ics — properly escapes commas/semicolons/newlines in SUMMARY/LOCATION/DESCRIPTION, honours all_day (DTSTART;VALUE=DATE with end+1-day exclusive DTEND) vs timed events. STATUS:CONFIRMED and METHOD:REQUEST make it a valid RFC5545 calendar invite. Missing: RRULE for recurring events (currently just single occurrence per event doc) and ATTENDEE lines (some clients auto-add invitees when METHOD:REQUEST has ATTENDEE:mailto:… lines) — not required by spec.",
+    "server.py:1840-1845 needs_attention[notice_expiring] — matches expiry_date == tomorrow_iso exactly. Users whose notes expire in 2+ days do NOT get an early reminder, and today-expiring notes also don't emit this key (since they'd be gone at midnight). Acceptable per spec ('expiry reminder' == the day-before ping). Only surfaces the FIRST expiring notice — if multiple expire tomorrow, only one alert is shown."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_batch14_reactions_streaks_events.py (new — 12 pytest cases: TestNoticeReactions, TestNoticeReplies, TestChoreStreaks, TestNoticeExpiryReminder, TestEventInvite)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% of web-testable flows"},
+  "seed_data_creation": "During the UI walk-through a 'Movie night TEST' notice was created on the board@fam.com family and then deleted at the end of the flow, so the demo remains at the same 2 seeded notices as before. Pytest tests each create their own notice / event fixture and always DELETE it in the finally / cleanup block.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "board@fam.com/secret123 is the primary account. Batch #14 endpoints: POST /api/notices/{id}/react {emoji}, POST /api/notices/{id}/replies {text}, GET /api/notices/{id} (single, w/ replies+reactions), GET /api/events/{id}/invite.ics (public, no auth). Batch #14 testIDs on the detail screen: notice-detail-back, react-❤️ / react-👍 / react-✅ / react-🎉, notice-reply-input, notice-reply-send. Known Playwright quirk: the New-note modal's 'notice-save' Pressable is below the fold on 390x844 — use `document.querySelector('[data-testid=\"notice-save\"]').scrollIntoView({block:'center'}); .click()` via page.evaluate to trigger it. Event email dispatch (send_event_invites) is intentionally fire-and-forget; the Resend proxy returns 422 for @fam.com / @example.com fake addresses — this is expected in demo and MUST NOT be counted as a failure. .ics endpoint is public (no Bearer token required).",
+  "rca_of_issue": ""
+}

@@ -536,7 +536,14 @@ function KidsSection({ kids, go, router, onToggleChore, c, compact }: any) {
                 <Avatar uri={k.member.photo_url} name={k.member.name} size={44} color={k.member.color} />
                 <View style={{ flex: 1 }}>
                   <View style={styles.kidTop}>
-                    <AppText size={14} weight="bold">{k.member.name}</AppText>
+                    <View style={styles.kidNameRow}>
+                      <AppText size={14} weight="bold">{k.member.name}</AppText>
+                      {k.streak >= 3 ? (
+                        <View style={[styles.streakPill, { backgroundColor: c.brandTertiary }]}>
+                          <AppText size={11} weight="bold" color={c.brand}>{k.streak_badge?.emoji || "🔥"} {k.streak}</AppText>
+                        </View>
+                      ) : null}
+                    </View>
                     <AppText size={12} weight="semibold" color={allDone ? c.success : c.onSurfaceTertiary}>
                       {k.total ? `${k.done}/${k.total} chores` : "No chores"}
                     </AppText>
@@ -585,7 +592,14 @@ function MyChoresSection({ kids, me, go, onToggleChore, c, compact }: any) {
       <SectionHead title="My chores" action="All" onAction={() => go("/chores")} c={c} />
       <Card c={c}>
         <View style={styles.kidTop}>
-          <AppText size={15} weight="bold">{allDone ? "All done — amazing! ⭐" : `${mine.done} of ${mine.total} done`}</AppText>
+          <View style={styles.kidNameRow}>
+            <AppText size={15} weight="bold">{allDone ? "All done — amazing! ⭐" : `${mine.done} of ${mine.total} done`}</AppText>
+            {mine.streak >= 3 ? (
+              <View style={[styles.streakPill, { backgroundColor: c.brandTertiary }]}>
+                <AppText size={11} weight="bold" color={c.brand}>{mine.streak_badge?.emoji || "🔥"} {mine.streak} day streak</AppText>
+              </View>
+            ) : null}
+          </View>
           <AppText size={22}>{allDone ? "🌟" : "💪"}</AppText>
         </View>
         {mine.chores?.length ? (
@@ -712,13 +726,19 @@ function NoticeboardSection({ notices, fam, unread, router, go, c, compact }: an
       {notices.length ? (
         <View style={{ gap: spacing.sm }}>
           {notices.map((n: any) => (
-            <Pressable key={n.notice_id} onPress={() => go("/notice")} testID={`home-notice-${n.notice_id}`}>
+            <Pressable key={n.notice_id} onPress={() => router.push(`/notice/${n.notice_id}`)} testID={`home-notice-${n.notice_id}`}>
               <Card c={c} style={styles.noticeRow}>
                 <Ionicons name={n.pinned ? "pin" : "reader-outline"} size={18} color={n.pinned ? c.brand : c.onSurfaceTertiary} />
                 <View style={{ flex: 1 }}>
                   <AppText size={14} weight="bold" numberOfLines={1}>{n.title}</AppText>
                   {n.note ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{n.note}</AppText> : null}
                 </View>
+                {n.reply_count ? (
+                  <View style={styles.noticeMeta}>
+                    <Ionicons name="chatbubble-outline" size={13} color={c.onSurfaceTertiary} />
+                    <AppText size={11} color={c.onSurfaceTertiary}>{n.reply_count}</AppText>
+                  </View>
+                ) : null}
                 {n.priority === "high" ? <View style={[styles.dotUrgent, { backgroundColor: c.error }]} /> : null}
               </Card>
             </Pressable>
@@ -1001,6 +1021,8 @@ const styles = StyleSheet.create({
 
   kidRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   kidTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+  kidNameRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
+  streakPill: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
   progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
   progressFill: { height: 8, borderRadius: 4 },
   praiseBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
@@ -1018,6 +1040,7 @@ const styles = StyleSheet.create({
   comeIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 
   noticeRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  noticeMeta: { flexDirection: "row", alignItems: "center", gap: 3 },
   dotUrgent: { width: 10, height: 10, borderRadius: 5 },
   msgRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },

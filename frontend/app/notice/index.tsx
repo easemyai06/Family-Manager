@@ -120,22 +120,36 @@ export default function Noticeboard() {
           const mine = member && n.owner?.member_id === member.member_id;
           return (
             <View style={[styles.card, { backgroundColor: c.surface, borderColor: n.priority === "high" ? c.error : c.border }, shadow(1)]} testID={`notice-${n.notice_id}`}>
-              <View style={styles.cardTop}>
-                {n.pinned ? <Ionicons name="pin" size={16} color={c.brand} /> : null}
-                <AppText family="display" weight="bold" size={16} style={{ flex: 1 }}>{n.title}</AppText>
-                {n.priority === "high" ? (
-                  <View style={[styles.urgent, { backgroundColor: c.error }]}>
-                    <AppText size={10} weight="bold" color="#fff">URGENT</AppText>
+              <Pressable onPress={() => router.push(`/notice/${n.notice_id}`)} testID={`notice-open-${n.notice_id}`}>
+                <View style={styles.cardTop}>
+                  {n.pinned ? <Ionicons name="pin" size={16} color={c.brand} /> : null}
+                  <AppText family="display" weight="bold" size={16} style={{ flex: 1 }}>{n.title}</AppText>
+                  {n.priority === "high" ? (
+                    <View style={[styles.urgent, { backgroundColor: c.error }]}>
+                      <AppText size={10} weight="bold" color="#fff">URGENT</AppText>
+                    </View>
+                  ) : null}
+                </View>
+                {n.note ? <AppText size={14} color={c.onSurfaceSecondary} style={{ marginTop: 4 }}>{n.note}</AppText> : null}
+                <View style={styles.byRow}>
+                  <Avatar uri={n.owner?.photo_url} name={n.owner?.name} size={20} color={n.owner?.color} />
+                  <AppText size={12} color={c.onSurfaceTertiary} style={{ flex: 1 }}>
+                    {n.owner?.name}
+                    {n.days_until_expiry != null ? ` · expires in ${n.days_until_expiry}d` : ""}
+                  </AppText>
+                </View>
+              </Pressable>
+              <View style={[styles.footer, { borderTopColor: c.divider }]}>
+                <Pressable onPress={() => router.push(`/notice/${n.notice_id}`)} style={styles.metaRow} hitSlop={6}>
+                  {(n.reaction_summary || []).slice(0, 3).map((r: any) => (
+                    <AppText key={r.emoji} size={13}>{r.emoji}{r.count > 1 ? ` ${r.count}` : ""}</AppText>
+                  ))}
+                  <View style={styles.replyMeta}>
+                    <Ionicons name="chatbubble-outline" size={14} color={c.onSurfaceTertiary} />
+                    <AppText size={12} color={c.onSurfaceTertiary}>{n.reply_count || 0}</AppText>
                   </View>
-                ) : null}
-              </View>
-              {n.note ? <AppText size={14} color={c.onSurfaceSecondary} style={{ marginTop: 4 }}>{n.note}</AppText> : null}
-              <View style={styles.byRow}>
-                <Avatar uri={n.owner?.photo_url} name={n.owner?.name} size={20} color={n.owner?.color} />
-                <AppText size={12} color={c.onSurfaceTertiary} style={{ flex: 1 }}>
-                  {n.owner?.name}
-                  {n.days_until_expiry != null ? ` · expires in ${n.days_until_expiry}d` : ""}
-                </AppText>
+                </Pressable>
+                <View style={{ flex: 1 }} />
                 {mine ? (
                   <>
                     <Pressable onPress={() => togglePin(n)} hitSlop={8} style={{ padding: 4 }} testID={`notice-pin-${n.notice_id}`}>
@@ -160,7 +174,7 @@ export default function Noticeboard() {
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
         <View style={[styles.sheet, { backgroundColor: c.surface, paddingBottom: insets.bottom + spacing.lg }]}>
           <View style={styles.handle} />
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.md }}>
             <AppText family="display" weight="bold" size={18} style={{ marginBottom: spacing.md }}>New note</AppText>
             <TextInput
               value={title}
@@ -203,15 +217,15 @@ export default function Noticeboard() {
               <Ionicons name={pinned ? "checkbox" : "square-outline"} size={22} color={pinned ? c.brand : c.onSurfaceTertiary} />
               <AppText size={14} weight="semibold" style={{ flex: 1 }}>Pin to top</AppText>
             </Pressable>
-            <Pressable
-              onPress={create}
-              disabled={!title.trim() || saving}
-              style={[styles.saveBtn, { backgroundColor: title.trim() ? c.brand : c.surfaceTertiary }]}
-              testID="notice-save"
-            >
-              <AppText size={15} weight="bold" color="#fff">{saving ? "Posting…" : "Post to board"}</AppText>
-            </Pressable>
           </ScrollView>
+          <Pressable
+            onPress={create}
+            disabled={!title.trim() || saving}
+            style={[styles.saveBtn, { backgroundColor: title.trim() ? c.brand : c.surfaceTertiary }]}
+            testID="notice-save"
+          >
+            <AppText size={15} weight="bold" color="#fff">{saving ? "Posting…" : "Post to board"}</AppText>
+          </Pressable>
         </View>
       </Modal>
     </View>
@@ -225,6 +239,9 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   urgent: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
   byRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.md },
+  footer: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  replyMeta: { flexDirection: "row", alignItems: "center", gap: 3 },
   empty: { alignItems: "center", paddingVertical: spacing["3xl"] },
   fab: { position: "absolute", right: spacing.lg, width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
