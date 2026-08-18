@@ -1170,10 +1170,18 @@ async def public_terms():
     intro = "These Terms of Use govern your use of FamilyHome, provided by Ease My Ai Pvt Ltd. By creating an account or using the app, you agree to these terms."
     return Response(content=_legal_html("Terms of Use", "June 2026", intro, _TERMS_SECTIONS),
                     media_type="text/html; charset=utf-8")
+
+
+@api.get("/families/invite")
 async def get_invite(user: dict = Depends(get_current_user)):
     fid = require_family(user)
-    fam = await db.families.find_one({"family_id": fid}, {"_id": 0})
-    return {"invite_code": fam["invite_code"], "family_name": fam["name"]}
+    fam = await db.families.find_one({"family_id": fid})
+    code = fam.get("invite_code")
+    if not code:
+        # backfill a code for demo/legacy families created before invite codes existed
+        code = uuid.uuid4().hex[:8].upper()
+        await db.families.update_one({"family_id": fid}, {"$set": {"invite_code": code}})
+    return {"invite_code": code, "family_name": fam["name"]}
 
 
 @api.post("/families/join")

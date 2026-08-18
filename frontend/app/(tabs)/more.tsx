@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Share } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -97,6 +97,20 @@ export default function More() {
     if (r.route) router.push(r.route as any);
   };
 
+  const shareInvite = async () => {
+    if (!invite) return;
+    const msg =
+      `Join our family on FamilyHome! 🏡\n\n` +
+      `Download the app, create an account, tap "Join here" and enter this invite code:\n\n` +
+      `${invite.invite_code}`;
+    try {
+      await Share.share({ message: msg });
+    } catch {
+      setNote(`Invite code: ${invite.invite_code}`);
+      setTimeout(() => setNote(""), 2600);
+    }
+  };
+
   const Section = ({ title, rows }: { title: string; rows: Row[] }) => (
     <View style={styles.section}>
       <AppText family="display" weight="bold" size={16} color={c.onSurfaceSecondary} style={{ marginBottom: spacing.sm }}>
@@ -160,33 +174,40 @@ export default function More() {
           </Pressable>
         </Pressable>
 
-        {PILLARS.map((p) => (
-          <Section key={p.title} title={p.title} rows={p.rows} />
-        ))}
-
-        {/* invite */}
+        {/* invite family — prominent, tap to share */}
         {invite ? (
           <View style={styles.section}>
             <AppText family="display" weight="bold" size={16} color={c.onSurfaceSecondary} style={{ marginBottom: spacing.sm }}>
               Invite Family
             </AppText>
-            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
+            <Pressable
+              onPress={shareInvite}
+              style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+              testID="invite-share"
+            >
               <View style={styles.inviteRow}>
                 <View style={{ flex: 1 }}>
                   <AppText size={13} color={c.onSurfaceTertiary}>
-                    Share this code with family
+                    Share this code to add family
                   </AppText>
                   <AppText family="display" weight="bold" size={24} color={c.brand} style={{ letterSpacing: 2, marginTop: 4 }} testID="invite-code">
                     {invite.invite_code}
+                  </AppText>
+                  <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: 4 }}>
+                    Tap to share the invite
                   </AppText>
                 </View>
                 <View style={[styles.rowIcon, { backgroundColor: c.brandTertiary }]}>
                   <Ionicons name="share-social" size={20} color={c.brand} />
                 </View>
               </View>
-            </View>
+            </Pressable>
           </View>
         ) : null}
+
+        {PILLARS.map((p) => (
+          <Section key={p.title} title={p.title} rows={p.rows} />
+        ))}
 
         {/* appearance */}
         <View style={styles.section}>
