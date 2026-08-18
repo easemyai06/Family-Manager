@@ -1528,3 +1528,39 @@ batch23:
 agent_communication_batch23:
     -agent: "main"
     -message: "Batch #23 (follow-ups to Batch #22). Use FRESH accounts. BACKEND: (A) register admin + POST /api/seed/demo -> GET /api/families/invite for the code. (B) register a 2nd user (no family), GET /api/families/preview?code=CODE => 200 with family_name + pending_members; POST /api/families/join {code, claim_member_id: <a pending member id>} => 200; then GET /api/families/me as the joiner: member COUNT is unchanged (no duplicate) and the claimed member now has joined=true & is_me=true. Also join with claim_member_id=null creates a brand-new member (count+1). (C) Role: PATCH /api/families/members/{id} {role:'adult'} as admin => 200 (is_child false); {role:'superadmin'} => 400; changing the admin member's role => 403. FRONTEND: (1) Onboarding Join is 2-step: Join a family -> enter code -> Continue -> a 'Which one is you?' list of pending profiles + 'I'm a new member' -> Join Family. (2) Family tab (admin) -> Manage -> tap a non-admin member's … badge -> actions modal: change Role via Parent/Child/Adult chips (persists after reopening), 'Invite via WhatsApp' + 'Share invite link' appear for PENDING members only, 'Remove from family' -> confirm removes. Curl already verified all backend paths; focus on the onboarding claim UI + role change persistence. Deep-link/WhatsApp launch are native-only (can't run on web). Do NOT retest unrelated features."
+
+# ============ Batch #24 — Accessibility Phase 1 (text size, contrast, buttons, motion) ============
+batch24_a11y:
+  - task: "Accessibility & Display settings screen + global prefs (ThemeContext)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/settings/accessibility.tsx, frontend/src/theme/ThemeContext.tsx, frontend/src/theme/tokens.ts, frontend/app/(tabs)/more.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New More > Preferences > Accessibility & Display screen: Text Size (Default 1x / Large 1.2x / Extra Large 1.45x), High Contrast, Larger Buttons, Reduce Motion, Show Text With Icons. Prefs persisted per-key in storage and exposed via useTheme(). SCREENSHOT-VERIFIED: Extra Large scales text app-wide + reflows; High Contrast darkens text/borders."
+  - task: "Global text scaling (AppText) + button min-height/a11y labels (Button)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/ui/AppText.tsx, frontend/src/components/ui/Button.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "AppText multiplies size by textScale (system Dynamic Type still applies via default allowFontScaling). Button now min-height 48 (56 in Larger Buttons mode) + accessibilityRole/label/state. Shared components used across the whole app — regression check needed."
+  - task: "Reduce Motion on Send Love animation + friendly login error"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/AffectionAnimation.tsx, frontend/app/(auth)/login.tsx"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "AffectionAnimation skips particles + uses a simple fade when Reduce Motion is on. Login shows a friendly message on 401/429 instead of a raw error."
+agent_communication_batch24_a11y:
+    -agent: "main"
+    -message: "Batch #24 Accessibility Phase 1 (FRONTEND ONLY, no backend changes). Login testdad@fam.com/secret123. VERIFY: (1) More > Preferences > Accessibility & Display (testID more-accessibility) opens; Text Size chips text-size-1 / text-size-1.2 / text-size-1.45 change the preview + app-wide text; toggles toggle-contrast, toggle-large-buttons, toggle-reduce-motion, toggle-icon-labels flip. (2) PERSISTENCE: set Extra Large + High Contrast, navigate away (Home) and back — settings remain selected; text stays enlarged on Home/More. (3) High Contrast noticeably darkens text/borders (light) and brightens (dark). (4) Larger Buttons makes primary buttons taller (min-height 56). (5) REGRESSION: Home, Family, Calendar, Chat, Send Love still render and are usable at Default settings AND at Extra Large (check for major overlap/clipping only — minor wrapping is expected/acceptable). (6) Login: entering a wrong password shows the friendly 'We couldn't sign you in...' message (testID login-error), not a raw error. (7) Send Love still completes with Reduce Motion ON (no crash; animation simplified). Do NOT retest backend or unrelated features."

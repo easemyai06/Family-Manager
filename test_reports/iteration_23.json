@@ -1,0 +1,29 @@
+{
+  "summary": "Phase-1 Accessibility & Display suite verified end-to-end on mobile web preview (390x844) as logged-in testdad@fam.com. All primary items pass: (1) Login with a WRONG password renders the friendly text 'We couldn't sign you in. Please check your email and password and try again.' inside testID login-error (backend returned 401, UI mapped it correctly). (2) More > Preferences > 'Accessibility & Display' (testID more-accessibility) opens the new screen — all required testIDs present: text-size-1, text-size-1.2, text-size-1.45, toggle-contrast, toggle-large-buttons, toggle-reduce-motion, toggle-icon-labels, a11y-back. (3) Text-size chips work: preview 'Family dinner is at 7:00 PM tonight.' is 18px @ Default and 26px @ Extra Large (18 * 1.45 = 26.1, matches AppText scaling). (4) All four toggles flip visibly (switch turns teal/brand). (5) High Contrast strengthens contrast: preview text color goes from rgb(44,44,40) to rgb(0,0,0); other borders/dividers also darken per contrastColors() in tokens.ts. (6) Persistence across nav: with Extra Large + High Contrast enabled, the app-wide scaling holds — after navigating to Home the greeting 'Good Morning, Raj' wraps onto 3 lines (visibly enlarged vs the single-line Default render) and reopening the Accessibility screen shows the same preview font size (26px). Storage is written via storage.setItem inside ThemeContext setters so values survive re-navigation and reload. (7) Regression at BOTH Default and Extra Large: Home, Family, Calendar, Chat screens all render without red-screens or console errors; tab bar and content remain usable — some text wrapping is expected and acceptable at XL. Send Some Love screen (accessed via more-affection) opens cleanly with Reduce Motion ON — no crash, no red-screen; the AffectionAnimation code path guards particleCount=0 + short 200ms fade when reduceMotion is true (verified in code). No React Native deprecated packages introduced by this batch. No console errors beyond the pre-existing expo-notifications web-warning and a benign 401 fetch during the intentional wrong-password test.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "No blocker items. Nice-to-have: aria-checked is not exposed on the react-native-web Switch (both toggle-contrast and toggle-large-buttons return null for aria-checked); consider passing accessibilityState={{ checked: value }} explicitly on the Switch (or wrapping in a Pressable with role='switch') so future a11y automated tests can assert the on/off state without probing computed styles. Not user-facing — informational only."
+  ],
+  "critical_code_review_comments": [
+    "frontend/src/theme/ThemeContext.tsx:46-64 hydrates all 5 a11y prefs from storage in a single Promise.all — correct. reduceMotion falls back to AccessibilityInfo.isReduceMotionEnabled() ONLY when the stored value is 2/null (unset), so the user's explicit choice is honoured over the OS preference. Good.",
+    "frontend/src/components/ui/AppText.tsx:44-50 uses Math.round(size * textScale) as fontSize — this scales every AppText app-wide (Home, More, Family, Calendar, Chat, Login, Send Love all use AppText) which is exactly what the spec requires. No raw <Text> usage found in the touched files.",
+    "frontend/src/components/ui/Button.tsx:57 minHeight = largeButtons ? 56 : 48 — matches the ~56px 'Larger Buttons' spec. Applies to every primary/secondary/ghost/danger button since they all route through this component.",
+    "frontend/src/components/AffectionAnimation.tsx:80-105 correctly branches on reduceMotion: skips the spring bounce (200ms timing instead) and sets particleCount=0 so no particles animate. No crash path even if particleEmojis[i % 0] would be invoked because the map is over an empty array.",
+    "frontend/app/(auth)/login.tsx:34-41 maps HTTP status to friendly copy: 401 -> the exact required string; 429 -> a friendly rate-limit copy; other errors fall back to a generic 'We couldn't sign you in. Please try again.' — no raw axios/fetch errors leak into testID login-error. Verified with a live 401 response.",
+    "frontend/app/settings/accessibility.tsx uses AppText everywhere (no raw <Text>) and wraps in SafeArea via useSafeAreaInsets — no top-cut issues at 390x844."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (per request)", "frontend": "100% — all 8 items in the review request pass" },
+  "seed_data_creation": "None. Reused the existing seeded testdad@fam.com Sharma family.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login TextInput components in this app are react-native-web <input type=text> ELEMENTS that themselves carry the data-testid (i.e. document.querySelector('[data-testid=\"login-email-input\"]') returns the INPUT, not a wrapper). Use page.fill('[data-testid=\"login-email-input\"]', value) directly — do NOT nest with 'input'. Bottom tab navigation labels (Home/Calendar/Family/Chat/More) can be reached with page.get_by_text('More', exact=True).first.click(force=True) but beware that 'Calendar' text also appears inline on Home ('Today at a glance Calendar' section header link) — anchor by the bottom-tab region or by testID if reliability matters. After login, an unseen affection overlay may cover the screen; dismiss with [data-testid=\"affection-dismiss\"] before continuing. react-native-web Switch does NOT expose aria-checked; verify on/off by tracking backgroundColor of the track (teal=on, grey=off) or by round-tripping via storage.",
+  "rca_of_issue": "N/A — feature verification only, no bugs found in this batch."
+}

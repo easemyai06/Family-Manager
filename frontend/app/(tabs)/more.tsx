@@ -233,6 +233,7 @@ export default function More() {
         <Section
           title="🔔 Preferences"
           rows={[
+            { key: "accessibility", label: "Accessibility & Display", icon: "eye", color: "#7FA9C9", route: "/settings/accessibility" },
             { key: "notifications", label: "Notifications", icon: "notifications", color: "#E8A33D", route: "/settings/notifications" },
           ]}
         />

@@ -32,7 +32,13 @@ export default function Login() {
     try {
       await login(email.trim(), password);
     } catch (e: any) {
-      setError(e.message || "Login failed");
+      const msg =
+        e?.status === 401
+          ? "We couldn't sign you in. Please check your email and password and try again."
+          : e?.status === 429
+          ? "Too many attempts. Please wait a little while, then try again."
+          : e?.message || "We couldn't sign you in. Please try again.";
+      setError(msg);
     } finally {
       setLoading(false);
     }

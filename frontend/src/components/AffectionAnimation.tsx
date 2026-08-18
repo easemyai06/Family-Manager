@@ -17,6 +17,7 @@ import { AppText } from "./ui/AppText";
 import { Button } from "./ui/Button";
 import { AFFECTION_MAP } from "@/src/lib/constants";
 import { spacing } from "@/src/theme/tokens";
+import { useTheme } from "@/src/theme/ThemeContext";
 
 const { width: W, height: H } = Dimensions.get("window");
 
@@ -76,16 +77,22 @@ export function AffectionAnimation({
 }: Props) {
   const info = AFFECTION_MAP[type] || { emoji: "❤️", label: "Love", color: "#FF6B6B" };
   const isConfetti = CONFETTI_TYPES.includes(type);
+  const { reduceMotion } = useTheme();
   const scale = useSharedValue(0);
   const backdrop = useSharedValue(0);
 
   useEffect(() => {
     if (visible) {
-      backdrop.value = withTiming(1, { duration: 300 });
-      scale.value = withSequence(
-        withSpring(1.15, { damping: 6, stiffness: 120 }),
-        withSpring(1, { damping: 8 })
-      );
+      if (reduceMotion) {
+        backdrop.value = withTiming(1, { duration: 200 });
+        scale.value = withTiming(1, { duration: 200 });
+      } else {
+        backdrop.value = withTiming(1, { duration: 300 });
+        scale.value = withSequence(
+          withSpring(1.15, { damping: 6, stiffness: 120 }),
+          withSpring(1, { damping: 8 })
+        );
+      }
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 220);
@@ -102,7 +109,7 @@ export function AffectionAnimation({
 
   if (!visible) return null;
 
-  const particleCount = isConfetti ? 22 : 16;
+  const particleCount = reduceMotion ? 0 : isConfetti ? 22 : 16;
   const particleEmojis = isConfetti
     ? ["🎉", "⭐", "🎊", "✨", info.emoji]
     : [info.emoji, "❤️", "💕"];

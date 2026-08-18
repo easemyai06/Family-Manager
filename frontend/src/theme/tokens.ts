@@ -63,6 +63,33 @@ export const darkColors = {
 
 export type ThemeColors = typeof lightColors;
 
+// High-contrast overrides — stronger text + borders for low-vision users.
+// Applied on top of the base light/dark palette when High Contrast is on.
+export function contrastColors(base: ThemeColors, scheme: "light" | "dark"): ThemeColors {
+  if (scheme === "light") {
+    return {
+      ...base,
+      onSurface: "#000000",
+      onSurfaceSecondary: "#1F1F1C",
+      onSurfaceTertiary: "#3A3A34",
+      border: "#8A8378",
+      borderStrong: "#5C564C",
+      divider: "#C9C0B0",
+      error: "#C0392B",
+      brand: "#D64545",
+    };
+  }
+  return {
+    ...base,
+    onSurface: "#FFFFFF",
+    onSurfaceSecondary: "#F0EAE0",
+    onSurfaceTertiary: "#CFC9BE",
+    border: "#6B655B",
+    borderStrong: "#9A9184",
+    divider: "#3A3A34",
+  };
+}
+
 export const spacing = {
   xs: 4,
   sm: 8,

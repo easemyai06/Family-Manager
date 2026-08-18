@@ -280,8 +280,7 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
   (badges, Manage remove modal 5→4, add success screen) screenshot-verified. Preview only — Publish to ship.
 
 
-## Members follow-ups: auto-link invites + role editing + resend invite — June 2026
-- Auto-link invites (no duplicates): GET /api/families/preview?code= returns the family name + its
+## Members follow-ups: auto-link invites + role editing + resend invite — June 2026- Auto-link invites (no duplicates): GET /api/families/preview?code= returns the family name + its
   PENDING profiles; POST /api/families/join now takes an optional claim_member_id that links the joiner
   to that pending profile instead of creating a second member. Onboarding Join is a 2-step flow — enter
   code → Continue → "Which one is you?" (pick a pending profile or "I'm a new member") → Join. Deep-link
@@ -295,3 +294,23 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Verified: backend 13/13 pytest (preview/claim/role guards); frontend 100% (claim = no duplicate joiner
   becomes the claimed profile; role change persists; resend hidden for joined members). Preview only —
   Publish to ship.
+
+
+## Accessibility & Readability — Phase 1 (foundations) — June 2026
+User mandate: accessibility/readability/simplicity are core "definition of done" (parents, grandparents,
+teens, young kids, low-vision users). Kids Mode / Grandparent Mode deferred to a later phase.
+- New "Accessibility & Display" screen (More > Preferences → /settings/accessibility): Text Size
+  (Default 1x / Large 1.2x / Extra Large 1.45x), High Contrast, Larger Buttons, Reduce Motion, and
+  "Show Text With Icons". Prefs persist per-key in storage, exposed via useTheme().
+- Global text scaling: AppText multiplies size by textScale (system Dynamic Type still applies via
+  default allowFontScaling). App-wide enlargement + reflow verified.
+- Buttons: min-height 48 (56 in Larger Buttons mode) + accessibilityRole/label/state.
+- High-contrast palette (tokens.contrastColors) strengthens text/borders in light & dark.
+- Reduce Motion wired into the Send Love animation (skips particles + spring bounce; defaults to the
+  phone's Reduce Motion setting, user-overridable).
+- Friendlier login errors on 401/429.
+- Verified: testing agent iteration_23 — 8/8 pass (settings, persistence, contrast, regression at
+  Default & Extra Large on Home/Family/Calendar/Chat/Send Love, friendly login error, reduce-motion
+  Send Love). Frontend-only; preview — Publish to ship.
+- PENDING later phases: (2) screen-reader label + contrast/touch-target audit across all core flows;
+  (3) Kids Mode & Grandparent (Simplified) Mode; (4) localization-readiness string extraction.

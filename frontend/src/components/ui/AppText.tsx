@@ -41,10 +41,10 @@ export function AppText({
   children,
   ...rest
 }: Props) {
-  const { c } = useTheme();
+  const { c, textScale } = useTheme();
   const base: TextStyle = {
     fontFamily: fontFor(family, weight),
-    fontSize: size,
+    fontSize: Math.round(size * textScale),
     color: color || c.onSurface,
     textAlign: center ? "center" : undefined,
   };

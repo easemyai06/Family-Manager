@@ -17,6 +17,7 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   testID?: string;
   size?: "md" | "lg";
+  accessibilityLabel?: string;
 }
 
 export function Button({
@@ -29,8 +30,9 @@ export function Button({
   style,
   testID,
   size = "lg",
+  accessibilityLabel,
 }: Props) {
-  const { c } = useTheme();
+  const { c, largeButtons } = useTheme();
 
   const bg = {
     primary: c.brandPrimary,
@@ -52,16 +54,22 @@ export function Button({
     onPress();
   };
 
+  const minHeight = largeButtons ? 56 : 48;
+
   return (
     <Pressable
       testID={testID}
       onPress={handle}
       disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={({ pressed }) => [
         {
           backgroundColor: bg,
           borderRadius: radius.pill,
-          paddingVertical: size === "lg" ? 16 : 12,
+          minHeight,
+          paddingVertical: size === "lg" ? 14 : 10,
           paddingHorizontal: spacing.xl,
           flexDirection: "row",
           alignItems: "center",
