@@ -1,0 +1,31 @@
+{
+  "summary": "Backend security-remediation regression (BOLA on shopping+todos, invite/preview hardening, CORS tightening, auth sanity) — ALL 7 pytest cases PASS in 8.7s against the public EXPO_PUBLIC_BACKEND_URL. Covered: (1) Shopping BOLA — testdad (Family A) creates list + item, GETs OK, cross-family user B (fresh account TEST_secuser_*@fam.com + POST /api/seed/demo) hits POST /api/shopping/items/{id}/toggle → 404 and DELETE /api/shopping/items/{id} is idempotent 200 but the item is confirmed to still exist for A (verified via subsequent GET and successful A-side toggle → checked=true). (2) Todo BOLA — identical pattern on /api/todos/lists + /api/todos/items/{id}/toggle|delete; cross-family toggle 404, cross-family delete does not remove item, A's toggle still flips done=true afterwards. (3) Invite/Preview — GET /api/families/invite returns {invite_code, family_name}; GET /api/families/preview?code=... returns family_name + pending_members list; every member with is_child=true has photo_url null (child photo not leaked to code-holder); rate-limit verified: after the 1 initial + 22-shot burst inside the same 10-min window the endpoint transitions to HTTP 429 (PREVIEW_LIMIT=20 in server.py:919). (4) Join — POST /api/families/join with {code, claim_member_id:<pending id>} returns 200/201, /api/families/me member count is UNCHANGED (claim, not insert), joiner's /api/auth/me shows family_id set. (5) Auth sanity — valid login 200 with token; wrong password 401. Test file created at /app/backend/tests/test_bola_shopping_todo_invite.py — reusable. CORS middleware at server.py:5239-5245 uses allow_credentials=False + allow_origins=['*'] which is the safe combination for JWT-Bearer flows (cookies cannot be leaked cross-origin).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bola_shopping_todo_invite.py",
+    "/app/test_reports/pytest/bola_invite_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:2070-2078 toggle_shopping_item correctly scopes the find_one AND update_one by both item_id AND family_id, returning 404 when a different-family caller tries to toggle. Good BOLA fix.",
+    "server.py:2081-2086 delete_shopping_item is idempotent (delete_many with family_id filter returns {ok:true} regardless of match). Confirmed via test that B's DELETE does NOT remove A's item. Acceptable — the security property is enforced by the family_id predicate in the query, not by the HTTP status.",
+    "server.py:2307-2315 toggle_todo_item and server.py:2318-2322 delete_todo_item mirror the same defensive filter — verified equivalent.",
+    "server.py:1263-1283 preview_family strips photo_url for is_child members before returning, matches the spec.",
+    "server.py:918-936 _preview_rate_ok uses a fixed 10-minute window with PREVIEW_LIMIT=20. Verified rate-limit engages within 22 rapid calls; storage is per-user in db.preview_throttles which is fine — enumerators would need a fresh account per 20 tries.",
+    "server.py:5239-5245 CORS: allow_credentials=False + allow_origins=['*'] is the correct hardening — browsers refuse to attach credentials with wildcard origin, and this app uses Bearer JWTs (not cookies) so it's the appropriate posture.",
+    "server.py:1286-1316 join_family: when claim_member_id is provided it updates the existing pending member in place instead of inserting — member count stays stable, exactly as the review notes."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (7/7 pytest cases)", "frontend": "not tested (backend-only per request)" },
+  "seed_data_creation": "Each test creates its own throwaway users prefixed with TEST_ (TEST_secuser_*, TEST_preview_*, TEST_joiner_*) and cleans them up via DELETE /api/auth/account teardown. TEST_ prefixed shopping/todo lists+items are also deleted at end of test. No residual state left in the Sharma demo family.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_bola_shopping_todo_invite.py for regressions. Env var is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL) in /app/frontend/.env. Family B setup pattern = register fresh user via POST /api/auth/register then POST /api/seed/demo (this creates a distinct family — /api/seed/demo is only allowed for users without a family). DELETE endpoints for shopping/todo items are idempotent and always return {ok:true}; the security check is via subsequent GET, not the DELETE status. Preview rate-limit is per-user counter in db.preview_throttles with a 10-min fixed window — if tests fail with 429 unexpectedly, register a fresh user or wait 10 min.",
+  "rca_of_issue": "N/A — security remediation regression verified clean."
+}

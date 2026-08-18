@@ -330,3 +330,16 @@ teens, young kids, low-vision users). Kids Mode / Grandparent Mode deferred to a
   Kids Mode via join+claim child profile, More tab hidden, chore toggle + StarBurst; a11y labels;
   adult regression). Frontend-only; preview — Publish to ship.
 - Still pending later: Phase 4 localization-readiness string extraction.
+
+
+## Security Audit #4 remediation — June 2026
+Read-only audit of the current codebase (production host not reachable by tooling — fixes reach prod
+after Publish). New invite/member/role lifecycle passed the audit. Fixes applied in backend/server.py:
+- SEC-001 (MEDIUM, BOLA): every shopping_items & todo_items find/update/delete + list-delete cascade is
+  now scoped by family_id — cross-family toggle/read returns 404 and cross-family delete is a no-op.
+- SEC-002 (MEDIUM, invite preview): invite codes are now 10 hex chars (new_invite_code); GET
+  /families/preview drops children's photo_url and is rate-limited per user (20 / 10 min -> 429).
+- CORS hardening (LOW): allow_credentials=False (app uses Authorization: Bearer, not cookies).
+- Verified: testing agent iteration_25 — 7/7 (BOLA shopping+todo blocked, same-family CRUD OK, invite
+  preview child-photo hidden + 429 throttle, join+claim intact, auth 200/401). New pytest suite:
+  backend/tests/test_bola_shopping_todo_invite.py. Preview only — Publish to ship to production.

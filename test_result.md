@@ -1600,3 +1600,39 @@ batch25_a11y2:
 agent_communication_batch25_a11y2:
     -agent: "main"
     -message: "Batch #25 (FRONTEND ONLY; no backend changes). GRANDPARENT SIMPLE HOME: login testdad@fam.com/secret123 -> tab-more -> more-accessibility -> toggle-simple-home ON -> a11y-back -> tab-index: Home shows a 6-tile large-button grid (simple-tile-family/messages/send/memories/birthdays/emergency). Each tile navigates (e.g., simple-tile-family -> calendar). Toggle OFF restores the full dashboard. KIDS MODE (needs a child account — set up via API/UI): (a) login testdad and GET /api/families/invite for the code; (b) register a NEW user kidtest+<rand>@fam.com/secret123; (c) on onboarding Join a family, enter the code -> Continue -> pick a CHILD pending profile (e.g., 'Aarav' or 'Anaya') -> Join. Now that account's member is a child. VERIFY: Home shows KidsHome (Hi <name>, Today, My Chores with big check toggles kids-chore-<id>, Quick Actions kids-send-love/kids-chat/kids-wishlist and kids-hug-<parentId>); the bottom tab bar has NO 'More' tab (tab-more absent) for this child account; toggling a chore updates count and does not crash. A11Y LABELS: spot-check that icon-only controls expose accessibility labels (Home header home-search/home-customize/home-chat/home-avatar; Emergency sos-button/emergency-back/call-<id>; Chat chat-send-btn/chat-mic-btn/chat-image-btn/conv-back; Calendar cal-prev/cal-next/fab-create-event; Vault vault-back/vault-lock-btn/vault-add-btn; Chores chores-back/toggle-add-chore/chore-toggle-<id>/chore-del-<id>). REGRESSION: normal adult (testdad) Home dashboard still renders and is usable with Simple Home OFF. Do NOT retest backend or unrelated features."
+
+# ============ Batch #26 — Security audit remediation (BOLA + invite preview + CORS) ============
+batch26_sec:
+  - task: "SEC-001 fix: family-scope all shopping & todo item routes (BOLA)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Added family_id to every shopping_items / todo_items find/update/delete + list-delete cascades. Curl: user in family B toggling family A's item -> 404; A's item survives (A toggle 200). Same-family CRUD unaffected."
+  - task: "SEC-002 fix: invite preview hardening"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Invite codes now 10 hex chars (new_invite_code); GET /families/preview drops children's photo_url and is rate-limited per user (20 / 10 min -> 429). Curl-verified: child photo null, 20x200 then 429."
+  - task: "CORS hardening: allow_credentials=False (bearer-token auth, no cookies)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "low"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Removed wildcard-origin + credentials combination; app auths via Authorization header, not cookies."
+agent_communication_batch26_sec:
+    -agent: "main"
+    -message: "Batch #26 security remediation (BACKEND ONLY). Please REGRESSION-test that legitimate SAME-FAMILY flows still work AND cross-family access is blocked. Use testdad@fam.com/secret123 (family A) and a fresh registered user who runs POST /api/seed/demo (family B). VERIFY: (1) Shopping: A creates /api/shopping/lists then an item; A can GET items, toggle (200), delete (200). B CANNOT toggle A's item (404) and B deleting A's item does NOT remove it (item still togglable by A afterward). (2) Todos: same pattern with /api/todos/lists + items — same-family toggle/delete OK, cross-family toggle 404 and no cross-family deletion. (3) Invite/join still works: GET /api/families/invite (200), GET /api/families/preview?code=CODE (200, children have photo_url null), and preview returns 429 after ~20 rapid calls in 10 min. (4) POST /api/families/join with claim_member_id still links a pending profile (no duplicate). (5) Auth sanity: login 200, wrong password 401. Do NOT retest unrelated features or frontend."

@@ -910,6 +910,32 @@ async def me(user: dict = Depends(get_current_user)):
 DEFAULT_COLORS = ["#FF6B6B", "#D98E5A", "#A3B18A", "#FFD166", "#8AB07D", "#C96F4A", "#B5835A", "#6B8E5A"]
 
 
+def new_invite_code() -> str:
+    # 10 hex chars (~40 bits) so codes aren't trivially enumerable.
+    return uuid.uuid4().hex[:10].upper()
+
+
+# Light per-user rate limit on invite-code preview to stop code enumeration.
+PREVIEW_LIMIT = 20
+PREVIEW_WINDOW = timedelta(minutes=10)
+
+
+async def _preview_rate_ok(user_id: str) -> bool:
+    now = datetime.now(timezone.utc)
+    doc = await db.preview_throttles.find_one({"_id": user_id})
+    started = doc.get("window_started_at") if doc else None
+    if started and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    if doc and started and now < started + PREVIEW_WINDOW:
+        if doc.get("count", 0) >= PREVIEW_LIMIT:
+            return False
+        await db.preview_throttles.update_one({"_id": user_id}, {"$inc": {"count": 1}})
+        return True
+    await db.preview_throttles.update_one(
+        {"_id": user_id}, {"$set": {"window_started_at": now, "count": 1}}, upsert=True)
+    return True
+
+
 @api.post("/families")
 async def create_family(body: FamilyIn, user: dict = Depends(get_current_user)):
     if user.get("family_id"):
@@ -917,7 +943,7 @@ async def create_family(body: FamilyIn, user: dict = Depends(get_current_user)):
     fid = new_id("fam_")
     fam = {
         "family_id": fid, "name": body.name.strip(), "cover_photo": body.cover_photo,
-        "created_by": user["user_id"], "invite_code": uuid.uuid4().hex[:8].upper(),
+        "created_by": user["user_id"], "invite_code": new_invite_code(),
         "created_at": now_iso(),
     }
     await db.families.insert_one(fam)
@@ -1229,7 +1255,7 @@ async def get_invite(user: dict = Depends(get_current_user)):
     code = fam.get("invite_code")
     if not code:
         # backfill a code for demo/legacy families created before invite codes existed
-        code = uuid.uuid4().hex[:8].upper()
+        code = new_invite_code()
         await db.families.update_one({"family_id": fid}, {"$set": {"invite_code": code}})
     return {"invite_code": code, "family_name": fam["name"]}
 
@@ -1238,6 +1264,8 @@ async def get_invite(user: dict = Depends(get_current_user)):
 async def preview_family(code: str, user: dict = Depends(get_current_user)):
     """Look up a family by invite code (before joining) so a new member can pick
     the pending profile that represents them instead of creating a duplicate."""
+    if not await _preview_rate_ok(user["user_id"]):
+        raise HTTPException(status_code=429, detail="Too many invite lookups. Please try again shortly.")
     code = (code or "").strip().upper()
     fam = await db.families.find_one({"invite_code": code}, {"_id": 0})
     if not fam:
@@ -1246,7 +1274,12 @@ async def preview_family(code: str, user: dict = Depends(get_current_user)):
         {"family_id": fam["family_id"], "linked_user_id": None}, {"_id": 0}
     ).to_list(200)
     fields = ("member_id", "name", "relationship", "role", "photo_url", "color", "is_child")
-    members = [{k: m.get(k) for k in fields} for m in pend]
+    members = []
+    for m in pend:
+        row = {k: m.get(k) for k in fields}
+        if m.get("is_child"):
+            row["photo_url"] = None  # don't expose children's photos to a mere code holder
+        members.append(row)
     return {"family_name": fam["name"], "pending_members": members}
 
 
@@ -2011,14 +2044,14 @@ async def create_shopping_list(body: ShoppingListIn, user: dict = Depends(get_cu
 async def delete_shopping_list(list_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.shopping_lists.delete_one({"list_id": list_id, "family_id": fid})
-    await db.shopping_items.delete_many({"list_id": list_id})
+    await db.shopping_items.delete_many({"list_id": list_id, "family_id": fid})
     return {"ok": True}
 
 
 @api.get("/shopping/lists/{list_id}/items")
 async def shopping_items(list_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    return await db.shopping_items.find({"list_id": list_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    fid = require_family(user)
+    return await db.shopping_items.find({"list_id": list_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(500)
 
 
 @api.post("/shopping/lists/{list_id}/items")
@@ -2036,19 +2069,19 @@ async def add_shopping_item(list_id: str, body: ShoppingItemIn, user: dict = Dep
 
 @api.post("/shopping/items/{item_id}/toggle")
 async def toggle_shopping_item(item_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    item = await db.shopping_items.find_one({"item_id": item_id}, {"_id": 0})
+    fid = require_family(user)
+    item = await db.shopping_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await db.shopping_items.update_one({"item_id": item_id}, {"$set": {"checked": not item["checked"]}})
+    await db.shopping_items.update_one({"item_id": item_id, "family_id": fid}, {"$set": {"checked": not item["checked"]}})
     item["checked"] = not item["checked"]
     return item
 
 
 @api.delete("/shopping/items/{item_id}")
 async def delete_shopping_item(item_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    await db.shopping_items.delete_one({"item_id": item_id})
+    fid = require_family(user)
+    await db.shopping_items.delete_one({"item_id": item_id, "family_id": fid})
     return {"ok": True}
 
 
@@ -2242,14 +2275,14 @@ async def create_todo_list(body: TodoListIn, user: dict = Depends(get_current_us
 async def delete_todo_list(list_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.todo_lists.delete_one({"list_id": list_id, "family_id": fid})
-    await db.todo_items.delete_many({"list_id": list_id})
+    await db.todo_items.delete_many({"list_id": list_id, "family_id": fid})
     return {"ok": True}
 
 
 @api.get("/todos/lists/{list_id}/items")
 async def todo_items(list_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    items = await db.todo_items.find({"list_id": list_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    fid = require_family(user)
+    items = await db.todo_items.find({"list_id": list_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(500)
     for i in items:
         if i.get("assignee_member_id"):
             i["assignee"] = await db.members.find_one({"member_id": i["assignee_member_id"]}, {"_id": 0})
@@ -2273,19 +2306,19 @@ async def add_todo_item(list_id: str, body: TodoItemIn, user: dict = Depends(get
 
 @api.post("/todos/items/{item_id}/toggle")
 async def toggle_todo_item(item_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    item = await db.todo_items.find_one({"item_id": item_id}, {"_id": 0})
+    fid = require_family(user)
+    item = await db.todo_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await db.todo_items.update_one({"item_id": item_id}, {"$set": {"done": not item["done"]}})
+    await db.todo_items.update_one({"item_id": item_id, "family_id": fid}, {"$set": {"done": not item["done"]}})
     item["done"] = not item["done"]
     return item
 
 
 @api.delete("/todos/items/{item_id}")
 async def delete_todo_item(item_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    await db.todo_items.delete_one({"item_id": item_id})
+    fid = require_family(user)
+    await db.todo_items.delete_one({"item_id": item_id, "family_id": fid})
     return {"ok": True}
 
 
@@ -5205,7 +5238,7 @@ app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
