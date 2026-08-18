@@ -16,6 +16,7 @@ export type User = {
   email: string;
   picture?: string | null;
   family_id?: string | null;
+  apple_linked?: boolean;
 };
 
 export type Member = {
@@ -37,6 +38,7 @@ type AuthContextValue = {
   register: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
+  linkWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -168,6 +170,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [persistToken]);
 
+  const linkWithApple = useCallback(async () => {
+    try {
+      const cred = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      await api("/auth/apple/link", {
+        method: "POST",
+        body: {
+          identity_token: cred.identityToken,
+          authorization_code: cred.authorizationCode,
+        },
+      });
+      await applyMe(); // refresh so `user.apple_linked` flips to true
+    } catch (e: any) {
+      if (e?.code === "ERR_REQUEST_CANCELED") return;
+      throw e;
+    }
+  }, [applyMe]);
+
   const logout = useCallback(async () => {
     setAuthToken(null);
     setMediaToken(null);
@@ -187,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, member, initializing, login, register, loginWithGoogle, loginWithApple, logout, refresh: applyMe }}
+      value={{ user, member, initializing, login, register, loginWithGoogle, loginWithApple, linkWithApple, logout, refresh: applyMe }}
     >
       {children}
     </AuthContext.Provider>

@@ -8,6 +8,7 @@ import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
+import { AppleSignInButton } from "@/src/components/AppleSignInButton";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
@@ -125,6 +126,38 @@ export default function AccountData() {
           </View>
         ) : null}
 
+        {/* sign-in methods (Apple ID linking — iOS only) */}
+        {Platform.OS === "ios" ? (
+          <View style={{ marginTop: spacing.xl }}>
+            <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
+              SIGN-IN METHODS
+            </AppText>
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border, padding: spacing.lg }, shadow(1)]}>
+              {user?.apple_linked ? (
+                <View style={styles.appleLinkedRow}>
+                  <Ionicons name="logo-apple" size={22} color={c.onSurface} />
+                  <AppText size={15} weight="semibold" style={{ flex: 1 }}>
+                    Apple ID linked
+                  </AppText>
+                  <Ionicons name="checkmark-circle" size={22} color={c.success} />
+                </View>
+              ) : (
+                <>
+                  <AppText size={13} color={c.onSurfaceSecondary} style={{ lineHeight: 20, marginBottom: spacing.md }}>
+                    Link your Apple ID so you can also sign in with Apple next time.
+                  </AppText>
+                  <AppleSignInButton
+                    action="link"
+                    variant="black"
+                    onError={flash}
+                    onSuccess={() => flash("Apple ID linked.")}
+                  />
+                </>
+              )}
+            </View>
+          </View>
+        ) : null}
+
         {/* danger zone */}
         <View style={{ marginTop: spacing["2xl"] }}>
           <AppText size={12} weight="bold" color={c.error} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
@@ -222,6 +255,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   card: { borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   field: { padding: spacing.md },
+  appleLinkedRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   divider: { height: 1, marginHorizontal: spacing.md },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   confirmCard: { width: "100%", maxWidth: 360, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },

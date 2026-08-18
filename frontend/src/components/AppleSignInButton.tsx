@@ -11,12 +11,16 @@ import { useAuth } from "@/src/auth/AuthContext";
  */
 export function AppleSignInButton({
   variant = "black",
+  action = "signin",
   onError,
+  onSuccess,
 }: {
   variant?: "black" | "white";
+  action?: "signin" | "link";
   onError?: (msg: string) => void;
+  onSuccess?: () => void;
 }) {
-  const { loginWithApple } = useAuth();
+  const { loginWithApple, linkWithApple } = useAuth();
   const [available, setAvailable] = useState(false);
 
   useEffect(() => {
@@ -40,7 +44,8 @@ export function AppleSignInButton({
       style={styles.btn}
       onPress={async () => {
         try {
-          await loginWithApple();
+          await (action === "link" ? linkWithApple() : loginWithApple());
+          onSuccess?.();
         } catch (e: any) {
           onError?.(e?.message || "Apple sign-in failed");
         }

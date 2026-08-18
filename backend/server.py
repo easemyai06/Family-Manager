@@ -710,6 +710,7 @@ def public_user(u: dict) -> dict:
     return {
         "user_id": u["user_id"], "name": u.get("name"), "email": u.get("email"),
         "picture": u.get("picture"), "family_id": u.get("family_id"),
+        "apple_linked": bool(u.get("apple_sub")),
     }
 
 
@@ -858,6 +859,30 @@ async def apple_auth(body: AppleAuthIn):
             await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"apple_refresh_token": rt}})
     u = await db.users.find_one({"user_id": u["user_id"]}, {"_id": 0})
     return {"token": make_token(u["user_id"]), "user": public_user(u)}
+
+
+@api.post("/auth/apple/link")
+async def apple_link(body: AppleAuthIn, user: dict = Depends(get_current_user)):
+    """Attach an Apple ID to the signed-in account so they can also sign in with Apple."""
+    try:
+        claims = await run_in_threadpool(_verify_apple_identity_token, body.identity_token)
+    except Exception as e:
+        logger.warning(f"apple link verify failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+    apple_sub = claims.get("sub")
+    if not apple_sub:
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+    other = await db.users.find_one({"apple_sub": apple_sub})
+    if other and other["user_id"] != user["user_id"]:
+        raise HTTPException(status_code=409, detail="This Apple ID is already linked to another account")
+    set_fields = {"apple_sub": apple_sub}
+    if body.authorization_code:
+        rt = await _apple_exchange_refresh_token(body.authorization_code)
+        if rt:
+            set_fields["apple_refresh_token"] = rt
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": set_fields})
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    return {"ok": True, "user": public_user(u)}
 
 
 @api.get("/auth/me")

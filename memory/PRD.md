@@ -230,3 +230,10 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Frontend: `loginWithApple` in `AuthContext`; reusable `src/components/AppleSignInButton.tsx` (native Apple button, iOS + `isAvailableAsync` only) added to Welcome/Login/Register. `expo-apple-authentication` installed + added to `app.json` plugins; `ios.usesAppleSignIn: true`.
 - Export compliance: `ios.config.usesNonExemptEncryption: false` set in `app.json`.
 - CAVEAT: Apple button + full sign-in flow are iOS-native only — NOT testable in web preview / Expo Go web. Must be validated on a real iOS build. Backend verified: invalid token -> 401; existing register/login/me unaffected (no regression).
+
+
+## Store launch prep — listing copy, data-safety, Apple linking, readiness re-run — June 2026
+- Apple ID account-linking: `POST /api/auth/apple/link` (authed) attaches `apple_sub` to the current user (409 if already linked elsewhere); `public_user` now returns `apple_linked`. Frontend `linkWithApple` in AuthContext; Account & Data screen shows a "SIGN-IN METHODS" section (iOS only) with a native "Continue with Apple" link button, or an "Apple ID linked ✓" row. Verified: link endpoint 401 unauth / 401 authed+bad token; `/auth/me` returns `apple_linked`; account screen renders (iOS-only section hidden on web).
+- Store listing copy: `/app/store_assets/store_listing.md` (App Store name/subtitle/keywords/promo/description + Google Play title/short/full + console fields).
+- Data-safety answers: `/app/store_assets/app_privacy_data_safety.md` (Apple App Privacy + Google Play Data safety, derived from in-app privacy policy; no ads/tracking, account-linked, deletion available).
+- Readiness re-run (App Store): 0 blockers, 0 warnings — SIWA + export-compliance resolved; remaining items are manual (device test, Apple revocation creds, Connect forms).
