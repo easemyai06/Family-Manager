@@ -259,3 +259,22 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Fix: restored the decorator; `get_invite` now self-heals a missing `invite_code` (backfills for demo/legacy families). Verified: `GET /api/families/invite` → 200 `{invite_code, family_name}`.
 - UX: moved the Invite Family card to the TOP of More (right under the profile) and made it tappable — opens the native Share sheet with an invite message (falls back to a toast with the code on web). Files: `backend/server.py`, `frontend/app/(tabs)/more.tsx`. Lint clean; screenshot-confirmed.
 - NOTE: fix is in preview only — user must Publish/redeploy to reach production.
+
+
+## Members: Joined/Pending + Admin add/remove + shareable invite link/WhatsApp — June 2026
+- Joined vs Pending: GET /api/families/me now tags each member `joined` (true iff a linked account
+  exists) + `is_me`, and returns `can_manage`/`viewer_role`/`viewer_member_id`. Family tab shows a
+  green "Joined" pill or amber "Pending" pill under every member so invites are visibly tracked.
+- Admin add/remove: admins/parents see "Manage" + "+ Add" on the Family tab. Manage mode puts a red ✕
+  on removable members (never on yourself or the admin) → confirm modal → DELETE /api/families/members/{id}
+  (admin/parent only; self=400, admin target=403; a joined member is unlinked (users.family_id=None,
+  must re-join) and pending members are just deleted).
+- Shareable invite link: `src/lib/invite.ts` builds Linking.createURL("/join",{invite:CODE}); the new
+  `app/join.tsx` route + AuthContext both capture `?invite=` into storage, and onboarding/create-family
+  pre-fills Join mode with the code. Web-safe share (Web Share API/clipboard fallback; RN Share.share
+  throws in the browser).
+- WhatsApp: the Add-member success screen offers "Invite via WhatsApp" (whatsapp:// → wa.me → share
+  fallback) + "Share invite link". `LSApplicationQueriesSchemes:["whatsapp"]` added to iOS infoPlist.
+- CAVEAT: deep-link auto-fill of the code + the actual WhatsApp launch are native-only (not testable in
+  web/Expo Go). Verified: backend 7/7 pytest (join/pending/remove/authorization); frontend flows
+  (badges, Manage remove modal 5→4, add success screen) screenshot-verified. Preview only — Publish to ship.

@@ -20,7 +20,8 @@
         "NSCameraUsageDescription": "Capture family moments to share",
         "NSMicrophoneUsageDescription": "Record voice messages for your family",
         "NSFaceIDUsageDescription": "Unlock your private Family Vault",
-        "NSLocationWhenInUseUsageDescription": "Share your location during a family SOS"
+        "NSLocationWhenInUseUsageDescription": "Share your location during a family SOS",
+        "LSApplicationQueriesSchemes": ["whatsapp"]
       }
     },
     "android": {

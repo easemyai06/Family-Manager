@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Share } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
 import { api } from "@/src/lib/api";
+import { shareInvite as shareInviteMsg } from "@/src/lib/invite";
 import Constants from "expo-constants";
 
 type Row = {
@@ -99,12 +100,8 @@ export default function More() {
 
   const shareInvite = async () => {
     if (!invite) return;
-    const msg =
-      `Join our family on FamilyHome! 🏡\n\n` +
-      `Download the app, create an account, tap "Join here" and enter this invite code:\n\n` +
-      `${invite.invite_code}`;
     try {
-      await Share.share({ message: msg });
+      await shareInviteMsg(invite.invite_code, invite.family_name);
     } catch {
       setNote(`Invite code: ${invite.invite_code}`);
       setTimeout(() => setNote(""), 2600);

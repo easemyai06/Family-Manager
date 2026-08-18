@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Pressable, Linking } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useRouter } from "expo-router";
@@ -12,6 +12,7 @@ import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, memberPalette } from "@/src/theme/tokens";
 import { api, uploadMedia } from "@/src/lib/api";
+import { shareInvite, shareInviteWhatsApp } from "@/src/lib/invite";
 
 const ROLES = [
   { key: "parent", label: "Parent" },
@@ -33,6 +34,14 @@ export default function AddMember() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [permDenied, setPermDenied] = useState(false);
+  const [invite, setInvite] = useState<any>(null);
+  const [added, setAdded] = useState<string | null>(null);
+
+  useEffect(() => {
+    api("/families/invite")
+      .then(setInvite)
+      .catch(() => {});
+  }, []);
 
   const pickImage = async () => {
     setPermDenied(false);
@@ -71,7 +80,7 @@ export default function AddMember() {
           is_child: role === "child",
         },
       });
-      router.back();
+      setAdded(name.trim());
     } catch (e: any) {
       setError(e.message || "Failed to add member");
     } finally {
@@ -86,12 +95,60 @@ export default function AddMember() {
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         <AppText family="display" weight="bold" size={18}>
-          Add Family Member
+          {added ? "Member Added" : "Add Family Member"}
         </AppText>
         <View style={{ width: 26 }} />
       </View>
 
-      <KeyboardAwareScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} bottomOffset={20} showsVerticalScrollIndicator={false}>
+      {added ? (
+        <View style={styles.successWrap}>
+          <View style={[styles.successBadge, { backgroundColor: c.success + "22" }]}>
+            <Ionicons name="checkmark-circle" size={44} color={c.success} />
+          </View>
+          <AppText family="display" weight="bold" size={20} center style={{ marginTop: spacing.lg }}>
+            {added} added to the family 🎉
+          </AppText>
+          <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginTop: 8, lineHeight: 20 }}>
+            Invite them to join so they can see everything. They'll appear as{" "}
+            <AppText size={14} weight="bold" color={c.warning}>
+              Pending
+            </AppText>{" "}
+            until they join.
+          </AppText>
+
+          {invite ? (
+            <View style={[styles.codePill, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+              <AppText size={12} color={c.onSurfaceTertiary}>
+                Invite code
+              </AppText>
+              <AppText family="display" weight="bold" size={22} color={c.brand} style={{ letterSpacing: 2 }}>
+                {invite.invite_code}
+              </AppText>
+            </View>
+          ) : null}
+
+          <View style={{ alignSelf: "stretch", gap: spacing.md, marginTop: spacing.xl }}>
+            <Pressable
+              onPress={() => invite && shareInviteWhatsApp(invite.invite_code, invite.family_name)}
+              style={[styles.waBtn, { backgroundColor: "#25D366" }]}
+              testID="invite-whatsapp-btn"
+            >
+              <Ionicons name="logo-whatsapp" size={22} color="#fff" />
+              <AppText size={15} weight="bold" color="#fff">
+                Invite via WhatsApp
+              </AppText>
+            </Pressable>
+            <Button
+              label="Share invite link"
+              variant="secondary"
+              onPress={() => invite && shareInvite(invite.invite_code, invite.family_name)}
+              testID="invite-share-link-btn"
+            />
+            <Button label="Done" variant="ghost" onPress={() => router.back()} testID="add-member-done" />
+          </View>
+        </View>
+      ) : (
+        <KeyboardAwareScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} bottomOffset={20} showsVerticalScrollIndicator={false}>
         <Pressable onPress={pickImage} style={styles.avatarPick} testID="member-photo-pick">
           <Avatar uri={localUri} name={name || "?"} size={96} color={color} ring />
           <View style={[styles.cameraBadge, { backgroundColor: c.brand }]}>
@@ -147,6 +204,7 @@ export default function AddMember() {
 
         <Button label="Add Member" onPress={save} loading={saving} style={{ marginTop: spacing.xl }} testID="save-member-btn" />
       </KeyboardAwareScrollView>
+      )}
     </View>
   );
 }
@@ -160,4 +218,8 @@ const styles = StyleSheet.create({
   roleChip: { borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: 10, borderWidth: 1.5 },
   colorRow: { flexDirection: "row", gap: spacing.md, flexWrap: "wrap" },
   colorDot: { width: 40, height: 40, borderRadius: 20 },
+  successWrap: { flex: 1, alignItems: "center", paddingHorizontal: spacing.xl, paddingTop: spacing["2xl"] },
+  successBadge: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
+  codePill: { alignItems: "center", borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, marginTop: spacing.xl },
+  waBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderRadius: radius.pill, paddingVertical: 15 },
 });

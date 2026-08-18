@@ -1,0 +1,40 @@
+{
+  "summary": "Batch #23 verification — Family members Joined/Pending + admin add/remove + tap-to-open invite. Backend: 7/7 pytest cases PASS in /app/backend/tests/test_family_members_join_remove.py. GET /api/families/me shape confirmed (joined + is_me per member, top-level can_manage=true / viewer_role=admin / viewer_member_id set for the demo admin). DELETE /api/families/members/{id}: self=400, admin (single-admin seed) protected, pending member=200 with count decrement + disappearance from GET, missing auth=401, non-admin (child joined via invite code) targeting another member=403. Frontend (390x844, fresh tester+<uuid>@fam.com + try-demo-btn): Family tab renders 5 members (Raj Joined + Priya/Aarav/Anaya/Meera Pending) with green Joined / amber Pending pills; Manage + \"+ Add\" both visible to admin; toggling Manage shows exactly 4 red-x badges (all non-me, non-admin) and none on Raj (self+admin). Tapping the badge opens confirm modal, tapping 'Remove from family' hits DELETE, member disappears (5→4, PASS). Add-member flow: '+ Add' → Name 'Uncle Test' → 'Add Member' → success screen renders 'Uncle Test added to the family 🎉', invite code (A97512A7), Invite via WhatsApp, Share invite link, and Done. Tapping WhatsApp did not crash. Done returns to Family tab and Uncle Test appears as a Pending pill. More tab still surfaces the invite code (A97512A7). ONE FRONTEND BUG: tapping 'Share invite link' on the Add-member success screen throws an uncaught 'Share is not supported in this browser' LogBox error on web because the onPress in /app/frontend/app/member/add.tsx:144 fires `shareInvite(...)` without awaiting/catching the promise. The Family tab's own share (family-invite-share) already wraps this in try/catch and is fine. Native/iOS/Android are unaffected — this only surfaces the LogBox on the web preview. No React Native deprecated-package issues detected.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "member/add.tsx (Share invite link button)",
+        "issue": "Tapping 'Share invite link' on the Add-member success screen shows a red 'Uncaught Error — Share is not supported in this browser' LogBox on web because the onPress fires shareInvite() without catching the promise rejection. The user has to Dismiss the overlay. On native this call works, so this is a web-preview crash only, but the pattern is unsafe.",
+        "testID": "invite-share-link-btn",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_family_members_join_remove.py",
+    "/app/test_reports/pytest/pytest_batch23_results.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/app/member/add.tsx wrap the Share invite link + WhatsApp onPress handlers in try/catch (or use void with a .catch), matching the family.tsx pattern: `onPress={async () => { try { await shareInvite(invite.invite_code, invite.family_name); } catch {} }}`. Consider also inside invite.ts::shareInvite falling back to Clipboard/alert on web (Share.share is unsupported in most browsers) so the button is actually useful on web previews."
+  ],
+  "critical_code_review_comments": [
+    "server.py:932-949 GET /families/me correctly derives joined from linked_user_id and is_me from viewer.member_id — matches the exact contract requested. can_manage is bool(role in admin|parent). Clean.",
+    "server.py:1002-1021 DELETE /families/members/{id}: check ordering is correct — self-check (400) runs BEFORE admin-check (403), which is why the module test for admin-removal is only verifiable via seed audit (single admin=self). If you later want to prove the 403 admin path standalone, promote a second member to role='admin' then attempt to delete them; the branch is reachable.",
+    "server.py:1018-1019 when a joined member is removed the server unsets that user's family_id (they keep their login and can re-join). Good UX and matches the modal copy 'They\\'ll lose access and will need a new invite to re-join'.",
+    "frontend/app/(tabs)/family.tsx:70 `removable(m) = canManage && manage && !m.is_me && m.role !== 'admin'` — matches backend guard exactly, so a UI-only user can never even tap into a 400/403 state. Nice defensive parity.",
+    "frontend/src/lib/invite.ts:22-24 shareInvite unconditionally calls Share.share — on RN-Web this throws in most browsers. Either (a) guard with `if (Platform.OS === 'web' && !navigator.share) { await Clipboard.setStringAsync(...); Alert.alert(...); return; }`, or (b) wrap every call site in try/catch. Add.tsx line 144 is the missing catch that produced the LogBox in this run."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_family_members_join_remove.py (new — 7 pytest cases across TestFamiliesMeShape, TestRemoveMember, TestInviteEndpoint)"
+  ],
+  "success_rate": { "backend": "100% (7/7)", "frontend": "~95% — all functional flows pass; 1 web-only uncaught-promise bug on Share invite link" },
+  "seed_data_creation": "One throwaway user tester+<uuid>@fam.com registered + POST /api/seed/demo (Sharma demo family with 5 members: 1 admin/joined + 4 pending). Also one throwaway child+<uuid>@fam.com joined via invite code to prove the non-admin 403 path. Both accounts are torn down in the fixture teardown via DELETE /api/auth/account (admin deletion purges the entire family + all seeded content).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The Expo web app is a SPA that does NOT honour deep paths like /family — page.goto('.../family') resolves to the landing splash. Use `page.locator('text=Family').last.click(force=True)` to hit the bottom-tab-bar entry (or Home/Calendar/Chat/More). The bottom bar uses `<a>` in RN-Web but they have no scrapable href in this build, so text-based selector on the tab label is the reliable path. On the very first load an affection overlay ('On this day 7 years ago: Family Trip to Kerala') is stacked over Home — click somewhere neutral (e.g. mouse.click(20,400)) to dismiss before tapping tabs. Share.share is a WEB-ONLY BREAK — expect LogBox 'Share is not supported in this browser' on any RN Share.share call unless the site is behind https with a browser that exposes navigator.share (Chromium desktop does not). Do NOT flag as native regression.",
+  "rca_of_issue": "invite-share-link-btn (member/add.tsx:141-146): The Button component invokes onPress synchronously; onPress here is `() => invite && shareInvite(...)`. shareInvite returns a Promise that rejects with 'Share is not supported in this browser' on RN-Web (react-native-web's Share.share checks navigator.share and throws otherwise). Because the arrow function neither awaits nor .catches, the rejection becomes an unhandled promise rejection which RN's LogBox surfaces as an 'Uncaught Error' red overlay. Mitigation: (1) minimal fix — wrap the onPress body in try/catch matching family.tsx:50-55; (2) proper fix — inside shareInvite() detect web and fall back to `await Clipboard.setStringAsync(message); Alert.alert('Invite copied', 'The invite link + code has been copied to your clipboard.');` so the web preview actually shares something. WhatsApp button is unaffected because Linking.canOpenURL('https://wa.me/?text=...') returns true in web browsers, so shareInviteWhatsApp opens the wa.me URL and never falls through to Share.share."
+}

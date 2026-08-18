@@ -96,7 +96,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const m = url.match(/[?#&]session_id=([^&#]+)/);
       return m ? m[1] : null;
     };
+    // Capture an invite code carried on a deep link (frontend://join?invite=CODE)
+    // so the onboarding Join screen can auto-fill it after sign-in.
+    const captureInvite = (url?: string | null) => {
+      if (!url) return;
+      const m = url.match(/[?#&]invite=([^&#]+)/);
+      if (m) storage.setItem("pendingInviteCode", decodeURIComponent(m[1]).trim().toUpperCase());
+    };
     if (Platform.OS === "web") {
+      captureInvite(window.location.search);
       const sid = extract(window.location.hash) || extract(window.location.search);
       if (sid) {
         exchangeSessionId(sid).finally(() => {
@@ -107,10 +115,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       Linking.getInitialURL().then((url) => {
+        captureInvite(url);
         const sid = extract(url);
         if (sid) exchangeSessionId(sid);
       });
       const sub = Linking.addEventListener("url", ({ url }) => {
+        captureInvite(url);
         const sid = extract(url);
         if (sid) exchangeSessionId(sid);
       });

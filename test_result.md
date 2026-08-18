@@ -1446,3 +1446,49 @@ security_batch2:
 agent_communication_security2:
     -agent: "main"
     -message: "Security Audit #2 re-hardening. Verify (BACKEND): (1) Login throttle keyed on email+IP with XFF: send POST /api/auth/login with header X-Forwarded-For: 11.11.11.11 + a FAKE email + wrong pw 5x -> 6th=429 (Retry-After); the SAME fake email with X-Forwarded-For: 22.22.22.22 must be 401 (NOT 429) — proves a victim isn't locked from another network + no global lock; board@fam.com/secret123 valid login stays 200; success clears the lock. (2) serve_file still serves files to the owning family (admin token + media token both 200), no-token=401, cross-family=404 (register a throwaway user + POST /api/families, then DELETE /api/auth/account to clean up). (3) media token still rejected on normal APIs (Bearer media_token on /api/home => 401). REGRESSION (FRONTEND): images/avatars still load on Home/Family/Profile (media-token-only web URLs). Do NOT brute-force board's real email. Do NOT retest unrelated features."
+
+# ============ Batch #22 — Members: Joined/Pending + Admin add/remove + Invite link/WhatsApp ============
+batch22:
+  - task: "Members joined-vs-pending + viewer role on GET /api/families/me"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /families/me now annotates each member with joined(bool)=has linked_user_id and is_me, and returns viewer_member_id, viewer_role, can_manage(admin/parent). Curl-verified: admin sees can_manage true, joined flags correct."
+  - task: "DELETE /api/families/members/{id} — admin/parent removes a member"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Admin/parent only (403 otherwise). Can't remove self (400) or an admin member (403). Joined members are unlinked (users.family_id=None) then member doc deleted; pending members just deleted. Curl: self=400, pending remove=200, count 8->7."
+  - task: "Family tab: Joined/Pending badges, Manage mode + remove modal, invite card"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/family.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "SCREENSHOT-VERIFIED (web, testdad): green Joined / amber Pending pills under each member; Manage + Add shown to admins; in Manage mode removable members show a red x -> confirm modal -> DELETE. Invite card shares link+code."
+  - task: "Add member success -> Invite via WhatsApp / Share link; deep-link auto-fill code"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/member/add.tsx, frontend/src/lib/invite.ts, frontend/app/join.tsx, frontend/src/auth/AuthContext.tsx, frontend/app/onboarding/create-family.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "After adding a member, a success view offers 'Invite via WhatsApp' (whatsapp:// -> wa.me -> Share fallback) and 'Share invite link'. Link = Linking.createURL('/join',{invite:CODE}); app/join.tsx + AuthContext capture ?invite= into storage; onboarding pre-fills Join mode. Deep-link auto-fill + WhatsApp only fully work on a native build (not web/Expo Go)."
+agent_communication_batch22:
+    -agent: "main"
+    -message: "Batch #22. Use a FRESH account: register tester+<rand>@fam.com/secret123, then tap 'Explore the Sharma Family' (try-demo-btn) to seed a demo family where you are the ADMIN (Raj). Do NOT disturb shared demo accounts. BACKEND to verify: (1) GET /api/families/me returns per-member joined + is_me and top-level can_manage/viewer_role (admin=true). (2) DELETE /api/families/members/{id}: as admin, removing a PENDING member (linked_user_id null) => 200 and member count drops; removing SELF => 400; removing an admin member => 403. (3) Non-admin auth: a member whose role is child/adult must get 403 on DELETE (you can PATCH a member's role to 'adult' won't help since it's not linked; instead just assert the 403 branch by calling DELETE without admin/parent — e.g. there is only one linked admin in a fresh demo, so this branch is covered by code review; do a best-effort). FRONTEND to verify: Family tab shows green 'Joined' vs amber 'Pending' pills; admin sees 'Manage' + '+ Add'; tapping Manage shows red x on removable members; tapping x opens a confirm modal; confirming removes the member and the list refreshes. Add flow: '+ Add' -> fill name -> Add Member -> success screen with 'Invite via WhatsApp' + 'Share invite link' + 'Done'. NOTE: deep-link auto-fill of the code and the WhatsApp launch can't be exercised on web/Expo Go — just confirm the buttons render and don't crash. Do NOT retest unrelated older features."

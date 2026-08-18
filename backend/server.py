@@ -933,8 +933,20 @@ async def create_family(body: FamilyIn, user: dict = Depends(get_current_user)):
 async def my_family(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     fam = await db.families.find_one({"family_id": fid}, {"_id": 0})
-    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
-    return {"family": fam, "members": members}
+    viewer = await member_for_user(user)
+    raw = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    members = []
+    for m in raw:
+        m["joined"] = bool(m.get("linked_user_id"))
+        m["is_me"] = bool(viewer) and m.get("member_id") == viewer.get("member_id")
+        members.append(m)
+    return {
+        "family": fam,
+        "members": members,
+        "viewer_member_id": viewer.get("member_id") if viewer else None,
+        "viewer_role": viewer.get("role") if viewer else None,
+        "can_manage": bool(viewer and viewer.get("role") in ("admin", "parent")),
+    }
 
 
 @api.get("/families/members")
@@ -985,6 +997,28 @@ async def patch_member(member_id: str, body: MemberPatch, user: dict = Depends(g
     if updates:
         await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
     return await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+
+
+@api.delete("/families/members/{member_id}")
+async def remove_member(member_id: str, user: dict = Depends(get_current_user)):
+    """Admin/parent removes a family member. Joined members are unlinked from the
+    family (they keep their login but must re-join); pending members are deleted.
+    You can't remove yourself or the family admin."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not (mine and mine.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents or admins can remove members")
+    target = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if target["member_id"] == mine["member_id"]:
+        raise HTTPException(status_code=400, detail="You can't remove yourself")
+    if target.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="The family admin can't be removed")
+    if target.get("linked_user_id"):
+        await db.users.update_one({"user_id": target["linked_user_id"]}, {"$set": {"family_id": None}})
+    await db.members.delete_one({"member_id": member_id, "family_id": fid})
+    return {"ok": True}
 
 
 @api.patch("/families/members/{member_id}/status")

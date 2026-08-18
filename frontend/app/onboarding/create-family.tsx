@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
 import { api } from "@/src/lib/api";
+import { storage } from "@/src/utils/storage";
 
 type Mode = "menu" | "create" | "join";
 
@@ -24,6 +25,19 @@ export default function CreateFamily() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  // If the user arrived via an invite deep link, jump straight to Join with the
+  // code pre-filled.
+  useEffect(() => {
+    (async () => {
+      const code = await storage.getItem<string>("pendingInviteCode", "");
+      if (code) {
+        setCode(code);
+        setMode("join");
+        await storage.removeItem("pendingInviteCode");
+      }
+    })();
+  }, []);
 
   const run = async (key: string, fn: () => Promise<any>) => {
     setError("");
