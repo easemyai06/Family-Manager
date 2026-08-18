@@ -250,6 +250,9 @@ async def get_current_user(authorization: Optional[str] = Header(None),
     # media-scoped tokens are read-only file tokens; never valid for the API
     if payload.get("scope") == "media":
         raise HTTPException(status_code=401, detail="Invalid token")
+    # helper tokens are a separate principal — never valid on family-member routes
+    if payload.get("account_type") == "helper":
+        raise HTTPException(status_code=401, detail="Invalid token")
     user = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -3042,6 +3045,20 @@ async def home(user: dict = Depends(get_current_user)):
         if msg_total >= 800 or media_files >= 120:
             storage_hint = {"messages": msg_total, "media_files": media_files}
 
+    helpers_today = []
+    if mine and mine.get("role") in ("admin", "parent"):
+        async for h in db.helpers.find({"family_id": fid, "status": "active"}, {"_id": 0}).limit(6):
+            tasks = await _helper_today_tasks(h)
+            role = ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])
+            helpers_today.append({
+                "helper_id": h["helper_id"], "name": h.get("name"),
+                "role_label": role["label"], "role_icon": role["icon"], "photo_url": h.get("photo_url"),
+                "on_duty": _within_hours(h), "tasks_total": len(tasks),
+                "tasks_done": sum(1 for t in tasks if t.get("done")),
+                "next_task": next(({"title": t.get("title"), "due_time": t.get("due_time")}
+                                   for t in tasks if not t.get("done")), None),
+            })
+
     return {
         "family": fam,
         "me": mine,
@@ -3069,6 +3086,7 @@ async def home(user: dict = Depends(get_current_user)):
         "today_summary": today_summary,
         "notices": notices,
         "storage_hint": storage_hint,
+        "helpers_today": helpers_today,
     }
 
 
@@ -5874,6 +5892,780 @@ async def seed_demo(user: dict = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Trusted Helpers — a separate, restricted principal (NOT family members)
+# ---------------------------------------------------------------------------
+HELPER_TOKEN_DAYS = 45
+
+PERMISSION_KEYS = [
+    "tasks", "calendar", "child_schedule", "meals", "shopping", "emergency_contacts",
+    "medical", "documents", "location", "chat", "home_instructions", "pickup_drop",
+]
+PERMISSION_LABELS = {
+    "tasks": "Assigned tasks", "calendar": "Calendar events", "child_schedule": "Child schedule",
+    "meals": "Meal instructions", "shopping": "Shopping", "emergency_contacts": "Emergency contacts",
+    "medical": "Medical information", "documents": "Documents", "location": "Location",
+    "chat": "Parent chat", "home_instructions": "Home instructions", "pickup_drop": "Pickup / drop details",
+}
+HELPER_ROLES = [
+    {"key": "house_help", "label": "House Help", "icon": "🧹", "perms": ["tasks", "home_instructions", "shopping", "chat", "calendar"]},
+    {"key": "nanny", "label": "Nanny / Child Caretaker", "icon": "🍼", "perms": ["tasks", "child_schedule", "meals", "calendar", "emergency_contacts", "chat", "pickup_drop"]},
+    {"key": "elder_caretaker", "label": "Elder Caretaker", "icon": "🧓", "perms": ["tasks", "calendar", "meals", "emergency_contacts", "chat"]},
+    {"key": "cook", "label": "Cook", "icon": "👨‍🍳", "perms": ["tasks", "meals", "shopping", "home_instructions", "chat"]},
+    {"key": "driver", "label": "Driver", "icon": "🚗", "perms": ["tasks", "pickup_drop", "location", "emergency_contacts", "chat"]},
+    {"key": "tutor", "label": "Tutor", "icon": "📚", "perms": ["tasks", "child_schedule", "calendar", "chat"]},
+    {"key": "pet_caretaker", "label": "Pet Caretaker", "icon": "🐾", "perms": ["tasks", "calendar", "chat"]},
+    {"key": "nurse", "label": "Nurse", "icon": "⚕️", "perms": ["tasks", "calendar", "medical", "emergency_contacts", "chat"]},
+    {"key": "babysitter", "label": "Babysitter", "icon": "🧸", "perms": ["tasks", "child_schedule", "meals", "emergency_contacts", "chat"], "temporary": True},
+    {"key": "temporary", "label": "Temporary Helper", "icon": "⏳", "perms": ["tasks", "chat"], "temporary": True},
+    {"key": "custom", "label": "Custom Helper", "icon": "✨", "perms": ["tasks", "chat"]},
+]
+ROLE_MAP = {r["key"]: r for r in HELPER_ROLES}
+
+
+class HelperAccessIn(BaseModel):
+    mode: str = "permanent"                # permanent | dates | temporary
+    start_date: Optional[str] = None       # YYYY-MM-DD
+    end_date: Optional[str] = None          # YYYY-MM-DD (inclusive)
+    days: List[int] = []                    # 0=Mon..6=Sun; [] = every day
+    start_time: Optional[str] = None        # HH:MM working hours (soft)
+    end_time: Optional[str] = None
+
+
+class HelperIn(BaseModel):
+    name: str
+    role: str = "house_help"
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    photo_url: Optional[str] = None
+    assigned_all: bool = False
+    assigned_member_ids: List[str] = []
+    permissions: Optional[dict] = None      # {key: bool}; None => role defaults
+    access: HelperAccessIn = HelperAccessIn()
+    username: Optional[str] = None          # optional: parent sets login directly
+    pin: Optional[str] = None
+
+
+class HelperPatch(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    phone: Optional[str] = None
+    photo_url: Optional[str] = None
+    assigned_all: Optional[bool] = None
+    assigned_member_ids: Optional[List[str]] = None
+    permissions: Optional[dict] = None
+    access: Optional[HelperAccessIn] = None
+
+
+class HelperActivateIn(BaseModel):
+    code: str
+    username: str
+    pin: str
+
+
+class HelperLoginIn(BaseModel):
+    username: str
+    pin: str
+
+
+class HelperTaskIn(BaseModel):
+    title: str
+    instructions: Optional[str] = None
+    for_member_id: Optional[str] = None
+    due_time: Optional[str] = None          # HH:MM
+    priority: str = "normal"                # low | normal | high
+    schedule: str = "once"                  # once | daily | weekly | monthly
+    days: List[int] = []                    # weekly: 0=Mon..6=Sun
+    date: Optional[str] = None              # once: YYYY-MM-DD (default today)
+    checklist: List[str] = []
+    photo_url: Optional[str] = None
+    require_proof: Optional[str] = None     # none | photo | note | confirm
+    category: str = "chore"                 # chore | meal | pickup | care | shopping | other
+
+
+class HelperTaskPatch(BaseModel):
+    title: Optional[str] = None
+    instructions: Optional[str] = None
+    for_member_id: Optional[str] = None
+    due_time: Optional[str] = None
+    priority: Optional[str] = None
+    schedule: Optional[str] = None
+    days: Optional[List[int]] = None
+    date: Optional[str] = None
+    checklist: Optional[List[str]] = None
+    require_proof: Optional[str] = None
+    category: Optional[str] = None
+
+
+class HelperTaskCompleteIn(BaseModel):
+    note: Optional[str] = None
+    photo_url: Optional[str] = None
+    checklist_done: List[str] = []
+
+
+class HelperIssueIn(BaseModel):
+    reason: str
+    note: Optional[str] = None
+
+
+def make_helper_token(helper_id: str, family_id: str, tv: int, jti: str) -> str:
+    payload = {"account_type": "helper", "helper_id": helper_id, "family_id": family_id,
+               "tv": tv, "jti": jti,
+               "exp": datetime.now(timezone.utc) + timedelta(days=HELPER_TOKEN_DAYS)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def _resolve_perms(role: str, overrides: Optional[dict]) -> dict:
+    defaults = set(ROLE_MAP.get(role, ROLE_MAP["custom"])["perms"])
+    perms = {k: (k in defaults) for k in PERMISSION_KEYS}
+    perms["tasks"] = True  # a helper always sees their own assigned tasks
+    if overrides:
+        for k in PERMISSION_KEYS:
+            if k in overrides:
+                perms[k] = bool(overrides[k])
+    perms["tasks"] = True
+    return perms
+
+
+def _helper_access_ok(h: dict) -> bool:
+    """Hard access-window check (date range / temporary expiry). Working hours are
+    soft and NOT enforced here — permissions remain the real control."""
+    acc = h.get("access") or {}
+    mode = acc.get("mode", "permanent")
+    today = datetime.now(timezone.utc).date()
+    if mode in ("dates", "temporary"):
+        sd, ed = acc.get("start_date"), acc.get("end_date")
+        try:
+            if sd and today < datetime.strptime(sd, "%Y-%m-%d").date():
+                return False
+            if ed and today > datetime.strptime(ed, "%Y-%m-%d").date():
+                return False
+        except ValueError:
+            return True
+    return True
+
+
+def _within_hours(h: dict) -> bool:
+    """Soft working-hours/day check for UI hints (never used to block reads)."""
+    acc = h.get("access") or {}
+    now = datetime.now(timezone.utc)
+    days = acc.get("days") or []
+    if days and now.weekday() not in days:
+        return False
+    st, et = acc.get("start_time"), acc.get("end_time")
+    if st and et:
+        try:
+            cur = now.hour * 60 + now.minute
+            sh, sm = [int(x) for x in st.split(":")]
+            eh, em = [int(x) for x in et.split(":")]
+            if not (sh * 60 + sm <= cur < eh * 60 + em):
+                return False
+        except ValueError:
+            return True
+    return True
+
+
+async def get_current_helper(authorization: Optional[str] = Header(None),
+                             token: Optional[str] = Query(None)):
+    raw = None
+    if authorization and authorization.lower().startswith("bearer "):
+        raw = authorization.split(" ", 1)[1].strip()
+    elif token:
+        raw = token
+    if not raw:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(raw, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if payload.get("account_type") != "helper":
+        raise HTTPException(status_code=401, detail="Invalid token")
+    h = await db.helpers.find_one(
+        {"helper_id": payload.get("helper_id"), "family_id": payload.get("family_id")}, {"_id": 0})
+    if not h or h.get("status") != "active":
+        raise HTTPException(status_code=401, detail="Helper access unavailable")
+    if payload.get("tv") != h.get("token_version", 0):
+        raise HTTPException(status_code=401, detail="Session expired")
+    sess = await db.helper_sessions.find_one({"jti": payload.get("jti"), "revoked_at": None}, {"_id": 0})
+    if not sess:
+        raise HTTPException(status_code=401, detail="Session expired")
+    if not _helper_access_ok(h):
+        raise HTTPException(status_code=403, detail="Your access period has ended")
+    await db.helper_sessions.update_one({"jti": payload.get("jti")}, {"$set": {"last_seen_at": now_iso()}})
+    return h
+
+
+def require_helper_permission(key: str):
+    async def dep(h: dict = Depends(get_current_helper)):
+        perms = h.get("permissions") or {}
+        if not perms.get(key):
+            raise HTTPException(status_code=403, detail="You don't have access to this")
+        return h
+    return dep
+
+
+def _helper_can_see_member(h: dict, member_id: Optional[str]) -> bool:
+    if not member_id:
+        return True
+    if h.get("assigned_all"):
+        return True
+    return member_id in (h.get("assigned_member_ids") or [])
+
+
+async def _helper_audit(h: dict, action: str, detail: Optional[str] = None):
+    await db.helper_audit.insert_one({
+        "audit_id": new_id("aud_"), "helper_id": h["helper_id"], "family_id": h["family_id"],
+        "action": action, "detail": detail, "created_at": now_iso()})
+
+
+async def _require_helper_manager(user: dict):
+    """Only a parent/admin may manage helpers. Returns the family id."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not (mine and mine.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents or admins can manage helpers")
+    return fid
+
+
+async def _member_cards(fid: str, ids: List[str]) -> List[dict]:
+    out = []
+    for mid in ids:
+        m = await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0})
+        if m:
+            out.append({"member_id": mid, "name": m.get("name"), "photo_url": m.get("photo_url"), "color": m.get("color")})
+    return out
+
+
+def helper_public(h: dict) -> dict:
+    role = ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])
+    perms = h.get("permissions") or {}
+    return {
+        "helper_id": h["helper_id"], "family_id": h["family_id"], "name": h.get("name"),
+        "role": h.get("role"), "role_label": role["label"], "role_icon": role["icon"],
+        "phone": h.get("phone"), "photo_url": h.get("photo_url"), "status": h.get("status"),
+        "username": h.get("username"),
+        "assigned_all": bool(h.get("assigned_all")), "assigned_member_ids": h.get("assigned_member_ids") or [],
+        "permissions": perms, "access": h.get("access") or {},
+        "can_access": [PERMISSION_LABELS[k] for k in PERMISSION_KEYS if perms.get(k)],
+        "cannot_access": [PERMISSION_LABELS[k] for k in PERMISSION_KEYS if not perms.get(k)],
+        "in_hours": _within_hours(h), "created_at": h.get("created_at"),
+    }
+
+
+# --- Parent/admin: manage helpers -----------------------------------------
+@api.get("/helpers/roles")
+async def helper_roles(user: dict = Depends(get_current_user)):
+    await _require_helper_manager(user)
+    return {"roles": HELPER_ROLES, "permissions": [{"key": k, "label": PERMISSION_LABELS[k]} for k in PERMISSION_KEYS]}
+
+
+@api.get("/helpers")
+async def list_helpers(user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    out = []
+    async for h in db.helpers.find({"family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0}).sort("created_at", -1):
+        pub = helper_public(h)
+        pub["assigned_members"] = await _member_cards(fid, h.get("assigned_member_ids") or [])
+        # today's task summary
+        tasks = await _helper_today_tasks(h)
+        pub["tasks_total"] = len(tasks)
+        pub["tasks_done"] = sum(1 for t in tasks if t.get("done"))
+        pub["next_task"] = next((t for t in tasks if not t.get("done")), None)
+        out.append(pub)
+    return {"helpers": out}
+
+
+@api.post("/helpers")
+async def create_helper(body: HelperIn, request: Request, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    if body.role not in ROLE_MAP:
+        raise HTTPException(status_code=400, detail="Unknown helper role")
+    # validate assigned members belong to this family
+    assigned = []
+    if not body.assigned_all:
+        for mid in body.assigned_member_ids:
+            if await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 1}):
+                assigned.append(mid)
+    hid = new_id("help_")
+    doc = {
+        "helper_id": hid, "family_id": fid, "name": body.name.strip(),
+        "role": body.role, "phone": (body.phone or "").strip() or None,
+        "email": (body.email or "").strip().lower() or None, "photo_url": body.photo_url,
+        "assigned_all": bool(body.assigned_all), "assigned_member_ids": assigned,
+        "permissions": _resolve_perms(body.role, body.permissions),
+        "access": body.access.dict(), "status": "pending", "token_version": 0,
+        "username": None, "pin_hash": None, "invite_code": None, "invite_expires": None,
+        "failed_logins": 0, "locked_until": None,
+        "created_by": user["user_id"], "created_at": now_iso(),
+    }
+    invite_code = None
+    # Parent can set a direct username+PIN, OR we mint an invite code for self-activation.
+    uname = (body.username or "").strip().lower() or None
+    if uname:
+        if not re.fullmatch(r"[a-z0-9_.]{3,20}", uname):
+            raise HTTPException(status_code=400, detail="Username must be 3–20 letters, numbers, dots or underscores")
+        if await db.helpers.find_one({"username": uname}):
+            raise HTTPException(status_code=400, detail="That username is already taken")
+        if not _valid_pin(body.pin):
+            raise HTTPException(status_code=400, detail="PIN must be 4–6 digits")
+        doc.update({"username": uname, "pin_hash": pwd_context.hash(body.pin), "status": "active"})
+    else:
+        invite_code = new_invite_code()
+        doc.update({"invite_code": invite_code,
+                    "invite_expires": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()})
+    await db.helpers.insert_one(doc)
+    base = _public_base_url(request)
+    return {"helper": helper_public(doc), "invite_code": invite_code,
+            "invite_link": f"{base}/helper-login?code={invite_code}" if invite_code else None}
+
+
+@api.get("/helpers/{helper_id}")
+async def get_helper(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    pub = helper_public(h)
+    pub["assigned_members"] = await _member_cards(fid, h.get("assigned_member_ids") or [])
+    pub["has_login"] = bool(h.get("username"))
+    pub["invite_code"] = h.get("invite_code")
+    return {"helper": pub}
+
+
+@api.patch("/helpers/{helper_id}")
+async def patch_helper(helper_id: str, body: HelperPatch, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    updates = {}
+    if body.name is not None:
+        updates["name"] = body.name.strip()
+    if body.phone is not None:
+        updates["phone"] = body.phone.strip() or None
+    if body.photo_url is not None:
+        updates["photo_url"] = body.photo_url
+    role = body.role if body.role is not None else h.get("role")
+    if body.role is not None:
+        if body.role not in ROLE_MAP:
+            raise HTTPException(status_code=400, detail="Unknown helper role")
+        updates["role"] = body.role
+    if body.permissions is not None:
+        merged = {**(h.get("permissions") or {}), **body.permissions}
+        updates["permissions"] = _resolve_perms(role, merged)
+    elif body.role is not None:
+        updates["permissions"] = _resolve_perms(role, None)
+    if body.assigned_all is not None:
+        updates["assigned_all"] = bool(body.assigned_all)
+    if body.assigned_member_ids is not None:
+        assigned = [mid for mid in body.assigned_member_ids
+                    if await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 1})]
+        updates["assigned_member_ids"] = assigned
+    if body.access is not None:
+        updates["access"] = body.access.dict()
+    if updates:
+        await db.helpers.update_one({"helper_id": helper_id, "family_id": fid}, {"$set": updates})
+    h2 = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 0})
+    await _helper_audit(h2, "permissions_changed", "Parent updated helper access")
+    pub = helper_public(h2)
+    pub["assigned_members"] = await _member_cards(fid, h2.get("assigned_member_ids") or [])
+    return {"helper": pub}
+
+
+@api.post("/helpers/{helper_id}/pause")
+async def pause_helper(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    r = await db.helpers.update_one({"helper_id": helper_id, "family_id": fid, "status": "active"},
+                                    {"$set": {"status": "paused"}})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Active helper not found")
+    return {"ok": True, "status": "paused"}
+
+
+@api.post("/helpers/{helper_id}/resume")
+async def resume_helper(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    r = await db.helpers.update_one({"helper_id": helper_id, "family_id": fid, "status": "paused"},
+                                    {"$set": {"status": "active"}})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Paused helper not found")
+    return {"ok": True, "status": "active"}
+
+
+@api.delete("/helpers/{helper_id}")
+async def remove_helper(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    await db.helpers.update_one({"helper_id": helper_id, "family_id": fid},
+                                {"$set": {"status": "removed", "username": None, "pin_hash": None,
+                                          "invite_code": None},
+                                 "$inc": {"token_version": 1}})
+    await db.helper_sessions.update_many({"helper_id": helper_id, "revoked_at": None},
+                                         {"$set": {"revoked_at": now_iso()}})
+    return {"ok": True}
+
+
+@api.post("/helpers/{helper_id}/regenerate-invite")
+async def regenerate_helper_invite(helper_id: str, request: Request, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    code = new_invite_code()
+    await db.helpers.update_one({"helper_id": helper_id, "family_id": fid},
+                                {"$set": {"invite_code": code,
+                                          "invite_expires": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                                          "status": "pending", "username": None, "pin_hash": None},
+                                 "$inc": {"token_version": 1}})
+    await db.helper_sessions.update_many({"helper_id": helper_id, "revoked_at": None},
+                                         {"$set": {"revoked_at": now_iso()}})
+    base = _public_base_url(request)
+    return {"invite_code": code, "invite_link": f"{base}/helper-login?code={code}"}
+
+
+@api.post("/helpers/{helper_id}/reset-pin")
+async def reset_helper_pin(helper_id: str, body: HelperLoginIn, user: dict = Depends(get_current_user)):
+    """Parent directly sets/replaces the helper's username + PIN."""
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    uname = (body.username or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_.]{3,20}", uname or ""):
+        raise HTTPException(status_code=400, detail="Username must be 3–20 letters, numbers, dots or underscores")
+    clash = await db.helpers.find_one({"username": uname})
+    if clash and clash.get("helper_id") != helper_id:
+        raise HTTPException(status_code=400, detail="That username is already taken")
+    if not _valid_pin(body.pin):
+        raise HTTPException(status_code=400, detail="PIN must be 4–6 digits")
+    await db.helpers.update_one({"helper_id": helper_id, "family_id": fid},
+                                {"$set": {"username": uname, "pin_hash": pwd_context.hash(body.pin),
+                                          "status": "active", "invite_code": None,
+                                          "failed_logins": 0, "locked_until": None},
+                                 "$inc": {"token_version": 1}})
+    await db.helper_sessions.update_many({"helper_id": helper_id, "revoked_at": None},
+                                         {"$set": {"revoked_at": now_iso()}})
+    return {"ok": True, "username": uname, "status": "active"}
+
+
+@api.get("/helpers/{helper_id}/sessions")
+async def helper_sessions(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    if not await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Helper not found")
+    out = await db.helper_sessions.find(
+        {"helper_id": helper_id, "revoked_at": None}, {"_id": 0}).sort("last_seen_at", -1).to_list(20)
+    return {"sessions": out}
+
+
+@api.post("/helpers/{helper_id}/signout-all")
+async def helper_signout_all(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    if not await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Helper not found")
+    await db.helpers.update_one({"helper_id": helper_id, "family_id": fid}, {"$inc": {"token_version": 1}})
+    await db.helper_sessions.update_many({"helper_id": helper_id, "revoked_at": None},
+                                         {"$set": {"revoked_at": now_iso()}})
+    return {"ok": True}
+
+
+@api.get("/helpers/{helper_id}/audit")
+async def helper_audit_log(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    if not await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Helper not found")
+    out = await db.helper_audit.find({"helper_id": helper_id}, {"_id": 0}).sort("created_at", -1).to_list(60)
+    return {"events": out}
+
+
+# --- Parent/admin: assign & review helper tasks ---------------------------
+def helper_task_public(t: dict) -> dict:
+    return clean(dict(t))
+
+
+@api.post("/helpers/{helper_id}/tasks")
+async def create_helper_task(helper_id: str, body: HelperTaskIn, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    task = {
+        "task_id": new_id("htask_"), "helper_id": helper_id, "family_id": fid,
+        "title": body.title.strip(), "instructions": (body.instructions or "").strip() or None,
+        "for_member_id": body.for_member_id, "due_time": body.due_time,
+        "priority": body.priority if body.priority in ("low", "normal", "high") else "normal",
+        "schedule": body.schedule if body.schedule in ("once", "daily", "weekly", "monthly") else "once",
+        "days": body.days or [], "date": body.date or datetime.now(timezone.utc).date().isoformat(),
+        "checklist": body.checklist or [], "photo_url": body.photo_url,
+        "require_proof": body.require_proof if body.require_proof in ("photo", "note", "confirm") else None,
+        "category": body.category, "created_by": user["user_id"], "created_at": now_iso(),
+    }
+    await db.helper_tasks.insert_one(task)
+    return {"task": helper_task_public(task)}
+
+
+@api.get("/helpers/{helper_id}/tasks")
+async def list_helper_tasks(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    tasks = await db.helper_tasks.find({"helper_id": helper_id, "family_id": fid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"tasks": tasks}
+
+
+@api.patch("/helper-tasks/{task_id}")
+async def patch_helper_task(task_id: str, body: HelperTaskPatch, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    t = await db.helper_tasks.find_one({"task_id": task_id, "family_id": fid}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if updates:
+        await db.helper_tasks.update_one({"task_id": task_id, "family_id": fid}, {"$set": updates})
+    return {"task": await db.helper_tasks.find_one({"task_id": task_id, "family_id": fid}, {"_id": 0})}
+
+
+@api.delete("/helper-tasks/{task_id}")
+async def delete_helper_task(task_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await db.helper_tasks.delete_one({"task_id": task_id, "family_id": fid})
+    await db.helper_task_completions.delete_many({"task_id": task_id, "family_id": fid})
+    return {"ok": True}
+
+
+@api.get("/helpers/{helper_id}/activity")
+async def helper_activity(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    comps = await db.helper_task_completions.find(
+        {"helper_id": helper_id, "family_id": fid}, {"_id": 0}).sort("updated_at", -1).to_list(60)
+    tmap = {t["task_id"]: t for t in await db.helper_tasks.find({"helper_id": helper_id}, {"_id": 0}).to_list(500)}
+    for c in comps:
+        c["task_title"] = (tmap.get(c["task_id"]) or {}).get("title")
+    return {"activity": comps}
+
+
+# --- Helper today-task computation (shared) --------------------------------
+def _task_due_today(t: dict, today: date) -> bool:
+    sched = t.get("schedule", "once")
+    if sched == "daily":
+        return True
+    if sched == "weekly":
+        return today.weekday() in (t.get("days") or [])
+    if sched == "monthly":
+        try:
+            base = datetime.strptime(t.get("date") or "", "%Y-%m-%d").date()
+            return base.day == today.day
+        except ValueError:
+            return today.day == 1
+    return (t.get("date") or "") == today.isoformat()  # once
+
+
+async def _helper_today_tasks(h: dict) -> List[dict]:
+    today = datetime.now(timezone.utc).date()
+    tkey = today.isoformat()
+    raw = await db.helper_tasks.find({"helper_id": h["helper_id"], "family_id": h["family_id"]}, {"_id": 0}).to_list(300)
+    todays = [t for t in raw if _task_due_today(t, today)]
+    out = []
+    for t in todays:
+        comp = await db.helper_task_completions.find_one(
+            {"task_id": t["task_id"], "date": tkey}, {"_id": 0})
+        member = None
+        if t.get("for_member_id"):
+            m = await db.members.find_one({"member_id": t["for_member_id"]}, {"_id": 0})
+            if m:
+                member = {"member_id": m["member_id"], "name": m.get("name"), "photo_url": m.get("photo_url"), "color": m.get("color")}
+        out.append({**t, "member": member,
+                    "started": bool(comp and comp.get("started_at")),
+                    "done": bool(comp and comp.get("completed_at")),
+                    "completion": comp})
+    out.sort(key=lambda x: (x.get("done"), x.get("due_time") or "99:99"))
+    return out
+
+
+async def _notify_parents_helper(h: dict, title: str, subtitle: Optional[str] = None):
+    """Store a helper event; surfaced to parents via /helpers/{id}/activity + audit."""
+    await _helper_audit(h, "event", title + (f" — {subtitle}" if subtitle else ""))
+
+
+# --- Helper self-service (helper token) ------------------------------------
+@api.post("/helper/activate")
+async def helper_activate(body: HelperActivateIn, request: Request):
+    code = (body.code or "").strip().upper()
+    h = await db.helpers.find_one({"invite_code": code, "status": "pending"}, {"_id": 0})
+    exp = h.get("invite_expires") if h else None
+    valid = bool(h and exp and exp > now_iso())
+    if not valid:
+        raise HTTPException(status_code=400, detail="This invite is invalid or has expired. Ask the family for a new one.")
+    uname = (body.username or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_.]{3,20}", uname or ""):
+        raise HTTPException(status_code=400, detail="Username must be 3–20 letters, numbers, dots or underscores")
+    clash = await db.helpers.find_one({"username": uname})
+    if clash and clash.get("helper_id") != h["helper_id"]:
+        raise HTTPException(status_code=400, detail="That username is already taken")
+    if not _valid_pin(body.pin):
+        raise HTTPException(status_code=400, detail="PIN must be 4–6 digits")
+    await db.helpers.update_one({"helper_id": h["helper_id"]},
+                                {"$set": {"username": uname, "pin_hash": pwd_context.hash(body.pin),
+                                          "status": "active", "invite_code": None,
+                                          "activated_at": now_iso()}})
+    h = await db.helpers.find_one({"helper_id": h["helper_id"]}, {"_id": 0})
+    return await _issue_helper_session(h, request)
+
+
+HELPER_LOGIN_LIMIT = 5
+HELPER_LOCK = timedelta(minutes=15)
+
+
+@api.post("/helper/login")
+async def helper_login(body: HelperLoginIn, request: Request):
+    uname = (body.username or "").strip().lower()
+    ip = _client_ip(request)
+    key = f"helper:{uname}:{ip}"
+    await _reject_if_locked(key)
+    h = await db.helpers.find_one({"username": uname}, {"_id": 0})
+    stored = h.get("pin_hash") if (h and h.get("pin_hash")) else DUMMY_BCRYPT_HASH
+    ok = _valid_pin(body.pin) and pwd_context.verify(body.pin, stored)
+    if not h or not h.get("pin_hash") or not ok:
+        await _record_failure(key)
+        raise HTTPException(status_code=401, detail="Incorrect username or PIN")
+    if h.get("status") == "paused":
+        raise HTTPException(status_code=403, detail="Your access is paused. Please contact the family.")
+    if h.get("status") != "active":
+        raise HTTPException(status_code=403, detail="Your access is no longer available.")
+    if not _helper_access_ok(h):
+        raise HTTPException(status_code=403, detail="Your access period has ended.")
+    await _clear_failures(key)
+    return await _issue_helper_session(h, request)
+
+
+async def _issue_helper_session(h: dict, request: Request) -> dict:
+    jti = uuid.uuid4().hex
+    tv = h.get("token_version", 0)
+    now = datetime.now(timezone.utc)
+    await db.helper_sessions.insert_one({
+        "session_id": new_id("hs_"), "helper_id": h["helper_id"], "family_id": h["family_id"],
+        "jti": jti, "token_version": tv, "created_at": now.isoformat(),
+        "expires_at": now + timedelta(days=HELPER_TOKEN_DAYS), "revoked_at": None,
+        "last_seen_at": now.isoformat(),
+        "device": (request.headers.get("user-agent") or "")[:120] if request else None,
+    })
+    token = make_helper_token(h["helper_id"], h["family_id"], tv, jti)
+    return {"token": token, "helper": helper_public(h)}
+
+
+@api.get("/helper/me")
+async def helper_me(h: dict = Depends(get_current_helper)):
+    fam = await db.families.find_one({"family_id": h["family_id"]}, {"_id": 0, "name": 1})
+    pub = helper_public(h)
+    pub["assigned_members"] = await _member_cards(h["family_id"], h.get("assigned_member_ids") or [])
+    pub["family_name"] = fam.get("name") if fam else None
+    return {"helper": pub}
+
+
+@api.get("/helper/dashboard")
+async def helper_dashboard(h: dict = Depends(get_current_helper)):
+    tasks = await _helper_today_tasks(h)
+    fam = await db.families.find_one({"family_id": h["family_id"]}, {"_id": 0, "name": 1})
+    return {
+        "name": h.get("name"), "role_label": ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"],
+        "family_name": fam.get("name") if fam else None,
+        "tasks": tasks, "total": len(tasks), "done": sum(1 for t in tasks if t.get("done")),
+        "assigned_members": await _member_cards(h["family_id"], h.get("assigned_member_ids") or []),
+        "permissions": h.get("permissions") or {},
+    }
+
+
+@api.get("/helper/tasks")
+async def helper_tasks(date: Optional[str] = None, h: dict = Depends(get_current_helper)):
+    return {"tasks": await _helper_today_tasks(h)}
+
+
+async def _get_helper_task(h: dict, task_id: str) -> dict:
+    t = await db.helper_tasks.find_one({"task_id": task_id, "helper_id": h["helper_id"]}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return t
+
+
+@api.post("/helper/tasks/{task_id}/start")
+async def helper_task_start(task_id: str, h: dict = Depends(get_current_helper)):
+    t = await _get_helper_task(h, task_id)
+    tkey = datetime.now(timezone.utc).date().isoformat()
+    await db.helper_task_completions.update_one(
+        {"task_id": task_id, "date": tkey},
+        {"$set": {"started_at": now_iso(), "updated_at": now_iso(), "helper_id": h["helper_id"],
+                  "family_id": h["family_id"], "status": "in_progress"},
+         "$setOnInsert": {"completion_id": new_id("hc_")}}, upsert=True)
+    await _notify_parents_helper(h, f"{h.get('name')} started “{t.get('title')}”")
+    return {"ok": True}
+
+
+@api.post("/helper/tasks/{task_id}/complete")
+async def helper_task_complete(task_id: str, body: HelperTaskCompleteIn, h: dict = Depends(get_current_helper)):
+    t = await _get_helper_task(h, task_id)
+    proof = t.get("require_proof")
+    if proof == "photo" and not body.photo_url:
+        raise HTTPException(status_code=400, detail="This task needs a photo to mark it done")
+    if proof == "note" and not (body.note or "").strip():
+        raise HTTPException(status_code=400, detail="This task needs a note to mark it done")
+    tkey = datetime.now(timezone.utc).date().isoformat()
+    at = now_iso()
+    await db.helper_task_completions.update_one(
+        {"task_id": task_id, "date": tkey},
+        {"$set": {"completed_at": at, "updated_at": at, "note": (body.note or "").strip() or None,
+                  "photo_url": body.photo_url, "checklist_done": body.checklist_done or [],
+                  "helper_id": h["helper_id"], "family_id": h["family_id"], "status": "done"},
+         "$setOnInsert": {"completion_id": new_id("hc_")}}, upsert=True)
+    tm = datetime.now(timezone.utc).strftime("%-I:%M %p")
+    await _notify_parents_helper(h, f"{h.get('name')} completed “{t.get('title')}”", f"at {tm}")
+    return {"ok": True, "completed_at": at}
+
+
+@api.post("/helper/tasks/{task_id}/issue")
+async def helper_task_issue(task_id: str, body: HelperIssueIn, h: dict = Depends(get_current_helper)):
+    t = await _get_helper_task(h, task_id)
+    tkey = datetime.now(timezone.utc).date().isoformat()
+    at = now_iso()
+    await db.helper_task_completions.update_one(
+        {"task_id": task_id, "date": tkey},
+        {"$set": {"issue": {"reason": body.reason, "note": (body.note or "").strip() or None, "at": at},
+                  "updated_at": at, "status": "issue", "helper_id": h["helper_id"], "family_id": h["family_id"]},
+         "$setOnInsert": {"completion_id": new_id("hc_")}}, upsert=True)
+    await _notify_parents_helper(h, f"{h.get('name')} needs help with “{t.get('title')}”",
+                                 f"{body.reason}" + (f": {body.note}" if body.note else ""))
+    return {"ok": True}
+
+
+@api.post("/helper/upload")
+async def helper_upload(file: UploadFile = File(...), kind: str = Form("image"), h: dict = Depends(get_current_helper)):
+    """Helper-scoped upload (proof photos). Stored under the helper's family."""
+    data = await file.read()
+    default_ext = {"video": "mp4", "audio": "m4a"}.get(kind, "jpg")
+    ext = (file.filename or "file").split(".")[-1].lower() if "." in (file.filename or "") else default_ext
+    path = f"{APP_NAME}/helper_uploads/{h['helper_id']}/{uuid.uuid4().hex}.{ext}"
+    default_ct = {"video": "video/mp4", "audio": "audio/m4a"}.get(kind, "image/jpeg")
+    ct = file.content_type or default_ct
+    try:
+        result = await run_in_threadpool(_put_object, path, data, ct)
+    except Exception as e:
+        logger.exception("helper upload failed")
+        raise HTTPException(status_code=502, detail=f"Upload failed: {e}")
+    await db.media.insert_one({
+        "media_id": new_id("md_"), "owner_id": h["helper_id"], "family_id": h["family_id"],
+        "storage_path": result["path"], "content_type": ct, "kind": kind, "created_at": now_iso(),
+    })
+    return {"path": result["path"], "url": f"/api/files/{result['path']}", "type": kind}
+
+
+@api.post("/helper/signout")
+async def helper_signout(authorization: Optional[str] = Header(None), h: dict = Depends(get_current_helper)):
+    raw = authorization.split(" ", 1)[1].strip() if authorization else None
+    payload = _decode_token(raw) if raw else None
+    if payload and payload.get("jti"):
+        await db.helper_sessions.update_one({"jti": payload["jti"]}, {"$set": {"revoked_at": now_iso()}})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # App wiring
 # ---------------------------------------------------------------------------
 @api.get("/")
@@ -5911,6 +6703,19 @@ async def startup():
         except Exception:
             pass
         await db.auth_throttles.create_index("expires_at")
+        try:
+            await db.helpers.drop_index("username_1")
+        except Exception:
+            pass
+        await db.helpers.create_index("username", unique=True, name="helper_username_uniq",
+                                      partialFilterExpression={"username": {"$type": "string"}})
+        await db.helpers.create_index([("family_id", 1), ("status", 1)])
+        await db.helpers.create_index("invite_code", sparse=True)
+        await db.helper_sessions.create_index("jti", unique=True, sparse=True)
+        await db.helper_sessions.create_index([("helper_id", 1), ("revoked_at", 1)])
+        await db.helper_tasks.create_index([("helper_id", 1), ("family_id", 1)])
+        await db.helper_task_completions.create_index([("task_id", 1), ("date", 1)], unique=True)
+        await db.helper_audit.create_index([("helper_id", 1), ("created_at", -1)])
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:

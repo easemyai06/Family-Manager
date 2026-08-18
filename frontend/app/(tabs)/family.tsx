@@ -23,6 +23,7 @@ export default function Family() {
   const [timeline, setTimeline] = useState<any[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [invite, setInvite] = useState<any>(null);
+  const [helpers, setHelpers] = useState<any[]>([]);
   const [manage, setManage] = useState(false);
   const [actionMember, setActionMember] = useState<any>(null);
   const [removePhase, setRemovePhase] = useState(false);
@@ -40,6 +41,12 @@ export default function Family() {
       setCanManage(!!fam.can_manage);
       setTimeline(tl.week || []);
       setInvite(inv);
+      if (fam.can_manage) {
+        try {
+          const h = await api("/helpers");
+          setHelpers(h.helpers || []);
+        } catch {}
+      }
     } catch {}
   }, []);
 
@@ -210,6 +217,70 @@ export default function Family() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* trusted helpers */}
+        {canManage ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHead}>
+              <AppText family="display" weight="bold" size={18}>
+                Trusted Helpers
+              </AppText>
+              <Pressable onPress={() => router.push("/helper/add")} testID="add-helper-cta" hitSlop={8}>
+                <AppText size={13} weight="bold" color={c.brand}>
+                  + Add
+                </AppText>
+              </Pressable>
+            </View>
+            <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: -6, marginBottom: spacing.md }}>
+              Nannies, cooks, drivers & more — limited access, never full family info
+            </AppText>
+            {helpers.length === 0 ? (
+              <Pressable
+                onPress={() => router.push("/helper/add")}
+                style={[styles.inviteCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+                testID="helpers-empty"
+              >
+                <View style={[styles.inviteIcon, { backgroundColor: c.brandTertiary }]}>
+                  <Ionicons name="people-circle-outline" size={22} color={c.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText size={14} weight="bold">Add your first helper</AppText>
+                  <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: 2 }}>
+                    Assign tasks & schedules without sharing private family life
+                  </AppText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
+              </Pressable>
+            ) : (
+              helpers.map((h) => (
+                <Pressable
+                  key={h.helper_id}
+                  onPress={() => router.push(`/helper/${h.helper_id}`)}
+                  style={[styles.helperCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+                  testID={`helper-card-${h.helper_id}`}
+                >
+                  <View style={[styles.roleIcon, { backgroundColor: c.brandTertiary }]}>
+                    <AppText size={22}>{h.role_icon}</AppText>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <AppText size={15} weight="bold">{h.name}</AppText>
+                    <AppText size={12} color={c.onSurfaceSecondary}>
+                      {h.role_label}
+                      {h.status === "active" && h.tasks_total ? ` · ${h.tasks_done}/${h.tasks_total} tasks today` : ""}
+                    </AppText>
+                  </View>
+                  <View style={[styles.helperStatus, {
+                    backgroundColor: (h.status === "active" ? c.success : h.status === "paused" ? c.warning : c.onSurfaceTertiary) + "22",
+                  }]}>
+                    <AppText size={10} weight="bold" color={h.status === "active" ? c.success : h.status === "paused" ? c.warning : c.onSurfaceTertiary}>
+                      {h.status === "pending" ? "Invited" : h.status === "active" ? (h.on_duty ? "On duty" : "Active") : "Paused"}
+                    </AppText>
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </View>
+        ) : null}
 
         {/* send love */}
         <Pressable onPress={() => router.push("/affection/send")} style={styles.section} testID="send-love-cta">
@@ -424,6 +495,9 @@ const styles = StyleSheet.create({
   statusPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, marginTop: 5 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   bdayBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 },
+  helperCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.sm },
+  roleIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
+  helperStatus: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
   inviteIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   loveCard: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: spacing.xl },

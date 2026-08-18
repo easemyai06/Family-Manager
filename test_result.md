@@ -1864,3 +1864,56 @@ frontend_batch29:
 agent_communication_batch29:
     -agent: "main"
     -message: "Batch #29 = chat auto-delete + file share + live location + storage cleanup + date pickers + dd-mm-yyyy. Admin account: storytester@fam.com / secret123 (Sharma demo, family chat has messages). TEST BOTH backend + frontend. BACKEND: (1) PATCH /api/chats/{fid}/retention {days:7} as admin -> 200 {retention_days:7}; setting days:1/30/90 ok; invalid stays off; a non-parent member -> 403 (note: only admin logs in in demo, so verify admin path + that setting persists on GET /chats/{id}). Verify sending a message then a retention purge doesn't error. (2) Send a location message: POST /chats/{id}/messages {type:'location', lat, lng} -> 200; live_location with live_until; PATCH /chats/{id}/messages/{mid}/location {lat,lng} sender-only (403 for a different member); POST .../stop-live sender-only. (3) Send a file message: upload a doc via /api/upload (kind=document) then POST message {type:'file', media, file_name, file_size, file_mime} -> renders. (4) GET /api/storage/usage -> counts; POST /api/storage/cleanup {scope:'chat_media', older_than_days:90} parents-only (non-parent 403); {scope:'chat_history', older_than_days:0} deletes messages. IMPORTANT: do NOT run a destructive older_than_days:0 chat_history cleanup on the shared demo family — test cleanup on a FRESH registered account/family so demo chat isn't wiped. FRONTEND (in-app nav, 390x844): Open Chat (single Family Chat). (a) Tap '＋' (chat-attach-btn) -> sheet shows Photo/File/Location/Live options; tap File opens document picker (web may not complete -> OK); tap Send location -> permission prompt (web geolocation may be blocked -> verify graceful toast, no crash). (b) Tap '⋮' (chat-options-btn) -> settings sheet; as admin tap retention-opt-7 -> banner 'Messages disappear after 7 days' appears; tap retention-opt-0 to turn off. (c) More > Preferences > Storage & Cleanup: usage stats render; 'Clear downloaded files' present (web shows 'works in mobile app'); as admin the family cleanup chips + confirm modal render (DO NOT confirm a destructive Everything cleanup on demo). (d) Event create (Calendar + FAB): Date field opens a calendar picker, Start/End open time pickers, values show DD-MM-YYYY; save an event. (e) Edit Profile (More profile pencil): Birthday opens the calendar picker (no future dates), saves, shows dd-mm-yyyy on member profile. (f) Confirm dates read dd-mm-yyyy in Vault expiries, Our Family Story memory dates, member Birthday. Voice/push/biometric + real geolocation/document-open remain native-only — do NOT fail on web for those; verify UI + permission handling only."
+
+# ============ Feature Batch #30 — TRUSTED HELPERS (Phase 1) ============
+backend_batch30:
+  - task: "Helper accounts + invite/activate + PIN login (separate principal, RBAC)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New db.helpers principal, DISTINCT from family members. account_type='helper' JWT with tv (token_version) + jti; get_current_helper validates account_type + family + status active + tv + live session + access window each request. get_current_user now REJECTS helper tokens (401) and vice-versa. Parent(admin/parent)-only: POST/GET/PATCH/DELETE /api/helpers, pause/resume, regenerate-invite, reset-pin, sessions, signout-all, audit, tasks. Helper self: POST /helper/activate (code->set username+PIN), /helper/login (username+PIN, bcrypt, throttled key helper:username:ip), /helper/me, /helper/dashboard, /helper/tasks, /helper/tasks/{id}/start|complete|issue, /helper/upload (proof photos), /helper/signout. Curl-verified: create(invite+direct)/activate/login OK; proof photo required -> complete 400 w/o photo, 200 with; activity shows completions; pause->helper 401 & login 403; resume->200; signout-all->old token 401; remove->login 401; helper token on /api/home->401; parent token on /helper/me->401; duplicate-null username fixed via partial unique index."
+  - task: "Home helpers_today (parents) + helper role/permission templates"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/home returns helpers_today[] for parents (active helpers, today task counts, next task). GET /api/helpers/roles returns 11 role templates + 12 permission keys. Role defaults applied via _resolve_perms; tasks perm always true."
+
+frontend_batch30:
+  - task: "Helper portal (separate login + accessible dashboard)"
+    implemented: true
+    working: true
+    file: "frontend/app/helper-login.tsx, frontend/app/helper-portal/index.tsx, frontend/src/lib/helperApi.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Welcome > 'I'm a trusted helper' (helper-portal-link) -> /helper-login (sign in OR activate with code). Helper token stored separately (secureStore key helper_token) via helperApi — never mixed with family auth. Dashboard verified live: greeting + role + family, 'Today's Work X/Y', task cards with Start/Mark done/Need help, proof-photo capture (helper-add-proof via /helper/upload), issue reasons, sign out. Root _layout auth guard allows helper-login/helper-portal/helper-join without a family user."
+  - task: "Parent helper management (Add Helper wizard + detail/access summary/tasks/sessions)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/family.tsx, frontend/app/helper/add.tsx, frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Family tab shows a 'Trusted Helpers' section (parents/admin only, add-helper-cta) with per-helper status + today task counts (verified live: Sunita Nanny 0/3 Active). Add Helper wizard (/helper/add): name, role grid (role-*), who they help (assign-all/assign-select + member chips), access period (access-permanent/dates/temporary + DateField), working days/hours, per-permission Allow/Deny (perm-*), login mode invite vs direct (login-invite/login-direct) -> success shows invite code. Helper detail (/helper/[id]): access summary (can/cannot), assigned members, sign-in (set-login-btn/regen-invite-btn), tasks list + Assign modal (assign-task-btn: title/instructions/time/schedule/weekly days/category/for-member/proof/important), activity feed, devices + sign out all, pause/resume/remove. Needs UI testing."
+
+agent_communication_batch30:
+    -agent: "main"
+    -message: "Batch #30 = TRUSTED HELPERS Phase 1 (a separate restricted user type; NEVER a family member). CREDS: parent/admin storytester@fam.com / secret123; demo helper login username 'sunita' PIN '1234' (Nanny, assigned Aarav, 3 daily tasks incl. a pickup that REQUIRES a photo). TEST BOTH backend + frontend. BACKEND already curl-verified by main agent incl. all security boundaries (see backend_batch30). Please regression: (1) parent CRUD /api/helpers (create invite + direct username/pin), activate, login, dashboard, task assign, complete (photo-proof enforcement 400/200), issue, activity; (2) SECURITY: helper token must 401 on ANY family route (/api/home, /api/families/me, /api/chats/*, /api/vault/*); family token must 401 on /helper/*; a helper must NEVER read another family's data; only parent/admin can manage helpers (non-parent 403 — note only admin logs in demo, reason via code); pause->403 login & 401 requests, remove->instant revoke, signout-all invalidates old token. (3) child-level scoping: helper assigned only Aarav must not implicitly access Anaya (assigned_member_ids). FRONTEND (in-app nav, 390x844): PARENT: Family tab -> Trusted Helpers -> +Add -> fill wizard (role, assign, permissions Allow/Deny, invite mode) -> success invite code; open helper detail -> Assign task modal -> verify task appears; pause/resume; set username&PIN; New invite code; verify access summary can/cannot lists. HELPER: Welcome -> 'I'm a trusted helper' -> login sunita/1234 -> dashboard shows 3 tasks -> Start a task, Mark done (the pickup needs a photo -> verify it blocks done until a photo is added on native; on web the picker may not complete -> just verify the proof requirement UI + that a non-proof task completes), Need help -> pick reason -> send. Sign out returns to helper login. NOTE: helper proof photo upload + native image picker are native-limited on web — verify UI/permission handling, don't fail web. Do NOT run destructive family cleanup. Restart nothing."

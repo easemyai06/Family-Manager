@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, Dimensions } from "react-native";
+import { View, StyleSheet, Dimensions, Pressable } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -62,6 +62,12 @@ export default function Welcome() {
               testID="login-link-btn"
               style={{ backgroundColor: "transparent" }}
             />
+            <Pressable onPress={() => router.push("/helper-login")} testID="helper-portal-link" style={styles.helperLink} hitSlop={8}>
+              <Ionicons name="briefcase-outline" size={15} color="rgba(255,255,255,0.85)" />
+              <AppText size={14} weight="semibold" color="rgba(255,255,255,0.85)">
+                I'm a trusted helper
+              </AppText>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -76,4 +82,5 @@ const styles = StyleSheet.create({
   logoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   bottom: {},
   actions: { marginTop: spacing["2xl"], gap: spacing.md },
+  helperLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: spacing.sm },
 });

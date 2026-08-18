@@ -489,3 +489,40 @@ User asks (all delivered): (1) family-wide chat auto-deletion with Off/24h/7d/30
   only for the actual save. Gallery verified loading with the new import (no web bundle break).
 - Location Snapshot: ended live-location bubble now reads "Last known location" and keeps the last map
   pin + "Shared until <time> · tap to open in Maps" (frontend polish; native geolocation to create).
+
+## Batch #30 — TRUSTED HELPERS (Phase 1) (June 2026)
+A separate, restricted, role-based user type for non-family helpers (nanny, cook, driver, elder
+caretaker, tutor, pet caretaker, nurse, babysitter, temporary, custom + house help). Helpers are NOT
+family members — they never appear in Tree/Timeline/Memories and get least-privilege access.
+- Auth (separate principal): account_type='helper' JWT (tv token_version + jti). Login via invite code
+  (helper sets own PIN) OR parent-set username+PIN. bcrypt PIN, throttle key helper:username:ip.
+  get_current_helper validates account_type+family+status+tv+live session+access-window per request;
+  get_current_user rejects helper tokens and vice-versa. Sessions in db.helper_sessions enable
+  Pause / Remove(instant revoke) / Sign-out-all.
+- RBAC enforced on backend (not just UI). 12 permission keys + 11 role templates (/api/helpers/roles).
+  Access window: date-range/temporary hard-expire; working days/hours are soft (UI hint only).
+  Child-level scoping via assigned_member_ids (assigned Aarav != Anaya).
+- Parent endpoints (admin/parent only): POST/GET/PATCH/DELETE /api/helpers, pause/resume,
+  regenerate-invite, reset-pin, sessions, signout-all, audit, tasks (create/list), /helper-tasks/{id}
+  patch/delete, /helpers/{id}/activity. Helper endpoints: /helper/activate, /helper/login, /helper/me,
+  /helper/dashboard, /helper/tasks, /helper/tasks/{id}/start|complete|issue, /helper/upload (proof),
+  /helper/signout. Tasks support schedule once/daily/weekly/monthly, due_time, category, for_member,
+  priority, require_proof(photo/note/confirm). /api/home returns helpers_today[] for parents.
+- Frontend: Welcome > "I'm a trusted helper" -> /helper-login (sign in / activate). Separate helperApi
+  token (secureStore key helper_token), never mixed with family auth; root _layout guard allows
+  helper-login/helper-portal/helper-join without a family user. Accessible Helper Dashboard
+  (/helper-portal): Today's Work, task cards with Start / Mark done (photo/note proof) / Need help
+  (reason + note). Parent side: Family tab "Trusted Helpers" section (add-helper-cta) + Add Helper
+  wizard (/helper/add: role grid, who they help, access period + working days/hours, per-permission
+  Allow/Deny, invite vs direct login) + Helper detail (/helper/[id]: access summary, assigned members,
+  set login/regenerate invite, tasks + Assign modal, activity feed, devices + sign out all,
+  pause/resume/remove).
+- Verified: testing agent iteration — BACKEND 24/24 pytest
+  (backend/tests/test_batch30_trusted_helpers.py) incl. all security boundaries (helper<->family token
+  rejection, lifecycle revocation, proof enforcement, child scoping); FRONTEND helper login->dashboard
+  + parent add/assign flows pass. Main agent curl-verified full lifecycle earlier. Demo helper:
+  username 'sunita' PIN '1234' (Nanny, Aarav, 3 daily tasks). Preview only — Publish to ship.
+- PENDING (Phase 2/3, per user-approved phasing): Parent<->Helper chat + Care Team chat, Handover
+  Notes, Pickup/Drop live status, selective Emergency/Medical sharing, Location permission modes,
+  device/session detail polish, in-app helper notifications feed, "Helpers Today" Home card UI,
+  generic task "Assign To: Family member OR Helper". (English only; no multilingual.)

@@ -50,8 +50,9 @@ function RootNav() {
   useEffect(() => {
     if (initializing) return;
     const seg0 = segments[0];
+    const helperRoute = seg0 === "helper-login" || seg0 === "helper-portal" || seg0 === "helper-join";
     if (!user) {
-      if (seg0 !== "(auth)") router.replace("/(auth)/welcome");
+      if (seg0 !== "(auth)" && !helperRoute) router.replace("/(auth)/welcome");
     } else if (!user.family_id) {
       if (seg0 !== "onboarding") router.replace("/onboarding/create-family");
     } else if (seg0 === "(auth)" || seg0 === "onboarding" || seg0 === undefined) {
