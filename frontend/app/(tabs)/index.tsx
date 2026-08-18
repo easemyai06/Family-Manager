@@ -24,6 +24,7 @@ import { SimpleHome } from "@/src/components/home/SimpleHome";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { useAuth } from "@/src/auth/AuthContext";
 import { storage } from "@/src/utils/storage";
 import { greeting, formatDate } from "@/src/lib/time";
 import { AFFECTION_MAP } from "@/src/lib/constants";
@@ -45,9 +46,11 @@ const TONE_MAP: Record<string, string> = {
 
 export default function Home() {
   const { c, simpleHome } = useTheme();
+  const { familyChatId } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [home, setHome] = useState<any>(null);
+  const [notifUnread, setNotifUnread] = useState(0);
   const [prefs, setPrefs] = useState<DashPrefs>(EMPTY_PREFS);
   const [refreshing, setRefreshing] = useState(false);
   const [incoming, setIncoming] = useState<any>(null);
@@ -63,13 +66,15 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      const [h, inbox, p] = await Promise.all([
+      const [h, inbox, p, nu] = await Promise.all([
         api("/home"),
         api("/affection/inbox"),
         api<DashPrefs>("/dashboard/prefs").catch(() => EMPTY_PREFS),
+        api<any>("/notifications/unread").catch(() => ({ count: 0 })),
       ]);
       setHome(h);
       setPrefs(p || EMPTY_PREFS);
+      setNotifUnread(nu?.count || 0);
       if (inbox?.unseen?.length) setIncoming(inbox.unseen[0]);
       if (h?.on_this_day?.length) {
         const key = `otdNudge:${new Date().toISOString().slice(0, 10)}`;
@@ -184,7 +189,25 @@ export default function Home() {
     return all.filter((t: any) => t.scope === taskFilter);
   }, [home, taskFilter, persona]);
 
-  const go = (r: string) => router.push(r as any);
+  const openChat = useCallback(async () => {
+    let id = familyChatId;
+    if (!id) {
+      try {
+        const chats = await api<any[]>("/chats");
+        id = chats.find((ch) => ch.type === "family")?.chat_id || null;
+      } catch {}
+    }
+    if (id) router.push(`/chat/${id}?name=${encodeURIComponent("Family Chat")}` as any);
+    else router.push("/(tabs)/chat" as any);
+  }, [familyChatId, router]);
+
+  const go = (r: string) => {
+    if (r === "/(tabs)/chat") {
+      openChat();
+      return;
+    }
+    router.push(r as any);
+  };
 
   // Kids Mode: a child's account gets a simplified, friendly home.
   if (home && persona === "child") {
@@ -286,7 +309,7 @@ export default function Home() {
           </View>
           <HeaderIcon icon="search" onPress={() => go("/search")} c={c} testID="home-search" label="Search" />
           <HeaderIcon icon="options-outline" onPress={() => go("/dashboard/customize")} c={c} testID="home-customize" label="Customize dashboard" />
-          <HeaderIcon icon="chatbubble-ellipses" onPress={() => go("/(tabs)/chat")} c={c} badge={home?.unread_messages} testID="home-chat" label="Open family chat" />
+          <HeaderIcon icon="notifications-outline" onPress={() => go("/notifications")} c={c} badge={notifUnread} testID="home-notifications" label="Notifications" />
           <Pressable onPress={() => me && go(`/member/${me.member_id}`)} testID="home-avatar" style={{ marginLeft: 2 }} accessibilityRole="button" accessibilityLabel="Your profile">
             <Avatar uri={me?.photo_url} name={me?.name} size={44} color={me?.color} ring />
           </Pressable>

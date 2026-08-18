@@ -377,3 +377,33 @@ small/standard/large Android + iPhones (layout-only; no functionality changes; D
   text). Vault PIN fits at 320. Family/Quick Actions/Emergency/Vault grids fit at 320. Extra Large text
   (1.45x) on Home/Calendar/Family/More at 320/390: 0 overflow, text wraps as expected, header icons stay
   on-row, tab labels single-line. No fixes required. Frontend-only; preview — Publish to ship.
+
+## Feature Batch #28 — Auth+ / Chat / Notifications (June 2026)
+User asks (all delivered): forgot-password by email code; PIN login (adult quick-unlock + kids pick-a-name);
+parent/admin manage child logins (username + password + PIN, no email) incl. reset; simplify chat to ONE
+common Family Chat opened directly from the Chat tab; deferred login-throttle hardening; a Notifications
+Center inbox of recent family activity.
+- Forgot password: POST /auth/forgot-password (always 200, rate-limited, no existence leak) emails a
+  6-digit code (Emergent Resend), bcrypt-hashed in password_resets, 15-min expiry, <5 attempts.
+  POST /auth/reset-password verifies + sets new password (min 6) and returns a login token. Screens:
+  frontend/app/(auth)/forgot.tsx + link on login.
+- PIN login: POST /auth/pin (set), DELETE /auth/pin (clear), POST /auth/pin-login {user_id|member_id, pin}
+  (strict throttle pin:{subj}:{ip}). /auth/me now returns pin_set + family_chat_id. Device caches the
+  account (REMEMBER_KEY) + roster of PIN-enabled members (ROSTER_KEY). Screens: (auth)/pin.tsx (pick-a-face
+  + 4-digit pad), Account > QUICK SIGN-IN sets/changes/removes a 4-digit PIN.
+- Login accepts email OR username. Child credentials: POST /families/members/{id}/credentials (parent/admin
+  only; cannot target admin) creates a provider=child user (no email) linked to the member and sets
+  username+password+PIN; also used to reset. /families/me members carry has_login/has_pin/username.
+  Screen: member/credentials.tsx (modal) reached from Family tab member actions.
+  NOTE: child-user insert intentionally OMITS the email field (not email:null) so it doesn't collide on
+  the sparse-unique users.email index (was a DuplicateKeyError 500 on the 2nd child — fixed & retested).
+- Chat simplified to a single Family Chat: TabBar intercepts the Chat tabPress and opens
+  /chat/{familyChatId} directly; DMs/groups + new-chat UI removed; (tabs)/chat.tsx is a safety-net redirect;
+  Home Message quick action, KidsHome and SimpleHome all open the family chat directly. Chat unread badge
+  still shows on the tab.
+- Notifications Center: GET /notifications (activity from OTHERS + upcoming birthdays), POST
+  /notifications/read (sets notifications_last_read), GET /notifications/unread (badge). Screen:
+  app/notifications.tsx opened from a Home header bell (replaced the redundant chat icon).
+- SEC-002 hardening: _client_ip counts TRUSTED_PROXY_HOPS (default 1) from the RIGHT of X-Forwarded-For.
+- Verified: testing agent iteration_27 — backend 14/14 pytest
+  (backend/tests/test_batch28_forgot_pin_child_notif.py), frontend 5/5 flows. Preview only — Publish to ship.

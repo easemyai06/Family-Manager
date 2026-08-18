@@ -9,11 +9,14 @@ import { api, setAuthToken, setMediaToken, setUnauthorizedHandler } from "@/src/
 WebBrowser.maybeCompleteAuthSession();
 
 const TOKEN_KEY = "fh_auth_token";
+export const REMEMBER_KEY = "fh_remembered";
+export const ROSTER_KEY = "fh_family_roster";
 
 export type User = {
   user_id: string;
   name: string;
   email: string;
+  username?: string | null;
   picture?: string | null;
   family_id?: string | null;
   apple_linked?: boolean;
@@ -34,10 +37,18 @@ type AuthContextValue = {
   user: User | null;
   member: Member;
   initializing: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  pinSet: boolean;
+  familyChatId: string | null;
+  login: (identifier: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
+  loginWithPin: (userId: string, pin: string) => Promise<void>;
+  loginWithMemberPin: (memberId: string, pin: string) => Promise<void>;
+  setPin: (pin: string) => Promise<void>;
+  clearPin: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   linkWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -50,12 +61,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [member, setMember] = useState<Member>(null);
   const [initializing, setInitializing] = useState(true);
+  const [pinSet, setPinSet] = useState(false);
+  const [familyChatId, setFamilyChatId] = useState<string | null>(null);
 
   const applyMe = useCallback(async () => {
-    const data = await api<{ user: User; member: Member; media_token?: string }>("/auth/me");
+    const data = await api<{ user: User; member: Member; media_token?: string; pin_set?: boolean; family_chat_id?: string | null }>("/auth/me");
     setUser(data.user);
     setMember(data.member);
     setMediaToken(data.media_token || null);
+    setPinSet(!!data.pin_set);
+    setFamilyChatId(data.family_chat_id || null);
+    // Remember this account on the device so it can be unlocked with a PIN later.
+    try {
+      await storage.setItem(REMEMBER_KEY, JSON.stringify({
+        user_id: data.user.user_id, name: data.user.name,
+        picture: data.user.picture || null, pin_set: !!data.pin_set,
+      }));
+    } catch {}
+    // Cache the family roster (members with a PIN) for kids' pick-a-name sign-in.
+    if (data.user.family_id) {
+      try {
+        const fam = await api<any>("/families/me");
+        const members = (fam.members || [])
+          .filter((m: any) => m.has_pin)
+          .map((m: any) => ({ member_id: m.member_id, name: m.name, photo_url: m.photo_url, color: m.color }));
+        await storage.setItem(ROSTER_KEY, JSON.stringify({ family_id: data.user.family_id, members }));
+      } catch {}
+    }
   }, []);
 
   const bootstrap = useCallback(async () => {
@@ -128,8 +160,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [bootstrap, exchangeSessionId]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await api<{ token: string }>("/auth/login", { method: "POST", body: { email, password } });
+  const login = useCallback(async (identifier: string, password: string) => {
+    const id = identifier.trim();
+    const body = id.includes("@") ? { email: id, password } : { username: id.toLowerCase(), password };
+    const data = await api<{ token: string }>("/auth/login", { method: "POST", body });
+    await persistToken(data.token);
+  }, [persistToken]);
+
+  const loginWithPin = useCallback(async (userId: string, pin: string) => {
+    const data = await api<{ token: string }>("/auth/pin-login", { method: "POST", body: { user_id: userId, pin } });
+    await persistToken(data.token);
+  }, [persistToken]);
+
+  const loginWithMemberPin = useCallback(async (memberId: string, pin: string) => {
+    const data = await api<{ token: string }>("/auth/pin-login", { method: "POST", body: { member_id: memberId, pin } });
+    await persistToken(data.token);
+  }, [persistToken]);
+
+  const setPin = useCallback(async (pin: string) => {
+    await api("/auth/pin", { method: "POST", body: { pin } });
+    setPinSet(true);
+    try {
+      const raw = await storage.getItem<string>(REMEMBER_KEY, "");
+      const rem = raw ? JSON.parse(raw as string) : {};
+      await storage.setItem(REMEMBER_KEY, JSON.stringify({ ...rem, pin_set: true }));
+    } catch {}
+  }, []);
+
+  const clearPin = useCallback(async () => {
+    await api("/auth/pin", { method: "DELETE" });
+    setPinSet(false);
+    try {
+      const raw = await storage.getItem<string>(REMEMBER_KEY, "");
+      const rem = raw ? JSON.parse(raw as string) : {};
+      await storage.setItem(REMEMBER_KEY, JSON.stringify({ ...rem, pin_set: false }));
+    } catch {}
+  }, []);
+
+  const forgotPassword = useCallback(async (email: string) => {
+    await api("/auth/forgot-password", { method: "POST", body: { email: email.trim() } });
+  }, []);
+
+  const resetPassword = useCallback(async (email: string, code: string, newPassword: string) => {
+    const data = await api<{ token: string }>("/auth/reset-password", {
+      method: "POST", body: { email: email.trim(), code: code.trim(), new_password: newPassword },
+    });
     await persistToken(data.token);
   }, [persistToken]);
 
@@ -221,7 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, member, initializing, login, register, loginWithGoogle, loginWithApple, linkWithApple, logout, refresh: applyMe }}
+      value={{ user, member, initializing, pinSet, familyChatId, login, register, loginWithGoogle, loginWithApple, loginWithPin, loginWithMemberPin, setPin, clearPin, forgotPassword, resetPassword, linkWithApple, logout, refresh: applyMe }}
     >
       {children}
     </AuthContext.Provider>

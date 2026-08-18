@@ -1655,3 +1655,115 @@ batch27_responsive:
 agent_communication_batch27_responsive:
     -agent: "main"
     -message: "Batch #27 RESPONSIVE QA (FRONTEND ONLY). Please do a MULTI-WIDTH visual responsive audit. Login testdad@fam.com/secret123. For EACH width in [320x640, 360x740, 390x844, 430x932], visit these screens and report CONCRETE issues: horizontal overflow (document scrollWidth > clientWidth + 2), clipped/overlapping text, important text truncated to '...', buttons with clipped/off-center text, cards extending beyond the viewport, tiny unreadable controls, or big inconsistent blank space. SCREENS: Login, Home (normal), Calendar (tab), an Event card (open one), Add Event (/event/create), Family (tab), a Member profile (tap a member), Chores (/chores), Shopping (/shopping), Wishlist (/wishlist), Chat conversation (open family chat), Send Love (/affection/send), Vault (/vault — note PIN keypad must fit at 320), Emergency (/emergency), Accessibility (/settings/accessibility). ALSO: set Accessibility Text Size = Extra Large and re-check Home, Family, Calendar for overlap/clipping (wrapping is expected/OK). ALSO spot-check the member status strip and any 2-column grids don't cram at 320. Report a per-screen/per-width pass/fail with the specific element. Do NOT change product functionality; this is layout/alignment only. Do NOT test backend."
+
+
+# ============ Feature Batch #28 (Auth+ / Chat / Notifications) ============
+backend:
+  - task: "Forgot password via emailed 6-digit code"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /auth/forgot-password (always 200, no email-existence leak, rate-limited per email+IP) emails a 6-digit code (Emergent Resend) stored bcrypt-hashed in password_resets with 15-min expiry + attempts. POST /auth/reset-password verifies code (unexpired, <5 attempts) and sets new password (min 6), returns a login token. Curl: forgot returns ok; reset flow works (agent-tested individual pieces)."
+  - task: "PIN login (adult quick-unlock + kid pick-a-name) + set/clear PIN"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /auth/pin (authed, sets pin_hash), DELETE /auth/pin. POST /auth/pin-login accepts {user_id,pin} (quick-unlock) OR {member_id,pin} (kid picks name); strict throttle pin:{subj}:{ip}; wrong PIN 401, right PIN returns token. /auth/me now returns pin_set + family_chat_id. Curl verified: set pin -> pin-login by user_id ok; wrong pin 401."
+  - task: "Login accepts email OR username; child credential management"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /auth/login now accepts {email|username, password}. POST /families/members/{member_id}/credentials (parent/admin only; cannot target admin) sets/resets username+password+PIN, creating a provider=child user (no email) linked to the member on first setup. /families/me members now include has_login, has_pin, username. Curl verified: set child creds -> username+password login ok, member_id+PIN login ok, has_pin reflected; add-member role=admin still 400."
+  - task: "Notifications Center aggregation"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /notifications returns {items, unread_count, last_read} aggregating last-30d activity from OTHERS (posts, memories, events added, notices, affection to me/family, chores done, family-chat messages) + upcoming birthdays (next 7 days, not counted as unread). POST /notifications/read sets notifications_last_read. GET /notifications/unread returns badge count. Curl verified: items populated, unread count returned."
+  - task: "SEC-002 login-throttle client-IP hardening"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    priority: "low"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "_client_ip now counts TRUSTED_PROXY_HOPS (default 1) in from the RIGHT of X-Forwarded-For (attacker controls only left entries). Lock stays keyed on identifier+IP so it never globally blocks sign-in. Login 200/401 still works via curl."
+
+frontend:
+  - task: "Forgot-password flow screen"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(auth)/forgot.tsx, frontend/app/(auth)/login.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Login screen shows 'Forgot password?' -> /(auth)/forgot (request email -> enter 6-digit code + new password -> auto-login). Login field relabeled 'Email or username'. Screenshot confirmed links render."
+  - task: "PIN unlock screen + quick-unlock PIN setup"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(auth)/pin.tsx, frontend/app/account/index.tsx, frontend/src/auth/AuthContext.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Account settings > QUICK SIGN-IN sets/changes/removes a 4-digit PIN (calls /auth/pin). On any login the device caches the account (REMEMBER_KEY) + family roster of members with PINs (ROSTER_KEY). Login screen 'Family member? Sign in with a PIN' -> /(auth)/pin shows saved faces -> 4-digit pad -> pin-login (user_id for adult, member_id for kid). Empty state guides to password login."
+  - task: "Admin/parent manage child login & PIN"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/member/credentials.tsx, frontend/app/(tabs)/family.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Family tab member-actions modal shows 'Set up / Reset login & PIN' for non-admin members -> /member/credentials modal (username + 4-digit PIN + optional password). Saves via /families/members/{id}/credentials."
+  - task: "Chat simplified to single Family Chat"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/_layout.tsx, frontend/app/(tabs)/chat.tsx, frontend/app/(tabs)/index.tsx, frontend/src/components/home/KidsHome.tsx, frontend/src/components/home/SimpleHome.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Chat tab press now opens the single Family Chat conversation directly (TabBar intercepts tabPress, pushes /chat/{familyChatId}). DM/group list + new-chat entry points removed; (tabs)/chat.tsx is a safety-net redirect. Home 'Message' quick action, KidsHome and SimpleHome chat tiles now open the family chat directly too. Family chat unread badge still shows on the Chat tab."
+  - task: "Notifications Center screen + Home bell"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/notifications.tsx, frontend/app/(tabs)/index.tsx"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Home header bell (replaced redundant chat icon) shows /notifications/unread badge -> /notifications. Screen lists activity (actor avatar + emoji + title/subtitle + time), taps route to the item, marks read on view, pull-to-refresh, empty state."
+
+agent_communication_batch28:
+    -agent: "main"
+    -message: "Batch #28. Test BOTH backend + frontend. Admin login: protectdemo@fam.com / secret123 (Sharma demo). BACKEND: (1) POST /auth/forgot-password {email} always 200; POST /auth/reset-password {email,code,new_password} with a valid code sets password + returns token (note: real code only arrives by email; for logic test you can verify invalid code -> 400). (2) POST /auth/pin {pin} (authed) sets PIN; /auth/me returns pin_set + family_chat_id; DELETE /auth/pin clears; POST /auth/pin-login {user_id,pin} and {member_id,pin} -> token (wrong PIN 401, throttled). (3) POST /auth/login accepts username too. (4) POST /families/members/{id}/credentials (admin/parent) sets username+password+PIN for a NON-admin member (creates provider=child user first time); reject role=admin target 403; then login with that username/password and pin-login with member_id+PIN. (5) GET /notifications, POST /notifications/read, GET /notifications/unread. FRONTEND: Forgot-password screen from Login; Account > QUICK SIGN-IN set a 4-digit PIN then sign out and unlock via 'Family member? Sign in with a PIN'; Family tab > tap a child member > 'Set up login & PIN' modal; Chat TAB opens the single Family Chat directly (no conversation list, no new-chat button); Home bell opens Notifications Center and shows recent family activity. Do NOT change product functionality beyond what's described."
+    -agent: "testing"
+    -message: "Batch #28 RESULT: PASS. Backend 14/14 pytest (backend/tests/test_batch28_forgot_pin_child_notif.py; iteration_27): forgot-password always-200 + 400 wrong-code/short-pw; PIN set -> /auth/me pin_set + non-null family_chat_id, pin-login by user_id, wrong/short PIN 401 (not 500), DELETE clears; child creds username-login + member-PIN-login + /families/me has_login/has_pin/username; role guards (add-member admin 400, set-creds admin target 403, non-parent 403); notifications items + unread drops to 0 after read. Frontend 5/5 flows PASS at 390x844 (forgot inline error, PIN setup toast + fh_remembered, child creds save, Chat tab opens single Family Chat with composer & no + button, Home bell -> Activity). FIXED HIGH bug: POST /families/members/{id}/credentials 500 DuplicateKeyError on 2nd child user (email:null vs sparse unique index) -> now omits email field on child-user insert. Main agent re-verified 2x child creds -> 200/200."

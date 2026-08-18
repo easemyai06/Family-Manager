@@ -8,6 +8,8 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { AFFECTION_MAP } from "@/src/lib/constants";
 import { greeting } from "@/src/lib/time";
+import { useAuth } from "@/src/auth/AuthContext";
+import { api } from "@/src/lib/api";
 
 type Props = {
   home: any;
@@ -27,10 +29,23 @@ const TILES: { emoji: string; label: string; route: string; bg: string }[] = [
 
 export function SimpleHome({ home, incoming, onDismissAffection, onSendBack }: Props) {
   const { c, highContrast } = useTheme();
+  const { familyChatId } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = home?.me;
   const nextEvent = (home?.events_today || [])[0];
+
+  const openChat = async () => {
+    let id = familyChatId;
+    if (!id) {
+      try {
+        const chats = await api<any[]>("/chats");
+        id = chats.find((ch) => ch.type === "family")?.chat_id || null;
+      } catch {}
+    }
+    if (id) router.push(`/chat/${id}?name=${encodeURIComponent("Family Chat")}` as any);
+    else router.push("/(tabs)/chat" as any);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
@@ -46,7 +61,7 @@ export function SimpleHome({ home, incoming, onDismissAffection, onSendBack }: P
           {TILES.map((t) => (
             <Pressable
               key={t.label}
-              onPress={() => router.push(t.route as any)}
+              onPress={() => (t.route === "/(tabs)/chat" ? openChat() : router.push(t.route as any))}
               style={[
                 styles.tile,
                 { backgroundColor: highContrast ? c.surface : t.bg, borderColor: c.border },

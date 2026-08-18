@@ -298,6 +298,31 @@ export default function Family() {
                   })}
                 </View>
 
+                {/* login & PIN (parent-managed, esp. for kids) */}
+                {actionMember.role !== "admin" ? (
+                  <>
+                    <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={styles.sheetLabel}>
+                      LOGIN &amp; PIN
+                    </AppText>
+                    <Pressable
+                      onPress={() => {
+                        const m = actionMember;
+                        closeActions();
+                        router.push(
+                          `/member/credentials?id=${m.member_id}&name=${encodeURIComponent(m.name)}&hasLogin=${m.has_login ? "1" : "0"}&username=${encodeURIComponent(m.username || "")}` as any
+                        );
+                      }}
+                      style={[styles.sheetBtn, { backgroundColor: c.surfaceSecondary }]}
+                      testID="member-credentials"
+                    >
+                      <Ionicons name="key-outline" size={18} color={c.onSurface} />
+                      <AppText size={14} weight="semibold" color={c.onSurface}>
+                        {actionMember.has_login ? "Reset login & PIN" : "Set up login & PIN"}
+                      </AppText>
+                    </Pressable>
+                  </>
+                ) : null}
+
                 {/* resend invite (pending only) */}
                 {!actionMember.joined && invite ? (
                   <>

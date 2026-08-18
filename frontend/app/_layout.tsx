@@ -120,6 +120,7 @@ function RootNav() {
         <Stack.Screen name="wishlist/create" options={{ presentation: "modal" }} />
         <Stack.Screen name="vault/create" options={{ presentation: "modal" }} />
         <Stack.Screen name="member/edit" options={{ presentation: "modal" }} />
+        <Stack.Screen name="member/credentials" options={{ presentation: "modal" }} />
         <Stack.Screen name="emergency/contact-edit" options={{ presentation: "modal" }} />
         <Stack.Screen name="emergency/instruction-edit" options={{ presentation: "modal" }} />
       </Stack>

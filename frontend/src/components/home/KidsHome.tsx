@@ -11,6 +11,8 @@ import { StarBurst } from "@/src/components/StarBurst";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { AFFECTION_MAP } from "@/src/lib/constants";
+import { useAuth } from "@/src/auth/AuthContext";
+import { api } from "@/src/lib/api";
 
 type Props = {
   home: any;
@@ -32,8 +34,21 @@ export function KidsHome({
   onCelebrateDone,
 }: Props) {
   const { c } = useTheme();
+  const { familyChatId } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const openChat = async () => {
+    let id = familyChatId;
+    if (!id) {
+      try {
+        const chats = await api<any[]>("/chats");
+        id = chats.find((ch) => ch.type === "family")?.chat_id || null;
+      } catch {}
+    }
+    if (id) router.push(`/chat/${id}?name=${encodeURIComponent("Family Chat")}` as any);
+    else router.push("/(tabs)/chat" as any);
+  };
 
   const me = home?.me;
   const events = home?.events_today || [];
@@ -54,7 +69,7 @@ export function KidsHome({
       testID: `kids-hug-${p.member_id}`,
     })),
     { emoji: "❤️", label: "Send Love", onPress: () => router.push("/affection/send"), testID: "kids-send-love" },
-    { emoji: "💬", label: "Family Chat", onPress: () => router.push("/(tabs)/chat"), testID: "kids-chat" },
+    { emoji: "💬", label: "Family Chat", onPress: openChat, testID: "kids-chat" },
     { emoji: "🎁", label: "My Wishlist", onPress: () => router.push("/wishlist"), testID: "kids-wishlist" },
   ];
 

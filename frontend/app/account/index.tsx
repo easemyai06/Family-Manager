@@ -18,13 +18,47 @@ export default function AccountData() {
   const { c } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, member, logout } = useAuth();
+  const { user, member, logout, pinSet, setPin: savePin, clearPin } = useAuth();
   const isAdmin = member?.role === "admin";
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [note, setNote] = useState("");
+  const [pinModal, setPinModal] = useState(false);
+  const [pinValue, setPinValue] = useState("");
+  const [pinErr, setPinErr] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
+
+  const doSavePin = async () => {
+    setPinErr("");
+    if (!/^\d{4}$/.test(pinValue)) {
+      setPinErr("PIN must be exactly 4 digits");
+      return;
+    }
+    setPinBusy(true);
+    try {
+      await savePin(pinValue);
+      setPinModal(false);
+      setPinValue("");
+      flash("Quick sign-in PIN saved.");
+    } catch {
+      setPinErr("Couldn't save your PIN. Please try again.");
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
+  const doRemovePin = async () => {
+    setPinBusy(true);
+    try {
+      await clearPin();
+      flash("PIN removed.");
+    } catch {
+    } finally {
+      setPinBusy(false);
+    }
+  };
 
   const version = Constants.expoConfig?.version || "1.0.0";
 
@@ -158,6 +192,45 @@ export default function AccountData() {
           </View>
         ) : null}
 
+        {/* quick sign-in PIN */}
+        <View style={{ marginTop: spacing.xl }}>
+          <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
+            QUICK SIGN-IN
+          </AppText>
+          <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border, padding: spacing.lg }, shadow(1)]}>
+            <View style={styles.pinRow}>
+              <Ionicons name="keypad-outline" size={22} color={c.onSurface} />
+              <View style={{ flex: 1 }}>
+                <AppText size={15} weight="semibold">Unlock with a PIN</AppText>
+                <AppText size={12} color={c.onSurfaceSecondary} style={{ marginTop: 2 }}>
+                  {pinSet ? "On — sign back in fast with a 4-digit PIN" : "Set a 4-digit PIN to sign in quickly on this device"}
+                </AppText>
+              </View>
+              {pinSet ? (
+                <View style={[styles.onPill, { backgroundColor: c.success + "22" }]}>
+                  <AppText size={11} weight="bold" color={c.success}>ON</AppText>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.pinBtns}>
+              <Pressable
+                onPress={() => { setPinValue(""); setPinErr(""); setPinModal(true); }}
+                style={[styles.pinAction, { backgroundColor: c.brandTertiary }]}
+                testID="account-set-pin"
+              >
+                <AppText size={14} weight="bold" color={c.onBrandTertiary}>
+                  {pinSet ? "Change PIN" : "Set up PIN"}
+                </AppText>
+              </Pressable>
+              {pinSet ? (
+                <Pressable onPress={doRemovePin} disabled={pinBusy} style={[styles.pinAction, { backgroundColor: c.error + "14" }]} testID="account-remove-pin">
+                  <AppText size={14} weight="bold" color={c.error}>Remove</AppText>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
         {/* danger zone */}
         <View style={{ marginTop: spacing["2xl"] }}>
           <AppText size={12} weight="bold" color={c.error} style={{ letterSpacing: 1, marginBottom: spacing.sm }}>
@@ -226,6 +299,43 @@ export default function AccountData() {
         </View>
       </Modal>
 
+      {/* set / change PIN */}
+      <Modal visible={pinModal} transparent animationType="fade" onRequestClose={() => setPinModal(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.confirmCard, { backgroundColor: c.surface }]}>
+            <View style={[styles.warnIcon, { backgroundColor: c.brandTertiary }]}>
+              <Ionicons name="keypad" size={26} color={c.brand} />
+            </View>
+            <AppText family="display" weight="bold" size={18} center style={{ marginTop: spacing.sm }}>
+              {pinSet ? "Change your PIN" : "Set a quick-sign-in PIN"}
+            </AppText>
+            <AppText size={13} color={c.onSurfaceSecondary} center style={{ marginTop: 6, lineHeight: 20 }}>
+              Choose a 4-digit PIN to sign back in fast on this device.
+            </AppText>
+            <TextInput
+              value={pinValue}
+              onChangeText={(t) => setPinValue(t.replace(/[^0-9]/g, ""))}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              placeholder="••••"
+              placeholderTextColor={c.onSurfaceTertiary}
+              style={[styles.input, { borderColor: c.border, color: c.onSurface }]}
+              testID="account-pin-input"
+            />
+            {pinErr ? (
+              <AppText size={12} color={c.error} center style={{ marginTop: spacing.sm }}>
+                {pinErr}
+              </AppText>
+            ) : null}
+            <View style={{ flexDirection: "row", gap: spacing.md, marginTop: spacing.lg, width: "100%" }}>
+              <Button label="Cancel" variant="secondary" onPress={() => setPinModal(false)} style={{ flex: 1 }} />
+              <Button label="Save PIN" onPress={doSavePin} loading={pinBusy} style={{ flex: 1 }} testID="account-pin-save" />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {note ? (
         <View style={[styles.toast, { backgroundColor: c.surfaceInverse, bottom: insets.bottom + 30 }]} testID="account-toast">
           <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>
@@ -256,6 +366,10 @@ const styles = StyleSheet.create({
   card: { borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   field: { padding: spacing.md },
   appleLinkedRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  pinRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  onPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  pinBtns: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
+  pinAction: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.md, alignItems: "center" },
   divider: { height: 1, marginHorizontal: spacing.md },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   confirmCard: { width: "100%", maxWidth: 360, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },

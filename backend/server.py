@@ -7,6 +7,7 @@ demo-family seeder and Emergent Object Storage media upload/serving.
 import os
 import re
 import uuid
+import secrets
 import asyncio
 import ipaddress
 import logging
@@ -266,15 +267,21 @@ ACCOUNT_LIMIT = 5
 DUMMY_BCRYPT_HASH = pwd_context.hash("fixed-unusable-dummy-password")
 
 
+# Number of trusted proxies (from the right of X-Forwarded-For) that append the
+# real client. The left-most XFF entries are attacker-controlled, so we count in
+# from the right instead of trusting the spoofable first hop. Default 1 = the k8s
+# ingress. Our lockout is keyed on email+IP, so even if IPs collapse onto a shared
+# proxy, only that specific email is throttled — sign-in is never globally blocked.
+TRUSTED_PROXY_HOPS = max(1, int(os.environ.get("TRUSTED_PROXY_HOPS", "1")))
+
+
 def _client_ip(request: Request) -> str:
-    # Behind the k8s ingress the real client is in X-Forwarded-For; use the
-    # left-most entry so distinct clients don't collapse onto the shared peer IP
-    # (which would let 30 bad logins lock sign-in for everyone).
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            idx = len(parts) - TRUSTED_PROXY_HOPS
+            return parts[idx] if 0 <= idx < len(parts) else parts[-1]
     return request.client.host if request.client else "unknown"
 
 
@@ -343,6 +350,10 @@ def require_family(user: dict) -> str:
     return fid
 
 
+def _valid_pin(pin: Optional[str]) -> bool:
+    return bool(pin) and pin.isdigit() and 4 <= len(pin) <= 6
+
+
 # ---------------------------------------------------------------------------
 # Object storage
 # ---------------------------------------------------------------------------
@@ -383,7 +394,8 @@ class RegisterIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
+    email: Optional[str] = None       # email OR username (kids use a username)
+    username: Optional[str] = None
     password: str
 
 
@@ -705,6 +717,32 @@ class DelegateIn(BaseModel):
     member_id: str
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+class PinSetIn(BaseModel):
+    pin: str
+
+
+class PinLoginIn(BaseModel):
+    user_id: Optional[str] = None
+    member_id: Optional[str] = None
+    pin: str
+
+
+class ChildCredentialsIn(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    pin: Optional[str] = None
+
+
 
 
 
@@ -736,13 +774,15 @@ async def register(body: RegisterIn):
 
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
-    email = body.email.lower().strip()
+    ident = (body.email or body.username or "").lower().strip()
+    if not ident or not body.password:
+        raise HTTPException(status_code=400, detail="Enter your email/username and password")
     ip = _client_ip(request)
-    # Key the lockout on email+IP so an attacker can't lock a victim out from a
+    # Key the lockout on identifier+IP so an attacker can't lock a victim out from a
     # different network, and a shared ingress IP can never globally block sign-in.
-    key = f"acct:{email}:{ip}"
+    key = f"acct:{ident}:{ip}"
     await _reject_if_locked(key)
-    u = await db.users.find_one({"email": email})
+    u = await db.users.find_one({"email": ident}) if "@" in ident else await db.users.find_one({"username": ident})
     stored = u.get("password_hash") if (u and u.get("password_hash")) else DUMMY_BCRYPT_HASH
     ok = pwd_context.verify(body.password, stored)
     if not u or not ok:
@@ -900,8 +940,272 @@ async def apple_link(body: AppleAuthIn, user: dict = Depends(get_current_user)):
 @api.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     member = await member_for_user(user)
+    fchat = None
+    if user.get("family_id"):
+        fchat = await db.chats.find_one(
+            {"family_id": user["family_id"], "type": "family"}, {"chat_id": 1, "_id": 0})
     return {"user": public_user(user), "member": member,
+            "pin_set": bool(user.get("pin_hash")),
+            "family_chat_id": fchat.get("chat_id") if fchat else None,
             "media_token": make_media_token(user["user_id"], user.get("family_id"))}
+
+
+# ---------------------------------------------------------------------------
+# Password reset (emailed 6-digit code) + PIN login
+# ---------------------------------------------------------------------------
+def _reset_email_html(code: str) -> str:
+    return f"""<!DOCTYPE html><html><body style="margin:0;background:#FBF7F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#2b2b2b;">
+<div style="max-width:480px;margin:0 auto;padding:32px 22px;">
+  <div style="color:#E05A5A;font-weight:800;font-size:20px;letter-spacing:.3px;">FamilyHome</div>
+  <h1 style="font-size:22px;margin:18px 0 6px;">Reset your password</h1>
+  <p style="color:#555;line-height:1.6;margin:0 0 18px;">Use the code below to reset your FamilyHome password. It expires in 15 minutes.</p>
+  <div style="background:#fff;border:1px solid #eadfd4;border-radius:14px;padding:20px;text-align:center;">
+    <div style="font-size:34px;font-weight:800;letter-spacing:10px;color:#2b2b2b;">{code}</div>
+  </div>
+  <p style="color:#8a8a8a;font-size:13px;line-height:1.6;margin:18px 0 0;">If you didn't request this, you can safely ignore this email — your password stays the same. FamilyHome will never contact you asking for your password.</p>
+  <div style="margin-top:28px;padding-top:16px;border-top:1px solid #eadfd4;color:#8a8a8a;font-size:12px;">FamilyHome · by Ease My Ai Pvt Ltd</div>
+</div></body></html>"""
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, request: Request):
+    """Email a 6-digit reset code. Always returns ok so we never leak whether an
+    email is registered. Rate-limited per email+IP to stop code spamming."""
+    email = body.email.lower().strip()
+    ip = _client_ip(request)
+    key = f"pwreset:{email}:{ip}"
+    await _reject_if_locked(key)
+    u = await db.users.find_one({"email": email})
+    if u and u.get("email"):
+        code = f"{secrets.randbelow(900000) + 100000}"
+        expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        await db.password_resets.replace_one(
+            {"email": email},
+            {"email": email, "code_hash": pwd_context.hash(code), "expires_at": expires,
+             "attempts": 0, "created_at": now_iso()}, upsert=True)
+        await send_email(to=email, subject="Your FamilyHome reset code", html=_reset_email_html(code))
+    await _record_failure(key)
+    return {"ok": True}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn, request: Request):
+    email = body.email.lower().strip()
+    if len((body.new_password or "")) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    ip = _client_ip(request)
+    key = f"pwresetverify:{email}:{ip}"
+    await _reject_if_locked(key)
+    doc = await db.password_resets.find_one({"email": email})
+    exp = doc.get("expires_at") if doc else None
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    valid = bool(doc and exp and exp > datetime.now(timezone.utc) and doc.get("attempts", 0) < 5
+                 and pwd_context.verify(body.code.strip(), doc.get("code_hash", "")))
+    if not valid:
+        if doc:
+            await db.password_resets.update_one({"email": email}, {"$inc": {"attempts": 1}})
+        await _record_failure(key)
+        raise HTTPException(status_code=400, detail="That reset code is invalid or has expired")
+    u = await db.users.find_one({"email": email})
+    if not u:
+        raise HTTPException(status_code=400, detail="That reset code is invalid or has expired")
+    await db.users.update_one({"user_id": u["user_id"]},
+                              {"$set": {"password_hash": pwd_context.hash(body.new_password)}})
+    await db.password_resets.delete_one({"email": email})
+    await _clear_failures(key, f"acct:{email}:{ip}")
+    return {"token": make_token(u["user_id"]), "user": public_user(u)}
+
+
+@api.post("/auth/pin")
+async def set_pin(body: PinSetIn, user: dict = Depends(get_current_user)):
+    """Set a quick-unlock PIN for the signed-in account."""
+    if not _valid_pin(body.pin):
+        raise HTTPException(status_code=400, detail="PIN must be 4–6 digits")
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"pin_hash": pwd_context.hash(body.pin)}})
+    return {"ok": True, "pin_set": True}
+
+
+@api.delete("/auth/pin")
+async def clear_pin(user: dict = Depends(get_current_user)):
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"pin_hash": None}})
+    return {"ok": True, "pin_set": False}
+
+
+@api.post("/auth/pin-login")
+async def pin_login(body: PinLoginIn, request: Request):
+    """Sign in with a PIN — either quick-unlock (user_id, known to the device) or a
+    kid picking their name (member_id). Strictly throttled since PINs are short."""
+    ip = _client_ip(request)
+    if body.user_id:
+        u = await db.users.find_one({"user_id": body.user_id})
+        subj = body.user_id
+    elif body.member_id:
+        m = await db.members.find_one({"member_id": body.member_id})
+        u = await db.users.find_one({"user_id": m["linked_user_id"]}) if (m and m.get("linked_user_id")) else None
+        subj = body.member_id
+    else:
+        raise HTTPException(status_code=400, detail="Missing account")
+    key = f"pin:{subj}:{ip}"
+    await _reject_if_locked(key)
+    stored = u.get("pin_hash") if (u and u.get("pin_hash")) else DUMMY_BCRYPT_HASH
+    ok = _valid_pin(body.pin) and pwd_context.verify(body.pin, stored)
+    if not u or not u.get("pin_hash") or not ok:
+        await _record_failure(key)
+        raise HTTPException(status_code=401, detail="Incorrect PIN")
+    await _clear_failures(key)
+    return {"token": make_token(u["user_id"]), "user": public_user(u)}
+
+
+# ---------------------------------------------------------------------------
+# Notifications Center — unified recent family-activity inbox
+# ---------------------------------------------------------------------------
+def _bday_in_days(bday: Optional[str], today: date) -> Optional[int]:
+    if not bday:
+        return None
+    try:
+        parts = str(bday).split("-")
+        mo, da = int(parts[-2]), int(parts[-1])
+        this_year = date(today.year, mo, da)
+        nxt = this_year if this_year >= today else date(today.year + 1, mo, da)
+        return (nxt - today).days
+    except Exception:
+        return None
+
+
+async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: int = 60):
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    mmap = {m["member_id"]: m for m in members}
+
+    def actor(mid):
+        m = mmap.get(mid)
+        if not m:
+            return None
+        return {"member_id": mid, "name": m.get("name"), "photo_url": m.get("photo_url"), "color": m.get("color")}
+
+    def fname(mid):
+        m = mmap.get(mid)
+        return ((m.get("name") or "Someone").split(" ")[0]) if m else "Someone"
+
+    items = []
+    for p in await db.posts.find({"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(20):
+        mid = p.get("author_member_id")
+        if mid == my_member_id:
+            continue
+        has_media = bool(p.get("media"))
+        items.append({"id": p["post_id"], "type": "post", "emoji": "📸" if has_media else "📝",
+                      "title": f"{fname(mid)} shared {'a photo' if has_media else 'an update'}",
+                      "subtitle": ((p.get("caption") or "").strip()[:90] or None),
+                      "actor": actor(mid), "created_at": p["created_at"], "route": f"/post/{p['post_id']}"})
+    for t in await db.timeline.find({"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(15):
+        mid = t.get("created_by")
+        if mid == my_member_id:
+            continue
+        items.append({"id": t["timeline_id"], "type": "memory", "emoji": "📖",
+                      "title": f"{fname(mid)} added a memory", "subtitle": t.get("title"),
+                      "actor": actor(mid), "created_at": t["created_at"], "route": "/timeline"})
+    seen_series, ev_n = set(), 0
+    for e in await db.events.find({"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(30):
+        mid = e.get("owner_member_id")
+        if mid == my_member_id:
+            continue
+        sid = e.get("series_id")
+        if sid and sid in seen_series:
+            continue
+        if sid:
+            seen_series.add(sid)
+        items.append({"id": e["event_id"], "type": "event", "emoji": "📅",
+                      "title": f"{fname(mid)} added an event", "subtitle": f"{e.get('title')} · {e.get('date')}",
+                      "actor": actor(mid), "created_at": e["created_at"], "route": f"/event/{e['event_id']}"})
+        ev_n += 1
+        if ev_n >= 12:
+            break
+    for n in await db.notices.find({"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(15):
+        mid = n.get("owner_member_id")
+        if mid == my_member_id:
+            continue
+        items.append({"id": n["notice_id"], "type": "notice", "emoji": "📌" if n.get("pinned") else "🗒️",
+                      "title": f"{fname(mid)} posted a note", "subtitle": n.get("title"),
+                      "actor": actor(mid), "created_at": n["created_at"], "route": f"/notice/{n['notice_id']}"})
+    aq = {"family_id": fid, "created_at": {"$gte": since},
+          "$or": [{"to_member_id": my_member_id}, {"is_family": True}]}
+    for a in await db.affections.find(aq, {"_id": 0}).sort("created_at", -1).to_list(20):
+        mid = a.get("from_member_id")
+        if mid == my_member_id:
+            continue
+        label = AFFECTION_LABELS.get(a.get("type"), "❤️ Love")
+        emoji = label.split(" ")[0]
+        word = label.split(" ", 1)[-1].lower()
+        who = "the family" if a.get("is_family") else "you"
+        items.append({"id": a["affection_id"], "type": "affection", "emoji": emoji,
+                      "title": f"{fname(mid)} sent {who} {word}",
+                      "subtitle": ((a.get("message") or "").strip()[:90] or None),
+                      "actor": actor(mid), "created_at": a["created_at"], "route": "/affection/send"})
+    for cc in await db.chore_completions.find({"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(15):
+        mid = cc.get("member_id")
+        if mid == my_member_id:
+            continue
+        items.append({"id": cc.get("completion_id") or f"{cc.get('chore_id','')}{cc.get('created_at','')}",
+                      "type": "chore", "emoji": "⭐", "title": f"{fname(mid)} finished a chore",
+                      "subtitle": cc.get("title") or "Earned a star",
+                      "actor": actor(mid), "created_at": cc["created_at"], "route": "/chores"})
+    fchat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if fchat:
+        for msg in await db.messages.find(
+                {"chat_id": fchat["chat_id"], "created_at": {"$gte": since},
+                 "sender_member_id": {"$ne": my_member_id}}, {"_id": 0}).sort("created_at", -1).to_list(8):
+            mid = msg.get("sender_member_id")
+            txt = msg.get("text") or ("🎤 Voice message" if msg.get("type") == "voice"
+                                      else "📷 Photo" if msg.get("media") else "❤️")
+            items.append({"id": msg["message_id"], "type": "message", "emoji": "💬",
+                          "title": f"{fname(mid)} messaged the family", "subtitle": (txt or "")[:90],
+                          "actor": actor(mid), "created_at": msg["created_at"],
+                          "route": f"/chat/{fchat['chat_id']}?name=Family%20Chat"})
+    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    activity = items[:limit]
+
+    bdays = []
+    today = datetime.now(timezone.utc).date()
+    for m in members:
+        d = _bday_in_days(m.get("birthday"), today)
+        if d is not None and 0 <= d <= 7:
+            when = "today 🎉" if d == 0 else ("tomorrow" if d == 1 else f"in {d} days")
+            bdays.append({"id": f"bday_{m['member_id']}_{today.year}", "type": "birthday", "emoji": "🎂",
+                          "title": f"{(m.get('name') or 'Someone').split(' ')[0]}'s birthday is {when}",
+                          "subtitle": "Tap to send a little love", "actor": actor(m["member_id"]),
+                          "created_at": now_iso(), "route": "/affection/send"})
+    return bdays, activity
+
+
+@api.get("/notifications")
+async def list_notifications(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    myid = mine["member_id"] if mine else None
+    bdays, activity = await _gather_notifications(fid, myid)
+    last_read = user.get("notifications_last_read") or ""
+    unread = sum(1 for i in activity if (i.get("created_at") or "") > last_read)
+    return {"items": bdays + activity, "unread_count": unread, "last_read": last_read}
+
+
+@api.post("/notifications/read")
+async def read_notifications(user: dict = Depends(get_current_user)):
+    require_family(user)
+    await db.users.update_one({"user_id": user["user_id"]},
+                              {"$set": {"notifications_last_read": now_iso()}})
+    return {"ok": True}
+
+
+@api.get("/notifications/unread")
+async def notifications_unread(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    myid = mine["member_id"] if mine else None
+    _, activity = await _gather_notifications(fid, myid)
+    last_read = user.get("notifications_last_read") or ""
+    return {"count": sum(1 for i in activity if (i.get("created_at") or "") > last_read)}
 
 
 # ---------------------------------------------------------------------------
@@ -966,10 +1270,22 @@ async def my_family(user: dict = Depends(get_current_user)):
     fam = await db.families.find_one({"family_id": fid}, {"_id": 0})
     viewer = await member_for_user(user)
     raw = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
+    linked_ids = [m.get("linked_user_id") for m in raw if m.get("linked_user_id")]
+    umap = {}
+    if linked_ids:
+        async for uu in db.users.find(
+            {"user_id": {"$in": linked_ids}},
+            {"user_id": 1, "pin_hash": 1, "username": 1, "email": 1, "_id": 0}):
+            umap[uu["user_id"]] = uu
     members = []
     for m in raw:
+        lu = umap.get(m.get("linked_user_id"))
         m["joined"] = bool(m.get("linked_user_id"))
         m["is_me"] = bool(viewer) and m.get("member_id") == viewer.get("member_id")
+        m["has_login"] = bool(m.get("linked_user_id"))
+        m["has_pin"] = bool(lu and lu.get("pin_hash"))
+        m["username"] = lu.get("username") if lu else None
+        m["login_email"] = lu.get("email") if lu else None
         members.append(m)
     return {
         "family": fam,
@@ -1065,6 +1381,68 @@ async def remove_member(member_id: str, user: dict = Depends(get_current_user)):
         await db.users.update_one({"user_id": target["linked_user_id"]}, {"$set": {"family_id": None}})
     await db.members.delete_one({"member_id": member_id, "family_id": fid})
     return {"ok": True}
+
+
+@api.post("/families/members/{member_id}/credentials")
+async def set_member_credentials(member_id: str, body: ChildCredentialsIn,
+                                 user: dict = Depends(get_current_user)):
+    """Parent/admin sets or resets a member's login (username + password + PIN).
+    Mainly for children who have no email — they sign in with a username/PIN."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not (mine and mine.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents or admins can manage member logins")
+    target = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if target.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="The family organizer manages their own login")
+    if body.pin not in (None, "") and not _valid_pin(body.pin):
+        raise HTTPException(status_code=400, detail="PIN must be 4–6 digits")
+    if body.password not in (None, "") and len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    username = (body.username or "").strip().lower() or None
+    if username:
+        if not re.fullmatch(r"[a-z0-9_.]{3,20}", username):
+            raise HTTPException(status_code=400, detail="Username must be 3–20 letters, numbers, dots or underscores")
+        clash = await db.users.find_one({"username": username})
+        if clash and clash.get("user_id") != target.get("linked_user_id"):
+            raise HTTPException(status_code=400, detail="That username is already taken")
+
+    luid = target.get("linked_user_id")
+    if not luid:
+        if not username:
+            raise HTTPException(status_code=400, detail="Choose a username for this member")
+        if not body.password and not body.pin:
+            raise HTTPException(status_code=400, detail="Set a password or a PIN")
+        luid = new_id("user_")
+        # NOTE: intentionally omit `email` (rather than setting it to None) so the
+        # `sparse=True` unique index on users.email skips these child accounts —
+        # otherwise the 2nd child user for the same family would collide on
+        # `email: null` and raise DuplicateKeyError (a 500).
+        await db.users.insert_one({
+            "user_id": luid, "name": target.get("name") or "Member",
+            "username": username,
+            "password_hash": pwd_context.hash(body.password) if body.password else None,
+            "pin_hash": pwd_context.hash(body.pin) if body.pin else None,
+            "picture": target.get("photo_url"), "family_id": fid, "provider": "child",
+            "created_at": now_iso(),
+        })
+        await db.members.update_one({"member_id": member_id, "family_id": fid},
+                                    {"$set": {"linked_user_id": luid}})
+    else:
+        updates = {}
+        if username:
+            updates["username"] = username
+        if body.password:
+            updates["password_hash"] = pwd_context.hash(body.password)
+        if body.pin:
+            updates["pin_hash"] = pwd_context.hash(body.pin)
+        if updates:
+            await db.users.update_one({"user_id": luid}, {"$set": updates})
+    lu = await db.users.find_one({"user_id": luid}, {"_id": 0})
+    return {"ok": True, "member_id": member_id, "username": lu.get("username"),
+            "has_pin": bool(lu.get("pin_hash")), "has_password": bool(lu.get("password_hash"))}
 
 
 @api.patch("/families/members/{member_id}/status")
@@ -1165,6 +1543,7 @@ async def export_family(user: dict = Depends(get_current_user)):
         if name == "users":  # never export credentials
             for d in docs:
                 d.pop("password_hash", None)
+                d.pop("pin_hash", None)
         collections[name] = docs
     return {
         "app": "FamilyHome",

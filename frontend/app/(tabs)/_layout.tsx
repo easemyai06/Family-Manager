@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, Platform } from "react-native";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -22,7 +22,9 @@ const TABS: { name: string; label: string; icon: keyof typeof Ionicons.glyphMap;
 function TabBar({ state, navigation }: BottomTabBarProps) {
   const { c, scheme } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [chatUnread, setChatUnread] = useState(0);
+  const [familyChatId, setFamilyChatId] = useState<string | null>(null);
   const [isChild, setIsChild] = useState(false);
 
   useEffect(() => {
@@ -36,7 +38,10 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
     const tick = async () => {
       try {
         const chats = await api<any[]>("/chats");
-        if (active) setChatUnread(chats.reduce((s, ch) => s + (ch.unread || 0), 0));
+        if (!active) return;
+        setChatUnread(chats.reduce((s, ch) => s + (ch.unread || 0), 0));
+        const fam = chats.find((ch) => ch.type === "family");
+        if (fam?.chat_id) setFamilyChatId(fam.chat_id);
       } catch {}
     };
     tick();
@@ -46,6 +51,19 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
       clearInterval(iv);
     };
   }, []);
+
+  // Chat is a single family conversation now — tapping the tab opens it directly.
+  const openFamilyChat = async () => {
+    let id = familyChatId;
+    if (!id) {
+      try {
+        const chats = await api<any[]>("/chats");
+        id = chats.find((ch) => ch.type === "family")?.chat_id || null;
+        if (id) setFamilyChatId(id);
+      } catch {}
+    }
+    if (id) router.push(`/chat/${id}?name=${encodeURIComponent("Family Chat")}`);
+  };
 
   const visibleTabs = isChild ? TABS.filter((t) => t.name !== "more") : TABS;
 
@@ -76,7 +94,12 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
             const onPress = () => {
               if (Platform.OS !== "web") Haptics.selectionAsync();
               const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-              if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+              if (event.defaultPrevented) return;
+              if (route.name === "chat") {
+                openFamilyChat();
+                return;
+              }
+              if (!focused) navigation.navigate(route.name);
             };
             return (
               <Pressable

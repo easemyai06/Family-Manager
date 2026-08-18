@@ -1,0 +1,39 @@
+{
+  "summary": "Batch#28 (Forgot password + PIN login + child credentials + notifications) — BACKEND: 14/14 pytest cases pass in /app/backend/tests/test_batch28_forgot_pin_child_notif.py covering forgot-password (always-200 for known+unknown emails), reset-password (wrong-code→400, short-password→400), quick-unlock PIN (set→pin_set:true+non-null family_chat_id in /auth/me, pin-login via user_id ok, wrong pin→401, short pin '12'→401 not 500, DELETE clears), child credentials (username-login works, member pin-login works, /families/me surfaces has_login/has_pin/username), role guards (add-member role=admin→400, set-credentials on admin target→403, non-parent setting credentials→403), and notifications shape+read (unread drops to 0). FRONTEND: All target flows verified via Playwright at 390x844: (1) Login → 'Forgot password?' → forgot screen phase 1 → send code (200) → phase 2 shows code+password fields → wrong 000000 + valid new password → inline error 'That reset code is invalid or has expired' ✅. (2) Admin login → More → Account & Data → QUICK SIGN-IN 'Set up PIN' → PIN 1234 → save toast 'Quick sign-in PIN saved' ✅; localStorage fh_remembered persisted {pin_set:true} ✅. (3) Family tab → Manage → tap a non-admin member badge → actions modal shows 'Set up login & PIN' → credentials modal opens (username + PIN + optional password) → save succeeds (modal closes, member flips to Joined) ✅. (4) Chat tab → opens `/chat/chat_<id>?name=Family%20Chat` directly (message list + composer visible, no '+ new chat' button anywhere) ✅. Home 'Message' quick action opens the SAME family_chat_id URL ✅. (5) Home header bell (testID `home-notifications`) → Notifications screen with 'Activity' header, listing birthdays + activity from other members (Aarav's birthday in 2 days, Priya sent hug, Anaya added event, Aarav finished a chore, etc.) → back button returns to Home ✅. CRITICAL BUG FOUND & FIXED: POST /api/families/members/{id}/credentials returned 500 DuplicateKeyError on the SECOND child user creation per environment because the insert set `email: None` and the `users.email` unique index is `sparse=True` (sparse indexes still index explicit null values). Fix applied at server.py line 1418: OMIT the `email` field from the insert doc for child accounts so sparse skips them. Verified via retest (Priya credentialed after Anaya had already been credentialed in the same run). All 14 pytest cases still pass after the fix.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch28_forgot_pin_child_notif.py",
+    "/app/test_reports/pytest/pytest_batch28_results.xml"
+  ],
+  "action_items": [
+    "Review the small MongoDB-null-email fix applied in server.py set_member_credentials (line 1418): omitted `email` field on new child user insert to prevent DuplicateKeyError on 2nd child. If E1 prefers a schema-consistent fix, replace the sparse index with a partial-filter index: `users.create_index('email', unique=True, partialFilterExpression={'email': {'$type':'string'}})` and drop the old one at startup — currently the sparse index still keeps working because we simply don't include the field for child users."
+  ],
+  "critical_code_review_comments": [
+    "server.py: `users.email` unique index is declared with sparse=True, but a document explicitly set to `email: null` IS indexed by sparse (only *missing* fields are skipped). This is a subtle Mongo footgun. Fix by omitting the field OR migrating to a partial-filter unique index. Applied the 'omit the field' fix.",
+    "server.py:1400 `_valid_pin` correctly rejects pins outside 4–6 digits so the pin-login '12' short-pin path returns 401 not 500 (bcrypt.verify still runs against DUMMY_BCRYPT_HASH, which is safe).",
+    "notifications.tsx correctly fires POST /notifications/read once the list is shown, and unread_count drops to 0 on the very next GET /notifications/unread — verified from backend pytest.",
+    "chat tab route (app/(tabs)/chat.tsx) is a redirect-only screen forwarding to /chat/<family_chat_id>?name=Family%20Chat — direct-tap flow works. There is NO '+ new chat' button anywhere, matching the requirement."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (line ~1418: omit `email` field on child-user insert)",
+    "/app/backend/tests/test_batch28_forgot_pin_child_notif.py (new, 14 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 pytest cases)",
+    "frontend": "100% for the 5 requested batch#28 UI flows (forgot / PIN setup / child creds / chat single-conversation / notifications bell)"
+  },
+  "seed_data_creation": "Reused Sharma demo family under protectdemo@fam.com. During the run, added logins for two seeded pending members (Anaya via pytest, Priya via UI) with test usernames of the form `test_kid_<rand>` / `kid_ui2_<rand>`, password kidpass123, PIN 1111/1234. The admin's quick-unlock PIN was also set to 4321 (pytest) and 1234 (UI). Cleanup not performed — safe since these are demo family members.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Playwright browser contexts do NOT persist localStorage across separate mcp_browser_automation invocations. If you need to test the full end-to-end 'logout → PIN unlock' flow in one shot, keep everything in a single script (set PIN → tab-more → logout-btn → tap 'I already have an account' text on Welcome → login-pin-btn → pin-person-<uid> → pin-key-1..4). REMEMBER_KEY on this browser after admin PIN save was verified as: {\"user_id\":\"user_b9b5e29504264364\",\"name\":\"Protect Demo\",\"picture\":null,\"pin_set\":true}. Family tab requires tapping the 'Manage' toggle (testID `manage-members-btn`) before member cards will open the actions modal — otherwise tapping a member navigates to their profile screen. Note that only non-admin, non-me members get the manage badge (testID `manage-mem_*`). Chat single-conversation URL pattern: `/chat/chat_<uuid>?name=Family%20Chat`. Chat tab testID is `tab-chat`. The bell on Home is `home-notifications`, and the Activity list rows use `notif-<id>` with `notif-back` on the header. For the child-credentials flow, use `member-credentials` inside the actions modal, then `cred-username` / `cred-pin` / `cred-password` and `cred-save`, with `cred-done` (success) / `cred-error` (error).",
+  "rca_of_issue": "BUG: POST /api/families/members/{id}/credentials returned 500 on the 2nd child user creation per Mongo database. Reproduction (before fix): (a) as admin, credential ONE pending member (e.g. Anaya) with any username+PIN — success. (b) as admin, credential ANOTHER pending member (e.g. Priya) with any username+PIN — 500 Internal Server Error. Backend log: `pymongo.errors.DuplicateKeyError: E11000 duplicate key error collection: test_database.users index: email_1 dup key: { email: null }`. ROOT CAUSE: server.py line 1420 (before fix) inserted `email: None` into `db.users` for every new child user; the `users.email` unique index is `sparse=True`, but sparse indexes ONLY skip documents where the field is MISSING — an explicit `email: null` IS indexed as null, and only one such doc is allowed under a unique index. So the second child insert always collides. FIX: drop `email: None` from the insert doc; sparse then skips the doc and multiple email-less child users co-exist safely. Reproduction after fix: created Priya login after Anaya login, no 500. All pytest tests still green. MITIGATION for E1: consider migrating to a partialFilterExpression unique index for extra robustness."
+}

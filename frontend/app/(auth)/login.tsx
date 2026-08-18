@@ -25,7 +25,7 @@ export default function Login() {
   const submit = async () => {
     setError("");
     if (!email || !password) {
-      setError("Please enter your email and password");
+      setError("Please enter your email/username and password");
       return;
     }
     setLoading(true);
@@ -64,8 +64,8 @@ export default function Login() {
 
         <View style={{ gap: spacing.lg }}>
           <TextField
-            label="Email"
-            icon="mail-outline"
+            label="Email or username"
+            icon="person-outline"
             placeholder="you@family.com"
             autoCapitalize="none"
             keyboardType="email-address"
@@ -83,6 +83,12 @@ export default function Login() {
             testID="login-password-input"
           />
         </View>
+
+        <Pressable onPress={() => router.push("/(auth)/forgot")} style={styles.forgot} testID="forgot-link">
+          <AppText size={14} weight="semibold" color={c.brand}>
+            Forgot password?
+          </AppText>
+        </Pressable>
 
         {error ? (
           <AppText size={13} color={c.error} style={{ marginTop: spacing.md }} testID="login-error">
@@ -103,6 +109,13 @@ export default function Login() {
           <AppleSignInButton variant="black" onError={setError} />
         </View>
 
+        <Pressable onPress={() => router.push("/(auth)/pin")} style={[styles.pinBtn, { borderColor: c.border }]} testID="login-pin-btn">
+          <Ionicons name="keypad-outline" size={18} color={c.onSurface} />
+          <AppText size={14} weight="semibold">
+            Family member? Sign in with a PIN
+          </AppText>
+        </Pressable>
+
         <Pressable onPress={() => router.replace("/(auth)/register")} style={styles.switch} testID="go-register-btn">
           <AppText size={14} color={c.onSurfaceSecondary}>
             New here?{" "}
@@ -120,5 +133,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { paddingHorizontal: spacing.xl },
   back: { width: 40, height: 40, justifyContent: "center" },
+  forgot: { alignSelf: "flex-end", marginTop: spacing.sm, paddingVertical: 4 },
+  pinBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, paddingVertical: spacing.md, borderRadius: 14, borderWidth: 1 },
   switch: { alignItems: "center", marginTop: spacing.xl },
 });
