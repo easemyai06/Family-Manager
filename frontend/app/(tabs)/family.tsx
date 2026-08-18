@@ -298,8 +298,8 @@ export default function Family() {
                   })}
                 </View>
 
-                {/* login & PIN (parent-managed, esp. for kids) */}
-                {actionMember.role !== "admin" ? (
+                {/* login & PIN (parent-managed; kids / pending members only) */}
+                {actionMember.manage_login ? (
                   <>
                     <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={styles.sheetLabel}>
                       LOGIN &amp; PIN

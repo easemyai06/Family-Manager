@@ -407,3 +407,24 @@ Center inbox of recent family activity.
 - SEC-002 hardening: _client_ip counts TRUSTED_PROXY_HOPS (default 1) from the RIGHT of X-Forwarded-For.
 - Verified: testing agent iteration_27 — backend 14/14 pytest
   (backend/tests/test_batch28_forgot_pin_child_notif.py), frontend 5/5 flows. Preview only — Publish to ship.
+
+## Security Audit #6 remediation — June 2026
+Read-only audit (codebase/preview; production not reachable by tooling — Publish to deploy) focused on
+the Batch #28 auth additions. Verdict: one HIGH fixed; everything else PASS.
+- SEC-001 (HIGH) FIXED — account takeover via member-credentials: POST /families/members/{id}/credentials
+  previously blocked only the 'admin' target, so a parent/admin could overwrite ANOTHER adult member's
+  self-owned (email/Google/Apple) login and impersonate them. Fix: when the target already has a linked
+  user, only allow the reset if that user's provider == "child" (parent-managed); otherwise 403
+  ("This member signed in with their own account…"). /families/me now returns a `manage_login` flag
+  (true only for non-admin members that are unlinked or child-provider) and the Family member-actions UI
+  only shows "Set up / Reset login & PIN" when manage_login is true.
+- Confirmed SAFE by the audit (no change needed): PIN login (DUMMY_BCRYPT_HASH + uniform "Incorrect PIN",
+  no enumeration; member_id path authenticates as the linked user, no cross-family abuse; throttle
+  pin:{subj}:{ip}); forgot/reset (always-200, bcrypt-hashed code, 15-min expiry, <5 attempts, single-use,
+  per-IP verify throttle); login identifier+IP throttle; _client_ip right-of-XFF not trivially spoofable;
+  notifications strictly family-scoped; medical-detail gating, add-member no-'admin', per-item family_id
+  scoping, media/API token separation, invite child-photo hiding all still enforced.
+- Accepted low-risk: 4-digit PIN with strict throttling (UUID prerequisite); CORS '*' + credentials off
+  for a Bearer app.
+- Verified via curl: child login create+reset 200/200; self-owned adult manage_login=false and admin reset
+  -> 403. Preview only — Publish to ship to production.

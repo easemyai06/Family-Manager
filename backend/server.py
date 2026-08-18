@@ -1275,7 +1275,7 @@ async def my_family(user: dict = Depends(get_current_user)):
     if linked_ids:
         async for uu in db.users.find(
             {"user_id": {"$in": linked_ids}},
-            {"user_id": 1, "pin_hash": 1, "username": 1, "email": 1, "_id": 0}):
+            {"user_id": 1, "pin_hash": 1, "username": 1, "email": 1, "provider": 1, "_id": 0}):
             umap[uu["user_id"]] = uu
     members = []
     for m in raw:
@@ -1286,6 +1286,10 @@ async def my_family(user: dict = Depends(get_current_user)):
         m["has_pin"] = bool(lu and lu.get("pin_hash"))
         m["username"] = lu.get("username") if lu else None
         m["login_email"] = lu.get("email") if lu else None
+        # A parent can only create/reset a login for members that don't yet have one,
+        # or for parent-managed child accounts — never for self-owned (email/Google/
+        # Apple) accounts. Admin is always self-managed.
+        m["manage_login"] = m.get("role") != "admin" and (not lu or lu.get("provider") == "child")
         members.append(m)
     return {
         "family": fam,
@@ -1431,6 +1435,14 @@ async def set_member_credentials(member_id: str, body: ChildCredentialsIn,
         await db.members.update_one({"member_id": member_id, "family_id": fid},
                                     {"$set": {"linked_user_id": luid}})
     else:
+        existing = await db.users.find_one({"user_id": luid}, {"_id": 0})
+        # Only parent-managed CHILD accounts can be reset here. Never overwrite an
+        # account the member set up themselves (email / Google / Apple) — otherwise a
+        # parent could silently take over another adult member's account.
+        if not existing or existing.get("provider") != "child":
+            raise HTTPException(
+                status_code=403,
+                detail="This member signed in with their own account, so only they can change their login")
         updates = {}
         if username:
             updates["username"] = username
