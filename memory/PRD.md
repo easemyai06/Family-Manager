@@ -526,3 +526,36 @@ family members — they never appear in Tree/Timeline/Memories and get least-pri
   Notes, Pickup/Drop live status, selective Emergency/Medical sharing, Location permission modes,
   device/session detail polish, in-app helper notifications feed, "Helpers Today" Home card UI,
   generic task "Assign To: Family member OR Helper". (English only; no multilingual.)
+
+## Batch #31 — TRUSTED HELPERS Phase 2 (Chat / Handover / Pickup-Drop) (June 2026)
+Follow-on to Phase 1. Three parent-approved features, all backend-authorized (never UI-only):
+- Private Parent↔Helper Chat: brand-new `db.helper_messages` collection, COMPLETELY separate from the
+  single common Family Chat (db.messages/db.chats) — a helper can never see family chat/history.
+  Parent: GET/POST /api/helpers/{id}/chat (parent/admin manager). Helper: GET/POST /api/helper/chat
+  gated by require_helper_permission('chat') (no-chat-perm helper → 403). Unread surfaced on
+  /api/helpers list + /api/helpers/{id} (helper→parent) and /helper/dashboard (parent→helper, +can_chat).
+- Handover Notes: `db.helper_handovers` daily log (by parent|helper, date, author, text). Parent
+  GET/POST /api/helpers/{id}/handover; helper GET/POST /api/helper/handover (any active helper, no
+  special perm). dashboard.handover_today = # of today's parent notes.
+- Pickup & Drop live status: HelperTaskIn/Patch gained pickup_from/pickup_to. POST
+  /api/helper/tasks/{id}/trip {stage: en_route|picked_up|reached} writes trip.{started_at,
+  picked_up_at,reached_at,status} into helper_task_completions; 'reached' also completes the task.
+  Each stage fires a parent notification.
+- Notifications: _notify_parents_helper now also writes `db.helper_events`; _gather_notifications
+  includes type='helper' items ONLY for admin/parent viewers (route /helper/{id}). Chat msgs, handover
+  replies, trip stages and needs/issues all surface in the family Notifications Center for parents.
+- Frontend: shared HelperChatView + HelperHandoverView components. Parent: /helper/[id] gains Chat
+  (helper-chat-btn, unread badge) + Handover (helper-handover-btn); Assign-task modal shows Pick up
+  from/Drop to when category=pickup; pickup rows show route + live trip badge; Family tab helper card
+  shows unread-chat badge. Helper portal: Chat (portal-chat-btn, if can_chat) + Handover
+  (portal-handover-btn, dot when parent note today) nav; pickup tasks show a trip stepper
+  (Start Trip → Child Picked Up → Reached Home). New routes: helper/chat, helper/handover,
+  helper-portal/chat, helper-portal/handover.
+- Verified: testing agent Batch #31 — BACKEND 21/21 pytest
+  (backend/tests/test_batch31_trusted_helpers_phase2.py) incl. chat isolation, no-chat-perm 403,
+  cross-token 401 boundaries, chat/handover round-trips + unread counters, trip flow + completion,
+  helper-events gated to parents, paused/removed lifecycle blocks. FRONTEND helper portal + parent
+  flows pass. Demo helper Sunita (username sunita / PIN 1234) has a pickup task Delhi Public School →
+  Home + seeded chat/handover. Preview only — Publish to ship to production.
+- PENDING (Phase 3, per user-approved phasing): Care Team chat, selective Emergency/Medical sharing,
+  live-GPS pickup map (permissions already wired), device/session detail polish. (English only.)

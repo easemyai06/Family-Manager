@@ -269,6 +269,12 @@ export default function Family() {
                       {h.status === "active" && h.tasks_total ? ` · ${h.tasks_done}/${h.tasks_total} tasks today` : ""}
                     </AppText>
                   </View>
+                  {h.unread_chat ? (
+                    <View style={[styles.helperUnread, { backgroundColor: c.error }]} testID={`helper-unread-${h.helper_id}`}>
+                      <Ionicons name="chatbubble" size={10} color="#fff" />
+                      <AppText size={10} weight="bold" color="#fff">{h.unread_chat}</AppText>
+                    </View>
+                  ) : null}
                   <View style={[styles.helperStatus, {
                     backgroundColor: (h.status === "active" ? c.success : h.status === "paused" ? c.warning : c.onSurfaceTertiary) + "22",
                   }]}>
@@ -498,6 +504,7 @@ const styles = StyleSheet.create({
   helperCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.sm },
   roleIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
   helperStatus: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+  helperUnread: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
   inviteIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   loveCard: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: spacing.xl },

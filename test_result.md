@@ -1917,3 +1917,78 @@ frontend_batch30:
 agent_communication_batch30:
     -agent: "main"
     -message: "Batch #30 = TRUSTED HELPERS Phase 1 (a separate restricted user type; NEVER a family member). CREDS: parent/admin storytester@fam.com / secret123; demo helper login username 'sunita' PIN '1234' (Nanny, assigned Aarav, 3 daily tasks incl. a pickup that REQUIRES a photo). TEST BOTH backend + frontend. BACKEND already curl-verified by main agent incl. all security boundaries (see backend_batch30). Please regression: (1) parent CRUD /api/helpers (create invite + direct username/pin), activate, login, dashboard, task assign, complete (photo-proof enforcement 400/200), issue, activity; (2) SECURITY: helper token must 401 on ANY family route (/api/home, /api/families/me, /api/chats/*, /api/vault/*); family token must 401 on /helper/*; a helper must NEVER read another family's data; only parent/admin can manage helpers (non-parent 403 — note only admin logs in demo, reason via code); pause->403 login & 401 requests, remove->instant revoke, signout-all invalidates old token. (3) child-level scoping: helper assigned only Aarav must not implicitly access Anaya (assigned_member_ids). FRONTEND (in-app nav, 390x844): PARENT: Family tab -> Trusted Helpers -> +Add -> fill wizard (role, assign, permissions Allow/Deny, invite mode) -> success invite code; open helper detail -> Assign task modal -> verify task appears; pause/resume; set username&PIN; New invite code; verify access summary can/cannot lists. HELPER: Welcome -> 'I'm a trusted helper' -> login sunita/1234 -> dashboard shows 3 tasks -> Start a task, Mark done (the pickup needs a photo -> verify it blocks done until a photo is added on native; on web the picker may not complete -> just verify the proof requirement UI + that a non-proof task completes), Need help -> pick reason -> send. Sign out returns to helper login. NOTE: helper proof photo upload + native image picker are native-limited on web — verify UI/permission handling, don't fail web. Do NOT run destructive family cleanup. Restart nothing."
+
+# ============ Feature Batch #31 — TRUSTED HELPERS Phase 2 (Chat / Handover / Pickup-Drop) ============
+backend_batch31:
+  - task: "Private parent<->helper chat (isolated from Family Chat)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New db.helper_messages. Parent: GET/POST /api/helpers/{id}/chat (get_current_user + parent/admin manager; read-marks helper msgs). Helper: GET/POST /api/helper/chat gated by require_helper_permission('chat'). Messages carry sender parent|helper. Fully separate from db.messages/db.chats — helper can NEVER see Family Chat. Unread surfaced: list_helpers/get_helper add unread_chat (helper->parent unread); helper/dashboard adds unread_chat (parent->helper) + can_chat. Curl-verified full round-trip (parent send -> helper read+reply -> parent read, unread cleared)."
+  - task: "Handover notes (daily log; parent notes + helper end-of-day replies)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New db.helper_handovers (per note: by parent|helper, date, author, text). Parent GET/POST /api/helpers/{id}/handover; helper GET/POST /api/helper/handover (all active helpers, no special perm). helper/dashboard returns handover_today (# parent notes today). Curl-verified: parent note visible to helper; helper end-of-day note added."
+  - task: "Pickup & Drop live status flow (Start Trip -> Picked Up -> Reached)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "HelperTaskIn/Patch gained pickup_from/pickup_to. POST /api/helper/tasks/{id}/trip {stage: en_route|picked_up|reached} stores trip.{started_at,picked_up_at,reached_at,status} in helper_task_completions; 'reached' also sets completed_at (marks done). Each stage fires _notify_parents_helper (route/emoji). Curl-verified all 3 stages 200."
+  - task: "Helper events in family Notifications Center (parents/admins only)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "_notify_parents_helper now also writes db.helper_events. _gather_notifications(viewer_role) includes helper events (type 'helper') ONLY for admin/parent viewers, route /helper/{id}. Curl-verified: parent /api/notifications shows 5 helper items (chat msg, handover note, 3 trip stages)."
+
+frontend_batch31:
+  - task: "Parent helper chat + handover screens + trip status on detail"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper/chat.tsx, frontend/app/helper/handover.tsx, frontend/app/helper/[id].tsx, frontend/src/components/HelperChatView.tsx, frontend/src/components/HelperHandoverView.tsx, frontend/app/(tabs)/family.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Helper detail (/helper/[id]) has Chat (helper-chat-btn, unread badge) + Handover (helper-handover-btn) quick actions. Chat screen (/helper/chat?id=&name=) polls every 4s, right/left bubbles, disabled state when chat perm off. Handover screen (/helper/handover?id=&name=) date-grouped notes + composer. Task Assign modal shows Pick up from/Drop to inputs when category=pickup (task-from/task-to); pickup task rows show route + live trip badge (from activity completions). Family tab helper card shows unread-chat badge (helper-unread-<id>)."
+  - task: "Helper portal chat + handover + pickup trip buttons"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx, frontend/app/helper-portal/chat.tsx, frontend/app/helper-portal/handover.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Portal shows Chat (portal-chat-btn, only if can_chat, unread badge) + Handover (portal-handover-btn, dot when parent note today) nav under Today's Work. Chat screen polls; Handover screen composer 'End-of-day note'. Pickup tasks (category=pickup) show route + a trip stepper: Start Trip (trip-start-<id>) -> Child Picked Up (trip-pickup-<id>) -> Reached Home (trip-reached-<id>); reached completes the task. Non-pickup tasks keep Start/Mark done/Need help. Smoke-verified portal renders with Chat/Handover + pickup route."
+
+agent_communication_batch31:
+    -agent: "main"
+    -message: "Batch #31 = TRUSTED HELPERS Phase 2. CREDS: parent/admin storytester@fam.com / secret123 (helper_id help_c77a0a30120545bb); demo helper login username 'sunita' PIN '1234' (Nanny, assigned Aarav; has a pickup task 'Pick up Aarav from school' Delhi Public School -> Home; today's completions cleared so trip flow is fresh; 2 seeded chat msgs + 2 handover notes exist). TEST BOTH backend + frontend. BACKEND (curl-verified by main agent, please regression + SECURITY): (1) PRIVATE CHAT isolation — helper /helper/chat must ONLY return helper<->parent messages, NEVER Family Chat (db.messages); a helper WITHOUT chat permission must get 403 on /helper/chat (create a helper with chat denied to verify); family token must 401 on /helper/*; helper token must 401 on parent /helpers/{id}/chat. (2) HANDOVER — parent POST note -> helper GET sees it; helper POST end-of-day -> parent GET sees it; scoped to that helper+family only (cross-family 404). (3) TRIP — helper POST /helper/tasks/{id}/trip stages en_route/picked_up/reached (bad stage 400); 'reached' marks task done; each fires a parent notification. (4) NOTIFICATIONS — parent GET /api/notifications includes type 'helper' items; a CHILD/non-parent viewer must NOT see helper events. (5) lifecycle: paused/removed helper -> chat/handover/trip endpoints blocked (401/403). FRONTEND (in-app nav, 390x844): HELPER (login sunita/1234): portal shows Chat + Handover buttons; open Chat -> see parent msg -> send a reply; open Handover -> see family note -> add end-of-day note; the pickup task shows Start Trip -> tap -> Child Picked Up -> tap -> Reached Home (task then shows done). PARENT (storytester): Family tab -> Trusted Helpers -> open Sunita -> Chat (see helper reply, send a message) + Handover (see helper note, add a note) + Tasks show pickup route + trip badge; Notifications bell shows helper activity. Web geolocation/native pickers not required here (Phase 2 pickup is task-status only, no live GPS). Do NOT run destructive cleanup."

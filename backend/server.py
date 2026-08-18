@@ -1097,7 +1097,8 @@ def _bday_in_days(bday: Optional[str], today: date) -> Optional[int]:
         return None
 
 
-async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: int = 60):
+async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: int = 60,
+                                viewer_role: Optional[str] = None):
     since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
     mmap = {m["member_id"]: m for m in members}
@@ -1186,6 +1187,13 @@ async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: in
                           "title": f"{fname(mid)} messaged the family", "subtitle": (txt or "")[:90],
                           "actor": actor(mid), "created_at": msg["created_at"],
                           "route": f"/chat/{fchat['chat_id']}?name=Family%20Chat"})
+    if viewer_role in ("admin", "parent"):
+        for ev in await db.helper_events.find(
+                {"family_id": fid, "created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(25):
+            items.append({"id": ev["event_id"], "type": "helper", "emoji": ev.get("emoji") or "🔔",
+                          "title": ev.get("title"), "subtitle": ev.get("subtitle"),
+                          "actor": None, "created_at": ev.get("created_at"),
+                          "route": ev.get("route") or "/(tabs)/family"})
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     activity = items[:limit]
 
@@ -1207,7 +1215,7 @@ async def list_notifications(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
     myid = mine["member_id"] if mine else None
-    bdays, activity = await _gather_notifications(fid, myid)
+    bdays, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"))
     last_read = user.get("notifications_last_read") or ""
     unread = sum(1 for i in activity if (i.get("created_at") or "") > last_read)
     return {"items": bdays + activity, "unread_count": unread, "last_read": last_read}
@@ -1226,7 +1234,7 @@ async def notifications_unread(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
     myid = mine["member_id"] if mine else None
-    _, activity = await _gather_notifications(fid, myid)
+    _, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"))
     last_read = user.get("notifications_last_read") or ""
     return {"count": sum(1 for i in activity if (i.get("created_at") or "") > last_read)}
 
@@ -5980,6 +5988,8 @@ class HelperTaskIn(BaseModel):
     photo_url: Optional[str] = None
     require_proof: Optional[str] = None     # none | photo | note | confirm
     category: str = "chore"                 # chore | meal | pickup | care | shopping | other
+    pickup_from: Optional[str] = None       # pickup tasks
+    pickup_to: Optional[str] = None
 
 
 class HelperTaskPatch(BaseModel):
@@ -5994,6 +6004,8 @@ class HelperTaskPatch(BaseModel):
     checklist: Optional[List[str]] = None
     require_proof: Optional[str] = None
     category: Optional[str] = None
+    pickup_from: Optional[str] = None
+    pickup_to: Optional[str] = None
 
 
 class HelperTaskCompleteIn(BaseModel):
@@ -6004,6 +6016,20 @@ class HelperTaskCompleteIn(BaseModel):
 
 class HelperIssueIn(BaseModel):
     reason: str
+    note: Optional[str] = None
+
+
+class HelperChatIn(BaseModel):
+    text: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class HelperHandoverIn(BaseModel):
+    text: str
+
+
+class HelperTripIn(BaseModel):
+    stage: str                              # en_route | picked_up | reached
     note: Optional[str] = None
 
 
@@ -6170,6 +6196,7 @@ async def list_helpers(user: dict = Depends(get_current_user)):
         pub["tasks_total"] = len(tasks)
         pub["tasks_done"] = sum(1 for t in tasks if t.get("done"))
         pub["next_task"] = next((t for t in tasks if not t.get("done")), None)
+        pub["unread_chat"] = await _helper_unread_for_parent(fid, h["helper_id"])
         out.append(pub)
     return {"helpers": out}
 
@@ -6228,6 +6255,7 @@ async def get_helper(helper_id: str, user: dict = Depends(get_current_user)):
     pub["assigned_members"] = await _member_cards(fid, h.get("assigned_member_ids") or [])
     pub["has_login"] = bool(h.get("username"))
     pub["invite_code"] = h.get("invite_code")
+    pub["unread_chat"] = await _helper_unread_for_parent(fid, helper_id)
     return {"helper": pub}
 
 
@@ -6443,6 +6471,86 @@ async def helper_activity(helper_id: str, user: dict = Depends(get_current_user)
     return {"activity": comps}
 
 
+# --- Parent/admin: private helper chat + handover notes -------------------
+async def _get_managed_helper(fid: str, helper_id: str) -> dict:
+    h = await db.helpers.find_one(
+        {"helper_id": helper_id, "family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0})
+    if not h:
+        raise HTTPException(status_code=404, detail="Helper not found")
+    return h
+
+
+def helper_msg_public(m: dict) -> dict:
+    return {"message_id": m["message_id"], "sender": m.get("sender"),
+            "sender_name": m.get("sender_name"), "sender_photo": m.get("sender_photo"),
+            "text": m.get("text"), "photo_url": m.get("photo_url"),
+            "created_at": m.get("created_at")}
+
+
+async def _helper_unread_for_parent(fid: str, helper_id: str) -> int:
+    return await db.helper_messages.count_documents(
+        {"helper_id": helper_id, "family_id": fid, "sender": "helper", "read_by_parent": False})
+
+
+@api.get("/helpers/{helper_id}/chat")
+async def parent_helper_chat(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    h = await _get_managed_helper(fid, helper_id)
+    await db.helper_messages.update_many(
+        {"helper_id": helper_id, "family_id": fid, "sender": "helper", "read_by_parent": False},
+        {"$set": {"read_by_parent": True}})
+    msgs = await db.helper_messages.find(
+        {"helper_id": helper_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    return {"messages": [helper_msg_public(m) for m in msgs],
+            "helper": {"helper_id": helper_id, "name": h.get("name"), "photo_url": h.get("photo_url"),
+                       "can_chat": bool((h.get("permissions") or {}).get("chat"))}}
+
+
+@api.post("/helpers/{helper_id}/chat")
+async def parent_helper_chat_send(helper_id: str, body: HelperChatIn, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await _get_managed_helper(fid, helper_id)
+    text = (body.text or "").strip()
+    if not text and not body.photo_url:
+        raise HTTPException(status_code=400, detail="Type a message")
+    mine = await member_for_user(user)
+    doc = {"message_id": new_id("hmsg_"), "helper_id": helper_id, "family_id": fid,
+           "sender": "parent", "sender_member_id": (mine or {}).get("member_id"),
+           "sender_name": (mine or {}).get("name") or "Family",
+           "sender_photo": (mine or {}).get("photo_url"),
+           "text": text or None, "photo_url": body.photo_url,
+           "read_by_parent": True, "read_by_helper": False, "created_at": now_iso()}
+    await db.helper_messages.insert_one(doc)
+    return {"message": helper_msg_public(doc)}
+
+
+@api.get("/helpers/{helper_id}/handover")
+async def parent_helper_handover(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await _get_managed_helper(fid, helper_id)
+    notes = await db.helper_handovers.find(
+        {"helper_id": helper_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    return {"notes": notes, "today": datetime.now(timezone.utc).date().isoformat()}
+
+
+@api.post("/helpers/{helper_id}/handover")
+async def parent_helper_handover_add(helper_id: str, body: HelperHandoverIn, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await _get_managed_helper(fid, helper_id)
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Write a note")
+    mine = await member_for_user(user)
+    doc = {"handover_id": new_id("hoff_"), "helper_id": helper_id, "family_id": fid,
+           "date": datetime.now(timezone.utc).date().isoformat(), "by": "parent",
+           "author_id": (mine or {}).get("member_id"),
+           "author_name": (mine or {}).get("name") or "Family",
+           "author_photo": (mine or {}).get("photo_url"),
+           "text": text, "created_at": now_iso()}
+    await db.helper_handovers.insert_one(doc)
+    return {"note": clean(doc)}
+
+
 # --- Helper today-task computation (shared) --------------------------------
 def _task_due_today(t: dict, today: date) -> bool:
     sched = t.get("schedule", "once")
@@ -6481,9 +6589,15 @@ async def _helper_today_tasks(h: dict) -> List[dict]:
     return out
 
 
-async def _notify_parents_helper(h: dict, title: str, subtitle: Optional[str] = None):
-    """Store a helper event; surfaced to parents via /helpers/{id}/activity + audit."""
+async def _notify_parents_helper(h: dict, title: str, subtitle: Optional[str] = None,
+                                 emoji: str = "🔔", route: Optional[str] = None):
+    """Store a helper event; surfaced to parents via /helpers/{id}/activity + audit
+    AND the family Notifications Center (helper_events, parents/admins only)."""
     await _helper_audit(h, "event", title + (f" — {subtitle}" if subtitle else ""))
+    await db.helper_events.insert_one({
+        "event_id": new_id("hev_"), "helper_id": h["helper_id"], "family_id": h["family_id"],
+        "emoji": emoji, "title": title, "subtitle": subtitle,
+        "route": route or f"/helper/{h['helper_id']}", "created_at": now_iso()})
 
 
 # --- Helper self-service (helper token) ------------------------------------
@@ -6565,12 +6679,22 @@ async def helper_me(h: dict = Depends(get_current_helper)):
 async def helper_dashboard(h: dict = Depends(get_current_helper)):
     tasks = await _helper_today_tasks(h)
     fam = await db.families.find_one({"family_id": h["family_id"]}, {"_id": 0, "name": 1})
+    perms = h.get("permissions") or {}
+    unread_chat = 0
+    if perms.get("chat"):
+        unread_chat = await db.helper_messages.count_documents(
+            {"helper_id": h["helper_id"], "family_id": h["family_id"],
+             "sender": "parent", "read_by_helper": False})
+    today = datetime.now(timezone.utc).date().isoformat()
+    handover_today = await db.helper_handovers.count_documents(
+        {"helper_id": h["helper_id"], "family_id": h["family_id"], "by": "parent", "date": today})
     return {
         "name": h.get("name"), "role_label": ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"],
         "family_name": fam.get("name") if fam else None,
         "tasks": tasks, "total": len(tasks), "done": sum(1 for t in tasks if t.get("done")),
         "assigned_members": await _member_cards(h["family_id"], h.get("assigned_member_ids") or []),
-        "permissions": h.get("permissions") or {},
+        "permissions": perms, "can_chat": bool(perms.get("chat")),
+        "unread_chat": unread_chat, "handover_today": handover_today,
     }
 
 
@@ -6633,6 +6757,90 @@ async def helper_task_issue(task_id: str, body: HelperIssueIn, h: dict = Depends
     await _notify_parents_helper(h, f"{h.get('name')} needs help with “{t.get('title')}”",
                                  f"{body.reason}" + (f": {body.note}" if body.note else ""))
     return {"ok": True}
+
+
+@api.post("/helper/tasks/{task_id}/trip")
+async def helper_task_trip(task_id: str, body: HelperTripIn, h: dict = Depends(get_current_helper)):
+    """Pickup/drop live status flow: en_route → picked_up → reached (completes)."""
+    t = await _get_helper_task(h, task_id)
+    stage = body.stage
+    if stage not in ("en_route", "picked_up", "reached"):
+        raise HTTPException(status_code=400, detail="Unknown trip stage")
+    tkey = datetime.now(timezone.utc).date().isoformat()
+    at = now_iso()
+    field = {"en_route": "started_at", "picked_up": "picked_up_at", "reached": "reached_at"}[stage]
+    sets = {f"trip.{field}": at, "trip.status": stage, "updated_at": at,
+            "helper_id": h["helper_id"], "family_id": h["family_id"]}
+    if body.note:
+        sets["trip.note"] = body.note.strip()
+    if stage == "reached":
+        sets["completed_at"] = at
+        sets["status"] = "done"
+    else:
+        sets["started_at"] = sets.get("started_at") or at
+        sets["status"] = "in_progress"
+    await db.helper_task_completions.update_one(
+        {"task_id": task_id, "date": tkey},
+        {"$set": sets, "$setOnInsert": {"completion_id": new_id("hc_")}}, upsert=True)
+    who = "the child"
+    if t.get("for_member_id"):
+        m = await db.members.find_one({"member_id": t["for_member_id"]}, {"_id": 0, "name": 1})
+        if m:
+            who = (m.get("name") or "the child").split(" ")[0]
+    label = {"en_route": "started the trip",
+             "picked_up": f"picked up {who}",
+             "reached": f"reached {t.get('pickup_to') or 'the destination'}"}[stage]
+    await _notify_parents_helper(h, f"{h.get('name')} {label}", t.get("title"),
+                                 "🚗", f"/helper/{h['helper_id']}")
+    return {"ok": True, "stage": stage}
+
+
+# --- Helper self-service: private parent chat + handover notes -------------
+@api.get("/helper/chat")
+async def helper_chat_list(h: dict = Depends(require_helper_permission("chat"))):
+    await db.helper_messages.update_many(
+        {"helper_id": h["helper_id"], "family_id": h["family_id"], "sender": "parent", "read_by_helper": False},
+        {"$set": {"read_by_helper": True}})
+    msgs = await db.helper_messages.find(
+        {"helper_id": h["helper_id"], "family_id": h["family_id"]}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    return {"messages": [helper_msg_public(m) for m in msgs]}
+
+
+@api.post("/helper/chat")
+async def helper_chat_send(body: HelperChatIn, h: dict = Depends(require_helper_permission("chat"))):
+    text = (body.text or "").strip()
+    if not text and not body.photo_url:
+        raise HTTPException(status_code=400, detail="Type a message")
+    doc = {"message_id": new_id("hmsg_"), "helper_id": h["helper_id"], "family_id": h["family_id"],
+           "sender": "helper", "sender_member_id": None, "sender_name": h.get("name"),
+           "sender_photo": h.get("photo_url"), "text": text or None, "photo_url": body.photo_url,
+           "read_by_parent": False, "read_by_helper": True, "created_at": now_iso()}
+    await db.helper_messages.insert_one(doc)
+    await _notify_parents_helper(h, f"{h.get('name')} sent a message",
+                                 (text or "📷 Photo")[:90], "💬", f"/helper/{h['helper_id']}")
+    return {"message": helper_msg_public(doc)}
+
+
+@api.get("/helper/handover")
+async def helper_handover_list(h: dict = Depends(get_current_helper)):
+    notes = await db.helper_handovers.find(
+        {"helper_id": h["helper_id"], "family_id": h["family_id"]}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    return {"notes": notes, "today": datetime.now(timezone.utc).date().isoformat()}
+
+
+@api.post("/helper/handover")
+async def helper_handover_add(body: HelperHandoverIn, h: dict = Depends(get_current_helper)):
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Write a note")
+    doc = {"handover_id": new_id("hoff_"), "helper_id": h["helper_id"], "family_id": h["family_id"],
+           "date": datetime.now(timezone.utc).date().isoformat(), "by": "helper",
+           "author_id": None, "author_name": h.get("name"), "author_photo": h.get("photo_url"),
+           "text": text, "created_at": now_iso()}
+    await db.helper_handovers.insert_one(doc)
+    await _notify_parents_helper(h, f"{h.get('name')} left an end-of-day note",
+                                 text[:90], "📝", f"/helper/{h['helper_id']}")
+    return {"note": clean(doc)}
 
 
 @api.post("/helper/upload")
@@ -6716,6 +6924,9 @@ async def startup():
         await db.helper_tasks.create_index([("helper_id", 1), ("family_id", 1)])
         await db.helper_task_completions.create_index([("task_id", 1), ("date", 1)], unique=True)
         await db.helper_audit.create_index([("helper_id", 1), ("created_at", -1)])
+        await db.helper_messages.create_index([("helper_id", 1), ("created_at", 1)])
+        await db.helper_handovers.create_index([("helper_id", 1), ("created_at", 1)])
+        await db.helper_events.create_index([("family_id", 1), ("created_at", -1)])
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:

@@ -152,6 +152,16 @@ export default function HelperPortal() {
     setBusy(false);
   };
 
+  const advanceTrip = async (t: any, stage: "en_route" | "picked_up" | "reached") => {
+    try {
+      await helperApi(`/helper/tasks/${t.task_id}/trip`, { method: "POST", body: { stage } });
+      flash(stage === "en_route" ? "Trip started 🚗" : stage === "picked_up" ? "Picked up 🧒" : "Reached home ✅");
+      load();
+    } catch {
+      flash("Couldn't update");
+    }
+  };
+
   const tasks = data?.tasks || [];
   const proofNeeded = doneTask?.require_proof;
 
@@ -186,6 +196,27 @@ export default function HelperPortal() {
           <AppText size={13} color={c.onBrandTertiary}>
             {data ? `${data.done} of ${data.total} done` : "…"}
           </AppText>
+        </View>
+
+        <View style={styles.navRow}>
+          {data?.can_chat ? (
+            <Pressable onPress={() => router.push("/helper-portal/chat")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-chat-btn">
+              <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.brandPrimary} />
+              <AppText size={13} weight="bold" color={c.onSurface}>Chat</AppText>
+              {data?.unread_chat ? (
+                <View style={[styles.navBadge, { backgroundColor: c.error }]}>
+                  <AppText size={10} weight="bold" color="#fff">{data.unread_chat}</AppText>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => router.push("/helper-portal/handover")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-handover-btn">
+            <Ionicons name="clipboard-outline" size={20} color={c.brandPrimary} />
+            <AppText size={13} weight="bold" color={c.onSurface}>Handover</AppText>
+            {data?.handover_today ? (
+              <View style={[styles.navDot, { backgroundColor: c.brandPrimary }]} />
+            ) : null}
+          </Pressable>
         </View>
 
         {tasks.length === 0 ? (
@@ -239,6 +270,11 @@ export default function HelperPortal() {
                       {t.instructions}
                     </AppText>
                   ) : null}
+                  {t.category === "pickup" && (t.pickup_from || t.pickup_to) ? (
+                    <AppText size={13} color={c.onSurfaceSecondary} style={{ marginTop: 4 }}>
+                      🚗 {t.pickup_from || "—"} → {t.pickup_to || "—"}
+                    </AppText>
+                  ) : null}
                   {t.require_proof ? (
                     <View style={styles.proofTag}>
                       <Ionicons name={t.require_proof === "photo" ? "camera" : "create-outline"} size={12} color={c.onSurfaceTertiary} />
@@ -251,6 +287,49 @@ export default function HelperPortal() {
               </View>
 
               {!t.done ? (
+                t.category === "pickup" ? (
+                  <View style={styles.actions}>
+                    {(() => {
+                      const stage = t.completion?.trip?.status;
+                      if (!stage) {
+                        return (
+                          <Pressable onPress={() => advanceTrip(t, "en_route")} style={[styles.actBtn, { backgroundColor: c.brandPrimary }]} testID={`trip-start-${t.task_id}`}>
+                            <Ionicons name="navigate" size={15} color="#fff" />
+                            <AppText size={13} weight="bold" color="#fff">Start Trip</AppText>
+                          </Pressable>
+                        );
+                      }
+                      if (stage === "en_route") {
+                        return (
+                          <>
+                            <View style={[styles.tripChip, { backgroundColor: c.brandTertiary }]}>
+                              <AppText size={12} weight="bold" color={c.onBrandTertiary}>🚗 On the way</AppText>
+                            </View>
+                            <Pressable onPress={() => advanceTrip(t, "picked_up")} style={[styles.actBtn, { backgroundColor: c.brandPrimary }]} testID={`trip-pickup-${t.task_id}`}>
+                              <Ionicons name="person-add" size={15} color="#fff" />
+                              <AppText size={13} weight="bold" color="#fff">Child Picked Up</AppText>
+                            </Pressable>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <View style={[styles.tripChip, { backgroundColor: c.brandTertiary }]}>
+                            <AppText size={12} weight="bold" color={c.onBrandTertiary}>🧒 Picked up</AppText>
+                          </View>
+                          <Pressable onPress={() => advanceTrip(t, "reached")} style={[styles.actBtn, { backgroundColor: c.success }]} testID={`trip-reached-${t.task_id}`}>
+                            <Ionicons name="home" size={15} color="#fff" />
+                            <AppText size={13} weight="bold" color="#fff">Reached Home</AppText>
+                          </Pressable>
+                        </>
+                      );
+                    })()}
+                    <Pressable onPress={() => { setIssueTask(t); setIssueReason(""); setIssueNote(""); }} style={[styles.actBtn, { backgroundColor: "#E86A6A18" }]} testID={`htask-help-${t.task_id}`}>
+                      <Ionicons name="help-buoy-outline" size={15} color="#C24B4B" />
+                      <AppText size={13} weight="bold" color="#C24B4B">Need help</AppText>
+                    </Pressable>
+                  </View>
+                ) : (
                 <View style={styles.actions}>
                   {!t.started ? (
                     <Pressable onPress={() => startTask(t)} style={[styles.actBtn, { backgroundColor: c.surfaceSecondary }]} testID={`htask-start-${t.task_id}`}>
@@ -267,6 +346,7 @@ export default function HelperPortal() {
                     <AppText size={13} weight="bold" color="#C24B4B">Need help</AppText>
                   </Pressable>
                 </View>
+                )
               ) : (
                 t.completion?.note || t.completion?.photo_url ? (
                   <View style={[styles.doneNote, { borderTopColor: c.border }]}>
@@ -381,6 +461,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", ...shadow(1) },
   progress: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  navRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
+  navBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
+  navBadge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
+  navDot: { width: 8, height: 8, borderRadius: 4 },
+  tripChip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 9, justifyContent: "center" },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg, marginBottom: spacing.md },
   cardTop: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   timePill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },

@@ -19,6 +19,9 @@ const CATS = [
   { key: "chore", label: "Chore" }, { key: "meal", label: "Meal" }, { key: "pickup", label: "Pickup" },
   { key: "care", label: "Care" }, { key: "shopping", label: "Shopping" }, { key: "other", label: "Other" },
 ];
+const TRIP_LABEL: Record<string, string> = {
+  en_route: "🚗 On the way", picked_up: "🧒 Picked up", reached: "🏠 Reached home",
+};
 
 export default function HelperDetail() {
   const { c } = useTheme();
@@ -43,6 +46,8 @@ export default function HelperDetail() {
   const [tProof, setTProof] = useState<"none" | "photo" | "note">("none");
   const [tFor, setTFor] = useState<string | null>(null);
   const [tHigh, setTHigh] = useState(false);
+  const [tFrom, setTFrom] = useState("");
+  const [tTo, setTTo] = useState("");
 
   const [pinModal, setPinModal] = useState(false);
   const [pUser, setPUser] = useState("");
@@ -96,10 +101,12 @@ export default function HelperDetail() {
           schedule: tSchedule, days: tSchedule === "weekly" ? tDays : [], category: tCat,
           require_proof: tProof === "none" ? null : tProof, priority: tHigh ? "high" : "normal",
           for_member_id: tFor,
+          pickup_from: tCat === "pickup" ? (tFrom.trim() || null) : null,
+          pickup_to: tCat === "pickup" ? (tTo.trim() || null) : null,
         },
       });
       setTaskModal(false);
-      setTTitle(""); setTInstr(""); setTTime(null); setTSchedule("daily"); setTDays([]); setTCat("chore"); setTProof("none"); setTFor(null); setTHigh(false);
+      setTTitle(""); setTInstr(""); setTTime(null); setTSchedule("daily"); setTDays([]); setTCat("chore"); setTProof("none"); setTFor(null); setTHigh(false); setTFrom(""); setTTo("");
       flash("Task assigned");
       load();
     } catch (e: any) {
@@ -133,6 +140,12 @@ export default function HelperDetail() {
   }
 
   const statusColor = helper.status === "active" ? c.success : helper.status === "paused" ? c.warning : c.onSurfaceTertiary;
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const tripByTask: Record<string, any> = {};
+  for (const a of activity) {
+    if (a.date === todayKey && a.trip && !tripByTask[a.task_id]) tripByTask[a.task_id] = a.trip;
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
@@ -173,6 +186,31 @@ export default function HelperDetail() {
               <Ionicons name="trash-outline" size={15} color={c.error} /><AppText size={13} weight="bold" color={c.error}>Remove</AppText>
             </Pressable>
           </View>
+        </View>
+
+        {/* quick actions: private chat + handover notes */}
+        <View style={styles.quickRow}>
+          <Pressable
+            onPress={() => router.push(`/helper/chat?id=${id}&name=${encodeURIComponent(helper.name)}`)}
+            style={[styles.quickBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+            testID="helper-chat-btn"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.brandPrimary} />
+            <AppText size={13} weight="bold" color={c.onSurface}>Chat</AppText>
+            {helper.unread_chat ? (
+              <View style={[styles.badge, { backgroundColor: c.error }]}>
+                <AppText size={10} weight="bold" color="#fff">{helper.unread_chat}</AppText>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable
+            onPress={() => router.push(`/helper/handover?id=${id}&name=${encodeURIComponent(helper.name)}`)}
+            style={[styles.quickBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}
+            testID="helper-handover-btn"
+          >
+            <Ionicons name="clipboard-outline" size={20} color={c.brandPrimary} />
+            <AppText size={13} weight="bold" color={c.onSurface}>Handover</AppText>
+          </Pressable>
         </View>
 
         {/* assigned to */}
@@ -245,6 +283,18 @@ export default function HelperDetail() {
                 <AppText size={12} color={c.onSurfaceTertiary}>
                   {t.schedule === "daily" ? "Every day" : t.schedule === "weekly" ? "Weekly" : "One-time"}{t.due_time ? ` · ${t.due_time}` : ""}{t.require_proof ? ` · needs ${t.require_proof}` : ""}
                 </AppText>
+                {t.category === "pickup" && (t.pickup_from || t.pickup_to) ? (
+                  <AppText size={12} color={c.onSurfaceSecondary} style={{ marginTop: 2 }}>
+                    🚗 {t.pickup_from || "—"} → {t.pickup_to || "—"}
+                  </AppText>
+                ) : null}
+                {tripByTask[t.task_id] ? (
+                  <View style={[styles.tripBadge, { backgroundColor: c.success + "1e" }]}>
+                    <AppText size={11} weight="bold" color={c.success}>
+                      {TRIP_LABEL[tripByTask[t.task_id].status] || "In progress"}
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
               <Pressable onPress={() => deleteTask(t.task_id)} hitSlop={8} testID={`del-task-${t.task_id}`}>
                 <Ionicons name="trash-outline" size={18} color={c.onSurfaceTertiary} />
@@ -335,6 +385,13 @@ export default function HelperDetail() {
                 ))}
               </View>
 
+              {tCat === "pickup" ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <TextField label="Pick up from (optional)" value={tFrom} onChangeText={setTFrom} placeholder="e.g. Delhi Public School" testID="task-from" />
+                  <TextField label="Drop to (optional)" value={tTo} onChangeText={setTTo} placeholder="e.g. Home" testID="task-to" />
+                </View>
+              ) : null}
+
               {!helper.assigned_all && helper.assigned_members?.length ? (
                 <>
                   <MiniLabel c={c}>For (optional)</MiniLabel>
@@ -414,6 +471,10 @@ const styles = StyleSheet.create({
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   smallBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 9 },
+  quickRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  quickBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
+  badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
+  tripBadge: { alignSelf: "flex-start", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3, marginTop: 5 },
   accRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6 },
   sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl, marginBottom: spacing.sm },
   addTask: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 7 },
