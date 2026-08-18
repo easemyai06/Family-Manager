@@ -237,3 +237,12 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Store listing copy: `/app/store_assets/store_listing.md` (App Store name/subtitle/keywords/promo/description + Google Play title/short/full + console fields).
 - Data-safety answers: `/app/store_assets/app_privacy_data_safety.md` (Apple App Privacy + Google Play Data safety, derived from in-app privacy policy; no ads/tracking, account-linked, deletion available).
 - Readiness re-run (App Store): 0 blockers, 0 warnings — SIWA + export-compliance resolved; remaining items are manual (device test, Apple revocation creds, Connect forms).
+
+
+## Security Audit #3 + remediation — June 2026
+- Audit verdict: CONDITIONAL PASS. One HIGH (in the new Apple sign-in), rest P3.
+- SEC-001 (HIGH) FIXED — Apple sign-in account takeover: `/auth/apple` no longer trusts the client-supplied email and no longer auto-links `apple_sub` to an existing email account. Now uses ONLY the token's verified email (`email_verified` true); if that email already belongs to another account, returns 409 directing the user to sign in with their original method and link Apple in Settings (the authenticated `/auth/apple/link` flow). RS256 + issuer + audience already pinned.
+- P3 FIXED — `PATCH /families/members/{id}` now enforces self-or-(admin/parent) authorization (mirrors member-status endpoint).
+- P3 FIXED — `/auth/session` (Google) now persists newly-created users (`insert_one`) so first-time Google sign-in works.
+- P3 ACCEPTED (not changed, low risk, bearer-token app): CORS `allow_origins=["*"]` + `allow_credentials=True`; login throttle keyed on left-most X-Forwarded-For (spoofable) — bcrypt cost still limits guessing.
+- Verified: apple bad-token+victim-email -> 401 (no takeover); login/`auth/me` 200; self member edit 200. Audit ran against codebase/preview (no production access — user must Publish to deploy fixes).

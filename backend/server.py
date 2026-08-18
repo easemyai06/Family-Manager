@@ -764,6 +764,7 @@ async def google_session(body: SessionIn):
             "password_hash": None, "picture": data.get("picture"),
             "family_id": None, "provider": "google", "created_at": now_iso(),
         }
+        await db.users.insert_one(u)
     return {"token": make_token(u["user_id"]), "user": public_user(u)}
 
 
@@ -832,12 +833,21 @@ async def apple_auth(body: AppleAuthIn):
     apple_sub = claims.get("sub")
     if not apple_sub:
         raise HTTPException(status_code=401, detail="Invalid Apple token")
-    email = ((claims.get("email") or body.email or "").lower() or None)
-    # key on apple_sub; link an existing same-email account if there is one
+    # Use ONLY the verified email from Apple's token — never trust the client-supplied
+    # field, and never auto-link to an existing account by email (that risks takeover).
+    ev = claims.get("email_verified")
+    email_verified = ev is True or (isinstance(ev, str) and ev.lower() == "true")
+    email = ((claims.get("email") or "").lower() or None) if email_verified else None
+
     u = await db.users.find_one({"apple_sub": apple_sub})
-    if not u and email:
-        u = await db.users.find_one({"email": email})
     if not u:
+        # If a different account already owns this email, do NOT hijack it — send the
+        # user to sign in with their original method and link Apple from Settings.
+        if email and await db.users.find_one({"email": email}):
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Sign in with your original method, then link Apple in Settings.",
+            )
         uid = new_id("user_")
         u = {
             "user_id": uid,
@@ -847,11 +857,8 @@ async def apple_auth(body: AppleAuthIn):
             "created_at": now_iso(),
         }
         await db.users.insert_one(u)
-    else:
-        set_fields = {"apple_sub": apple_sub}
-        if body.name and not u.get("name"):
-            set_fields["name"] = body.name.strip()
-        await db.users.update_one({"user_id": u["user_id"]}, {"$set": set_fields})
+    elif body.name and not u.get("name"):
+        await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"name": body.name.strip()}})
     # best-effort: capture a refresh token so we can revoke on delete (needs Apple creds)
     if body.authorization_code:
         rt = await _apple_exchange_refresh_token(body.authorization_code)
@@ -971,6 +978,9 @@ async def get_member(member_id: str, user: dict = Depends(get_current_user)):
 @api.patch("/families/members/{member_id}")
 async def patch_member(member_id: str, body: MemberPatch, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine or (mine["member_id"] != member_id and mine.get("role") not in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Not allowed to edit this member")
     updates = {k: v for k, v in body.dict().items() if v is not None}
     if updates:
         await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
