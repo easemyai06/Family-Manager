@@ -660,3 +660,23 @@ User-requested follow-ups on the helper system, all backend-authorized (never UI
   recording, camera arrival-photo capture, real GPS movement for the live pickup map/ETA.
 - REMAINING backlog: overnight-shift handling, timezone-aware working hours (currently UTC), true
   background/push shift & ETA alerts (needs push setup), device-build validation for GPS/camera/mic.
+## Batch #35 — Family/Calendar/Home polish + Helper Alerts (June 2026)
+Four user-requested changes, all shipped & tested (testing agent iteration_34: backend 8/8 pytest
+`backend/tests/test_batch35_home_and_helper_notifs.py`, frontend flows 100%):
+- Removed the "Love This Week" affection timeline from the Family tab (Send Some Love card kept).
+- Calendar revamp (Cubbily-style): coral gradient hero (year + month + prev/Today/next), a horizontal
+  color-coded family-member filter row (tap avatars to filter the month grid by whose events, empty =
+  all), month-grid day cells now render colored event PILLS (left-accent + truncated title + "+N more")
+  instead of plain dots, today/weekend/selected highlighting, and a selected-day agenda with a count
+  badge. All prior agenda logic kept (RSVP, recurring 🔁 + delete-scope modal, remind/nudge, create FAB).
+- Home done-tracking: Family tasks section shows "<n> done · <n> to do" + a "COMPLETED TODAY" list with
+  each done task's owner avatar (who ticked it off); Kids & Chores done chips show a mini-avatar of who
+  marked each chore done. Backend: /todos/items/{id}/toggle records done_by_member_id+done_at,
+  /chores/{id}/complete records completed_by_member_id, /api/home returns tasks_done_today[] +
+  kids[].chores[].done_by. (Fixed a latent shadowing bug where the helpers_today loop overwrote the
+  family `tasks` list.)
+- Helper in-portal Alerts feed: helper portal header bell (unread badge from dashboard.notif_unread)
+  opens /helper-portal/notifications — an aggregated, newest-first feed of parent 1:1 messages, Care
+  Team messages from others, parent handover notes and family ratings/praise (GET /helper/notifications,
+  POST /helper/notifications/read). SECURITY-verified: the feed contains NO normal Family Chat data;
+  a no-chat-perm helper still sees handover/ratings but no chat/care-team items. Preview only — Publish to ship.

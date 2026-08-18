@@ -281,6 +281,14 @@ export default function HelperPortal() {
             {data?.role_label}{data?.family_name ? ` · ${data.family_name}` : ""}
           </AppText>
         </View>
+        <Pressable onPress={() => router.push("/helper-portal/notifications")} hitSlop={10} testID="helper-notif-btn" style={[styles.iconBtn, { backgroundColor: c.surface, marginRight: spacing.sm }]}>
+          <Ionicons name="notifications-outline" size={20} color={c.onSurface} />
+          {data?.notif_unread ? (
+            <View style={[styles.headerBadge, { backgroundColor: c.error }]} testID="helper-notif-badge">
+              <AppText size={10} weight="bold" color="#fff">{data.notif_unread > 9 ? "9+" : data.notif_unread}</AppText>
+            </View>
+          ) : null}
+        </Pressable>
         <Pressable onPress={signOut} hitSlop={10} testID="helper-signout" style={[styles.iconBtn, { backgroundColor: c.surface }]}>
           <Ionicons name="log-out-outline" size={20} color={c.onSurface} />
         </Pressable>
@@ -641,6 +649,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", ...shadow(1) },
+  headerBadge: { position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1.5, borderColor: "#fff" },
   progress: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
   navRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
   navBtn: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },

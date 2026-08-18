@@ -189,9 +189,10 @@ export default function Home() {
     // optimistic update
     setHome((prev: any) => {
       if (!prev) return prev;
+      const meCard = prev.me ? { member_id: prev.me.member_id, name: prev.me.name, photo_url: prev.me.photo_url, color: prev.me.color } : null;
       const kids = (prev.kids || []).map((k: any) => {
         const chores = (k.chores || []).map((ch: any) =>
-          ch.chore_id === choreId ? { ...ch, done_today: !wasDone } : ch
+          ch.chore_id === choreId ? { ...ch, done_today: !wasDone, done_by: !wasDone ? meCard : null } : ch
         );
         return { ...k, chores, done: chores.filter((x: any) => x.done_today).length };
       });
@@ -222,6 +223,13 @@ export default function Home() {
 
   const filteredTasks = useMemo(() => {
     const all = home?.tasks || [];
+    if (persona === "child") return all.filter((t: any) => t.scope === "mine");
+    if (taskFilter === "family") return all;
+    return all.filter((t: any) => t.scope === taskFilter);
+  }, [home, taskFilter, persona]);
+
+  const filteredDone = useMemo(() => {
+    const all = home?.tasks_done_today || [];
     if (persona === "child") return all.filter((t: any) => t.scope === "mine");
     if (taskFilter === "family") return all;
     return all.filter((t: any) => t.scope === taskFilter);
@@ -276,7 +284,7 @@ export default function Home() {
       case "today":
         return <TodaySection {...p} events={home?.events_today || []} />;
       case "tasks":
-        return <TasksSection {...p} tasks={filteredTasks} filter={taskFilter} setFilter={setTaskFilter} />;
+        return <TasksSection {...p} tasks={filteredTasks} done={filteredDone} filter={taskFilter} setFilter={setTaskFilter} />;
       case "mytasks":
         return <MyTasksSection {...p} tasks={filteredTasks} />;
       case "kids":
@@ -588,12 +596,13 @@ function TodaySection({ events, go, c, compact }: any) {
   );
 }
 
-function TasksSection({ tasks, filter, setFilter, go, c, compact }: any) {
+function TasksSection({ tasks, done, filter, setFilter, go, c, compact }: any) {
   const filters: any[] = [
     { k: "family", label: "All" },
     { k: "mine", label: "Mine" },
     { k: "kids", label: "Kids" },
   ];
+  const doneList = done || [];
   return (
     <SectionShell compact={compact}>
       <SectionHead title="Family tasks" action="All lists" onAction={() => go("/todos")} c={c} />
@@ -608,12 +617,19 @@ function TasksSection({ tasks, filter, setFilter, go, c, compact }: any) {
             <AppText size={12} weight="bold" color={filter === f.k ? "#fff" : c.onSurfaceSecondary}>{f.label}</AppText>
           </Pressable>
         ))}
+        {(tasks.length || doneList.length) ? (
+          <View style={{ flex: 1, alignItems: "flex-end" }}>
+            <AppText size={11} weight="bold" color={doneList.length ? c.success : c.onSurfaceTertiary}>
+              {`${doneList.length} done · ${tasks.length} to do`}
+            </AppText>
+          </View>
+        ) : null}
       </View>
       <Card c={c}>
         {tasks.length ? (
           <View style={{ gap: spacing.md }}>
             {tasks.slice(0, compact ? 3 : 5).map((t: any) => (
-              <Pressable key={t.item_id} style={styles.taskRow} onPress={() => go("/todos")}>
+              <Pressable key={t.item_id} style={styles.taskRow} onPress={() => go("/todos")} testID={`home-task-${t.item_id}`}>
                 <Ionicons name="ellipse-outline" size={18} color={t.overdue ? c.error : c.onSurfaceTertiary} />
                 <View style={{ flex: 1 }}>
                   <AppText size={14} weight="semibold" numberOfLines={1}>{t.title}</AppText>
@@ -627,8 +643,35 @@ function TasksSection({ tasks, filter, setFilter, go, c, compact }: any) {
             ))}
           </View>
         ) : (
-          <AppText size={13} color={c.onSurfaceTertiary}>No open tasks here 🎉</AppText>
+          <AppText size={13} color={c.onSurfaceTertiary}>{doneList.length ? "All done for now 🎉" : "No open tasks here 🎉"}</AppText>
         )}
+
+        {doneList.length ? (
+          <View style={{ marginTop: tasks.length ? spacing.md : 0, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: c.divider }}>
+            <AppText size={11} weight="bold" color={c.onSurfaceTertiary} style={{ marginBottom: spacing.sm }}>
+              ✓ COMPLETED TODAY
+            </AppText>
+            <View style={{ gap: spacing.sm }}>
+              {doneList.slice(0, compact ? 2 : 4).map((t: any) => (
+                <Pressable key={t.item_id} style={styles.taskRow} onPress={() => go("/todos")} testID={`home-task-done-${t.item_id}`}>
+                  <Ionicons name="checkmark-circle" size={18} color={c.success} />
+                  <AppText size={14} weight="semibold" numberOfLines={1} style={[{ flex: 1 }, { textDecorationLine: "line-through" }]} color={c.onSurfaceTertiary}>
+                    {t.title}
+                  </AppText>
+                  {t.done_by ? (
+                    <View style={styles.doneByPill}>
+                      <Avatar uri={t.done_by.photo_url} name={t.done_by.name} size={18} color={t.done_by.color} />
+                      <AppText size={11} weight="bold" color={c.onSurfaceSecondary}>{t.done_by.name}</AppText>
+                    </View>
+                  ) : null}
+                </Pressable>
+              ))}
+              {doneList.length > (compact ? 2 : 4) ? (
+                <AppText size={11} color={c.onSurfaceTertiary}>{`+${doneList.length - (compact ? 2 : 4)} more done`}</AppText>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
       </Card>
     </SectionShell>
   );
@@ -703,6 +746,11 @@ function KidsSection({ kids, go, router, onToggleChore, c, compact }: any) {
                     >
                       <Ionicons name={ch.done_today ? "checkmark-circle" : "ellipse-outline"} size={14} color={ch.done_today ? "#fff" : c.onSurfaceTertiary} />
                       <AppText size={12} weight="semibold" color={ch.done_today ? "#fff" : c.onSurfaceSecondary}>{ch.title}</AppText>
+                      {ch.done_today && ch.done_by ? (
+                        <View style={styles.choreDoneBy}>
+                          <Avatar uri={ch.done_by.photo_url} name={ch.done_by.name} size={15} color={ch.done_by.color} />
+                        </View>
+                      ) : null}
                     </Pressable>
                   ))}
                 </View>
@@ -1161,6 +1209,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   chip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6, borderWidth: 1 },
   taskRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  doneByPill: { flexDirection: "row", alignItems: "center", gap: 5 },
   pri: { width: 8, height: 8, borderRadius: 4 },
 
   kidRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
@@ -1172,6 +1221,7 @@ const styles = StyleSheet.create({
   praiseBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   choreChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
   choreChip: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 7, borderWidth: 1 },
+  choreDoneBy: { borderRadius: 999, borderWidth: 1.5, borderColor: "#fff", marginLeft: 1 },
   myChoreRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
 
   mealRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },

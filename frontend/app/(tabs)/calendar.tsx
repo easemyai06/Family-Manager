@@ -3,6 +3,7 @@ import { View, StyleSheet, Pressable, ScrollView, Modal } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import dayjs from "dayjs";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
@@ -29,6 +30,8 @@ export default function Calendar() {
   const [month, setMonth] = useState(dayjs());
   const [selected, setSelected] = useState(dayjs().format("YYYY-MM-DD"));
   const [events, setEvents] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [memberFilter, setMemberFilter] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<any>(null);
   const [toast, setToast] = useState("");
 
@@ -36,8 +39,12 @@ export default function Calendar() {
     const start = month.startOf("month").startOf("week").format("YYYY-MM-DD");
     const end = month.endOf("month").endOf("week").format("YYYY-MM-DD");
     try {
-      const data = await api<any[]>(`/events?start=${start}&end=${end}`);
+      const [data, fam] = await Promise.all([
+        api<any[]>(`/events?start=${start}&end=${end}`),
+        api<any>("/families/me").catch(() => null),
+      ]);
       setEvents(data);
+      if (fam?.members) setMembers(fam.members);
     } catch {}
   }, [month]);
 
@@ -52,13 +59,36 @@ export default function Calendar() {
     return Array.from({ length: 42 }, (_, i) => start.add(i, "day"));
   }, [month]);
 
+  const matchesFilter = useCallback(
+    (e: any) => {
+      if (memberFilter.size === 0) return true;
+      const ids: string[] = [...(e.participant_ids || []), e.owner_member_id].filter(Boolean);
+      return ids.some((id) => memberFilter.has(id));
+    },
+    [memberFilter]
+  );
+
+  const visibleEvents = useMemo(() => events.filter(matchesFilter), [events, matchesFilter]);
+
   const byDate = useMemo(() => {
     const map: Record<string, any[]> = {};
-    for (const e of events) {
+    for (const e of visibleEvents) {
       (map[e.date] = map[e.date] || []).push(e);
     }
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => (a.all_day ? -1 : 0) - (b.all_day ? -1 : 0) || (a.start_time || "").localeCompare(b.start_time || ""));
+    }
     return map;
-  }, [events]);
+  }, [visibleEvents]);
+
+  const toggleMember = (id: string) => {
+    setMemberFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const selectedEvents = (byDate[selected] || []).sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
 
@@ -112,86 +142,152 @@ export default function Calendar() {
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      {/* header */}
-      <View style={styles.header}>
-        <AppText family="display" weight="bold" size={24}>
-          {month.format("MMMM YYYY")}
-        </AppText>
-        <View style={styles.headerBtns}>
-          <Pressable onPress={() => setMonth((m) => m.subtract(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous month">
-            <Ionicons name="chevron-back" size={22} color={c.onSurface} />
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setMonth(dayjs());
-              setSelected(dayjs().format("YYYY-MM-DD"));
-            }}
-            style={[styles.todayBtn, { backgroundColor: c.brandTertiary }]}
-            testID="cal-today"
-          >
-            <AppText size={12} weight="bold" color={c.onBrandTertiary}>
-              Today
+      {/* gradient header */}
+      <LinearGradient
+        colors={[c.brandPrimary, "#FF9E9E"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        <View style={styles.heroTop}>
+          <View>
+            <AppText size={12} weight="bold" color="rgba(255,255,255,0.85)">
+              {month.format("YYYY")}
             </AppText>
-          </Pressable>
-          <Pressable onPress={() => setMonth((m) => m.add(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next month">
-            <Ionicons name="chevron-forward" size={22} color={c.onSurface} />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* grid */}
-      <View style={[styles.calCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
-        <View style={styles.weekRow}>
-          {WEEKDAYS.map((d, i) => (
-            <AppText key={i} size={12} weight="semibold" color={c.onSurfaceTertiary} style={styles.weekLabel}>
-              {d}
-            </AppText>
-          ))}
-        </View>
-        <View style={styles.gridWrap}>
-          {grid.map((day) => {
-            const ds = day.format("YYYY-MM-DD");
-            const inMonth = day.month() === month.month();
-            const isSel = ds === selected;
-            const isToday = ds === dayjs().format("YYYY-MM-DD");
-            const dayEvents = byDate[ds] || [];
-            return (
-              <Pressable key={ds} style={styles.cell} onPress={() => setSelected(ds)} testID={`day-${ds}`}>
-                <View style={[styles.dayCircle, isSel && { backgroundColor: c.brand }]}>
-                  <AppText
-                    size={14}
-                    weight={isToday || isSel ? "bold" : "regular"}
-                    color={isSel ? "#fff" : !inMonth ? c.onSurfaceTertiary : isToday ? c.brand : c.onSurface}
-                  >
-                    {day.date()}
-                  </AppText>
-                </View>
-                <View style={styles.dotRow}>
-                  {dayEvents.slice(0, 3).map((e, i) => (
-                    <View key={i} style={[styles.dot, { backgroundColor: isSel ? "#fff" : e.color }]} />
-                  ))}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* agenda */}
-      <View style={styles.agendaHeader}>
-        <AppText family="display" weight="bold" size={17}>
-          {dayjs(selected).format("dddd, D MMMM")}
-        </AppText>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-        {selectedEvents.length === 0 ? (
-          <View style={styles.emptyDay}>
-            <AppText size={32}>📅</AppText>
-            <AppText size={14} color={c.onSurfaceTertiary} style={{ marginTop: spacing.sm }}>
-              Nothing planned. Tap + to add an event.
+            <AppText family="display" weight="bold" size={26} color="#fff">
+              {month.format("MMMM")}
             </AppText>
           </View>
-        ) : (
+          <View style={styles.headerBtns}>
+            <Pressable onPress={() => setMonth((m) => m.subtract(1, "month"))} hitSlop={8} style={styles.heroNav} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous month">
+              <Ionicons name="chevron-back" size={20} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setMonth(dayjs());
+                setSelected(dayjs().format("YYYY-MM-DD"));
+              }}
+              style={styles.heroToday}
+              testID="cal-today"
+            >
+              <AppText size={12} weight="bold" color="#fff">Today</AppText>
+            </Pressable>
+            <Pressable onPress={() => setMonth((m) => m.add(1, "month"))} hitSlop={8} style={styles.heroNav} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next month">
+              <Ionicons name="chevron-forward" size={20} color="#fff" />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* member color filter */}
+        {members.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.memberRow} contentContainerStyle={{ gap: spacing.md, paddingRight: spacing.lg }}>
+            {members.map((m) => {
+              const active = memberFilter.size === 0 || memberFilter.has(m.member_id);
+              return (
+                <Pressable key={m.member_id} onPress={() => toggleMember(m.member_id)} style={styles.memberChip} testID={`cal-member-${m.member_id}`}>
+                  <View style={{ opacity: active ? 1 : 0.4 }}>
+                    <Avatar uri={m.photo_url} name={m.name} size={40} color={m.color} ring />
+                    {memberFilter.has(m.member_id) ? (
+                      <View style={[styles.memberCheck, { backgroundColor: m.color || "#fff" }]}>
+                        <Ionicons name="checkmark" size={10} color="#fff" />
+                      </View>
+                    ) : null}
+                  </View>
+                  <AppText size={11} weight={active ? "bold" : "regular"} color="rgba(255,255,255,0.95)" numberOfLines={1} style={{ maxWidth: 52 }}>
+                    {m.name}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+      </LinearGradient>
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* month grid */}
+        <View style={[styles.calCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(2)]}>
+          <View style={styles.weekRow}>
+            {WEEKDAYS.map((d, i) => (
+              <AppText key={i} size={11} weight="bold" color={i === 0 || i === 6 ? c.brandPrimary : c.onSurfaceTertiary} style={styles.weekLabel}>
+                {d}
+              </AppText>
+            ))}
+          </View>
+          <View style={styles.gridWrap}>
+            {grid.map((day) => {
+              const ds = day.format("YYYY-MM-DD");
+              const inMonth = day.month() === month.month();
+              const isSel = ds === selected;
+              const isToday = ds === dayjs().format("YYYY-MM-DD");
+              const dayEvents = byDate[ds] || [];
+              const isWeekend = day.day() === 0 || day.day() === 6;
+              return (
+                <Pressable
+                  key={ds}
+                  style={[
+                    styles.cell,
+                    { borderColor: c.divider },
+                    isSel && { backgroundColor: c.brandPrimary + "12" },
+                  ]}
+                  onPress={() => setSelected(ds)}
+                  testID={`day-${ds}`}
+                >
+                  <View style={[
+                    styles.dayNum,
+                    isToday && { backgroundColor: c.brandPrimary },
+                    isSel && !isToday && { backgroundColor: c.brandPrimary + "26" },
+                  ]}>
+                    <AppText
+                      size={13}
+                      weight={isToday || isSel ? "bold" : "regular"}
+                      color={isToday ? "#fff" : !inMonth ? c.onSurfaceTertiary + "80" : isWeekend ? c.brandPrimary : c.onSurface}
+                    >
+                      {day.date()}
+                    </AppText>
+                  </View>
+                  <View style={styles.pillWrap}>
+                    {dayEvents.slice(0, 2).map((e, i) => (
+                      <View key={i} style={[styles.eventPill, { backgroundColor: (e.color || c.brandPrimary) + "26", borderLeftColor: e.color || c.brandPrimary }]}>
+                        <AppText size={8} weight="bold" color={inMonth ? c.onSurface : c.onSurfaceTertiary} numberOfLines={1}>
+                          {e.title}
+                        </AppText>
+                      </View>
+                    ))}
+                    {dayEvents.length > 2 ? (
+                      <AppText size={8} weight="bold" color={c.onSurfaceTertiary} style={{ paddingLeft: 3 }}>
+                        +{dayEvents.length - 2} more
+                      </AppText>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* agenda */}
+        <View style={styles.agendaHeader}>
+          <AppText family="display" weight="bold" size={17}>
+            {dayjs(selected).format("dddd, D MMMM")}
+          </AppText>
+          {selectedEvents.length ? (
+            <View style={[styles.agendaCount, { backgroundColor: c.brandTertiary }]}>
+              <AppText size={11} weight="bold" color={c.onBrandTertiary}>{selectedEvents.length}</AppText>
+            </View>
+          ) : null}
+        </View>
+        <View style={{ paddingHorizontal: spacing.lg }}>
+          {selectedEvents.length === 0 ? (
+            <View style={styles.emptyDay}>
+              <AppText size={32}>📅</AppText>
+              <AppText size={14} color={c.onSurfaceTertiary} style={{ marginTop: spacing.sm }}>
+                Nothing planned. Tap + to add an event.
+              </AppText>
+            </View>
+          ) : (
           selectedEvents.map((e) => (
             <View key={e.event_id} style={[styles.eventCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID={`event-${e.event_id}`}>
               <View style={[styles.eventBar, { backgroundColor: e.color }]} />
@@ -279,6 +375,7 @@ export default function Calendar() {
             </View>
           ))
         )}
+        </View>
       </ScrollView>
 
       <Pressable
@@ -333,19 +430,24 @@ export default function Calendar() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  hero: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  navBtn: { padding: 4 },
-  todayBtn: { borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
-  calCard: { marginHorizontal: spacing.lg, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1 },
-  weekRow: { flexDirection: "row", marginBottom: spacing.sm },
+  heroNav: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
+  heroToday: { borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.25)" },
+  memberRow: { marginTop: spacing.md },
+  memberChip: { alignItems: "center", gap: 4, width: 56 },
+  memberCheck: { position: "absolute", bottom: 0, right: 2, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#fff" },
+  calCard: { margin: spacing.lg, borderRadius: radius.lg, padding: spacing.sm, borderWidth: 1 },
+  weekRow: { flexDirection: "row", marginBottom: spacing.xs, paddingHorizontal: 2 },
   weekLabel: { flex: 1, textAlign: "center" },
   gridWrap: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: `${100 / 7}%`, alignItems: "center", paddingVertical: 4 },
-  dayCircle: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
-  dotRow: { flexDirection: "row", gap: 3, height: 8, marginTop: 2 },
-  dot: { width: 5, height: 5, borderRadius: 2.5 },
-  agendaHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  cell: { width: `${100 / 7}%`, minHeight: 62, paddingTop: 3, paddingBottom: 4, paddingHorizontal: 1, borderTopWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderRadius: 6 },
+  dayNum: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", alignSelf: "flex-start", marginLeft: 2 },
+  pillWrap: { marginTop: 2, gap: 2, width: "100%" },
+  eventPill: { borderRadius: 4, borderLeftWidth: 3, paddingHorizontal: 3, paddingVertical: 1.5 },
+  agendaHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  agendaCount: { minWidth: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   emptyDay: { alignItems: "center", paddingVertical: spacing["2xl"] },
   eventCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, marginBottom: spacing.md },
   eventBar: { width: 5, height: "100%", minHeight: 44, borderRadius: 3 },

@@ -2272,3 +2272,78 @@ frontend_batch34:
 agent_communication_batch34:
     -agent: "main"
     -message: "Batch #34 = TRUSTED HELPERS Phase 5. Builds on #30-#33 (all passed). CREDS: parent storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' (has chat+medical perms, a pickup task 'Pick up Aarav from school' with dest set, working hours set ~ so shift shows; may already be checked-in today). TEST BOTH. BACKEND regression + SECURITY (MOST IMPORTANT — new media access): (1) HELPER MEDIA SCOPING — helper login/dashboard return media_token. GET /api/files/{path}?token={media_token} must 200 for a file the helper uploaded OR a care_team/1:1 message references, and 404 for ANY other family file (e.g., a Family Chat photo path or a random path). A family (parent) media token must STILL work for family files and must NOT be broadenable by helpers. (2) VOICE/PHOTO — parent & helper POST /api/care-team & /helper/care-team with audio_url+audio_dur (and photo_url) store+return them; text|photo|audio all accepted; empty -> 400; still isolated from Family Chat. (3) DROP-OFF PROOF — POST /helper/tasks/{id}/trip stage=reached with proof_url stores trip.proof_url, marks done, fires 📸 parent notif; parent sees proof_url in /helpers/{id}/activity. (4) CHECK-IN — POST /helper/checkin idempotent (2nd call no new notif, same checked_in_at), fires 🟢; POST /helper/checkout 400 if not checked in else fires 👋; /helper/dashboard.checkin + parent /helpers & /helpers/{id} checked_in_at/checked_out_at. (5) prior security still holds: no-chat helper 403 on care-team, cross-token 401, medical leak-free, paused/removed blocked. FRONTEND (mobile 390x844): HELPER (sunita/1234): portal shows shift banner + check-in state (I've arrived OR On duty since) + Care Team; open Care Team -> when input empty a mic button (careteam-mic) shows; tapping records (careteam-rec-send/careteam-rec-cancel) — on web mic may be blocked, just confirm the recording bar appears/cancels and no crash; existing photo/voice bubbles render (ctphoto-*/ctvoice-*); pickup task Start Trip->Picked Up->Reached Home (trip-reached-*) opens camera (web may block — confirm it still marks reached and no crash). PARENT (storytester): Family tab helper card may show '🟢 On duty'; open Sunita -> identity shows on-duty; completed pickup shows an arrival photo thumbnail if present. Web can't record mic / open camera / move GPS — for those confirm the UI appears and the app doesn't crash; the network round-trips are the key checks. Do NOT run destructive cleanup; keep Sunita + her data."
+
+# ============ Feature Batch #35 (Remove Love-This-Week / Calendar revamp / Home done-tracking / Helper alerts) ============
+backend_batch35:
+  - task: "Home done-tracking: tasks_done_today + who marked done (tasks & chores)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /todos/items/{id}/toggle now records done_by_member_id + done_at when marking done (cleared on un-toggle). POST /chores/{id}/complete records completed_by_member_id (the acting user). GET /api/home now returns tasks_done_today[] (title, assignee, scope, done_by member card, done_at) AND each kids[].chores[] carries done_by. Fixed a latent shadowing bug: helpers_today loop reassigned `tasks` (now htasks) so /home tasks stayed the family task list. Curl-verified: toggle a todo -> tasks_done_today shows done_by Raj; complete a chore -> done_by Raj; uncomplete clears."
+  - task: "Helper in-portal notifications feed (GET/POST /helper/notifications) + dashboard notif_unread"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "NEW GET /helper/notifications aggregates a helper-facing feed: parent 1:1 chat msgs (chat perm), Care Team msgs from others (chat perm), parent handover notes, and family ratings/praise — sorted newest first. Unread computed vs helper doc field helper_notifs_read_at. POST /helper/notifications/read stamps read time. /helper/dashboard now returns notif_unread. Isolated: no Family Chat data. Curl-verified: sunita -> 18 items, unread 18 -> read -> 0."
+
+frontend_batch35:
+  - task: "Remove Love This Week from Family tab"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/family.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Removed the 'Love This Week' affection timeline section + its /affection/timeline fetch, state, AFFECTION_MAP import and unused styles. Send Some Love card remains. Lint clean."
+  - task: "Calendar revamp (Cubbily-style: gradient header, member color filter, event pills in cells)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Redesigned month view: coral gradient hero (year + month + prev/Today/next), horizontal member avatar filter row (cal-member-<id>, tap to toggle; empty = all) that filters the grid by participant/owner, month grid with per-day event PILLS (colored, left-accent, truncated title, +N more) instead of dots, today/weekend/selected highlighting, and a selected-day agenda below with a count badge. All existing agenda logic kept: RSVP (rsvp-*), recurring badge, delete-scope modal (del-scope-*), nudge (rsvp-nudge-*), FAB (fab-create-event). Screenshot-confirmed: hero + members + pills + agenda render."
+  - task: "Home: completed tasks + who marked done"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Family tasks section shows a '<n> done · <n> to do' summary and a 'COMPLETED TODAY' subsection (strikethrough title + done_by avatar+name, home-task-done-<id>). Kids & chores chips (home-chore-<id>) now show a mini avatar of who marked each done chore; optimistic toggle sets done_by to current user. Screenshot-confirmed: 'Make Bed' done chip shows Raj avatar + StarBurst."
+  - task: "Helper portal alerts feed screen + header bell badge"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx, frontend/app/helper-portal/notifications.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New /helper-portal/notifications screen (helper-notif-<i> rows, unread highlight + dot, tap routes to chat/care-team/handover). Helper portal header bell (helper-notif-btn) with unread badge (helper-notif-badge) from dashboard.notif_unread; opening the screen marks all read. NATIVE mic/camera unchanged."
+
+agent_communication_batch35:
+    -agent: "main"
+    -message: "Batch #35 = 4 user asks. CREDS parent storytester@fam.com/secret123; helper sunita/1234. TEST BACKEND: (1) /api/home returns tasks_done_today[] with done_by, and kids[].chores[].done_by; toggling a todo records done_by/done_at and it appears in tasks_done_today; completing a chore records completed_by_member_id; uncomplete clears. (2) /helper/notifications returns aggregated items + unread; /helper/notifications/read zeroes unread; dashboard.notif_unread present; a no-chat helper still gets the feed (handover/ratings) but no chat/care-team items; feed never contains Family Chat data. TEST FRONTEND: (a) Family tab NO LONGER shows 'Love This Week'. (b) Calendar tab: gradient header, member avatars filter the grid (tap cal-member-<id>), event pills in day cells, tap a day -> agenda; RSVP + delete + FAB still work. (c) Home Family tasks shows 'n done · n to do' + a COMPLETED TODAY list with who ticked it; Kids & chores done chips show the completer's mini-avatar. (d) Helper portal (sunita/1234): header bell (helper-notif-btn) with unread badge -> opens Alerts feed; items show; badge clears after viewing. Native mic/camera/GPS remain device-only. Do NOT run destructive cleanup; keep Sunita + demo data."

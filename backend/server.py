@@ -2370,9 +2370,11 @@ async def complete_chore(chore_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Chore not found")
     existing = await db.chore_completions.find_one({"chore_id": chore_id, "date": today_str()})
     if not existing:
+        mine = await member_for_user(user)
         await db.chore_completions.insert_one({
             "completion_id": new_id("cc_"), "chore_id": chore_id, "family_id": fid,
             "member_id": c["owner_member_id"], "stars": c.get("stars", 1),
+            "completed_by_member_id": (mine or {}).get("member_id") or c["owner_member_id"],
             "date": today_str(), "created_at": now_iso(),
         })
     return {"ok": True, "stars": c.get("stars", 1)}
@@ -2737,8 +2739,13 @@ async def toggle_todo_item(item_id: str, user: dict = Depends(get_current_user))
     item = await db.todo_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    await db.todo_items.update_one({"item_id": item_id, "family_id": fid}, {"$set": {"done": not item["done"]}})
-    item["done"] = not item["done"]
+    now_done = not item["done"]
+    mine = await member_for_user(user)
+    upd = {"done": now_done,
+           "done_by_member_id": (mine or {}).get("member_id") if now_done else None,
+           "done_at": now_iso() if now_done else None}
+    await db.todo_items.update_one({"item_id": item_id, "family_id": fid}, {"$set": upd})
+    item.update(upd)
     return item
 
 
@@ -2866,26 +2873,52 @@ async def home(user: dict = Depends(get_current_user)):
             meals_today.append({"slot": e["slot"], "recipe": _recipe_card(r)})
     meals_today.sort(key=lambda x: slot_order.get(x["slot"], 9))
 
-    # --- Open family tasks (across all to-do lists) ----------------------------
+    # --- Family tasks (open + completed today, with who marked done) ----------
     list_names = {l["list_id"]: l["name"] for l in await db.todo_lists.find({"family_id": fid}, {"_id": 0}).to_list(100)}
     child_ids = {m["member_id"] for m in members if m.get("is_child") or m.get("role") == "child"}
+    _mcard_cache: dict = {}
+
+    async def _mcard(mid):
+        if not mid:
+            return None
+        if mid in _mcard_cache:
+            return _mcard_cache[mid]
+        card = _member_card(await db.members.find_one({"member_id": mid}, {"_id": 0}))
+        _mcard_cache[mid] = card
+        return card
+
+    def _task_scope(aid):
+        return "mine" if aid == my_id else ("kids" if aid in child_ids else "family")
+
     tasks = []
     for it in await db.todo_items.find({"family_id": fid, "done": {"$ne": True}}, {"_id": 0}).sort("due_date", 1).to_list(300):
-        assignee = None
         aid = it.get("assignee_member_id")
-        if aid:
-            assignee = _member_card(await db.members.find_one({"member_id": aid}, {"_id": 0}))
         du = _days_until(it.get("due_date")) if it.get("due_date") else None
         tasks.append({
             "item_id": it["item_id"], "list_id": it.get("list_id"), "list_name": list_names.get(it.get("list_id")),
             "title": it.get("title"), "priority": it.get("priority", "normal"),
             "due_date": it.get("due_date"), "days_until_due": du,
             "overdue": du is not None and du < 0,
-            "assignee": assignee,
-            "scope": "mine" if aid == my_id else ("kids" if aid in child_ids else "family"),
+            "assignee": await _mcard(aid),
+            "scope": _task_scope(aid), "done": False,
+        })
+    # tasks finished today (so families can see what's already done + who ticked it off)
+    tasks_done_today = []
+    for it in await db.todo_items.find(
+        {"family_id": fid, "done": True, "done_at": {"$gte": t}}, {"_id": 0}
+    ).sort("done_at", -1).to_list(60):
+        aid = it.get("assignee_member_id")
+        tasks_done_today.append({
+            "item_id": it["item_id"], "list_id": it.get("list_id"), "list_name": list_names.get(it.get("list_id")),
+            "title": it.get("title"), "priority": it.get("priority", "normal"),
+            "assignee": await _mcard(aid), "scope": _task_scope(aid),
+            "done": True, "done_by": await _mcard(it.get("done_by_member_id")),
+            "done_at": it.get("done_at"),
         })
 
-    # --- Kids' chore progress today -------------------------------------------
+    # --- Kids' chore progress today (with who marked each chore done) ----------
+    _comp_today = {cc["chore_id"]: cc for cc in await db.chore_completions.find(
+        {"family_id": fid, "date": t}, {"_id": 0}).to_list(500)}
     kids = []
     for m in members:
         if m.get("is_child") or m.get("role") == "child":
@@ -2893,11 +2926,13 @@ async def home(user: dict = Depends(get_current_user)):
             chore_list = []
             done = 0
             for ch in my_chores:
-                d = bool(await db.chore_completions.find_one({"chore_id": ch["chore_id"], "date": t}))
+                cc = _comp_today.get(ch["chore_id"])
+                d = bool(cc)
                 if d:
                     done += 1
                 chore_list.append({"chore_id": ch["chore_id"], "title": ch.get("title"),
-                                   "stars": ch.get("stars", 1), "done_today": d})
+                                   "stars": ch.get("stars", 1), "done_today": d,
+                                   "done_by": await _mcard((cc or {}).get("completed_by_member_id")) if d else None})
             chore_ids = [ch["chore_id"] for ch in my_chores]
             streak = await _chore_streak(fid, m["member_id"], chore_ids)
             kids.append({"member": _member_card(m), "done": done, "total": len(my_chores),
@@ -3057,15 +3092,15 @@ async def home(user: dict = Depends(get_current_user)):
     helpers_today = []
     if mine and mine.get("role") in ("admin", "parent"):
         async for h in db.helpers.find({"family_id": fid, "status": "active"}, {"_id": 0}).limit(6):
-            tasks = await _helper_today_tasks(h)
+            htasks = await _helper_today_tasks(h)
             role = ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])
             helpers_today.append({
                 "helper_id": h["helper_id"], "name": h.get("name"),
                 "role_label": role["label"], "role_icon": role["icon"], "photo_url": h.get("photo_url"),
-                "on_duty": _within_hours(h), "tasks_total": len(tasks),
-                "tasks_done": sum(1 for t in tasks if t.get("done")),
+                "on_duty": _within_hours(h), "tasks_total": len(htasks),
+                "tasks_done": sum(1 for t in htasks if t.get("done")),
                 "next_task": next(({"title": t.get("title"), "due_time": t.get("due_time")}
-                                   for t in tasks if not t.get("done")), None),
+                                   for t in htasks if not t.get("done")), None),
             })
 
     return {
@@ -3083,6 +3118,7 @@ async def home(user: dict = Depends(get_current_user)):
         "family_streak": family_streak,
         "meals_today": meals_today,
         "tasks": tasks,
+        "tasks_done_today": tasks_done_today,
         "kids": kids,
         "shopping_preview": shopping_preview,
         "coming_up": coming_up,
@@ -6896,8 +6932,76 @@ async def helper_dashboard(h: dict = Depends(get_current_helper)):
         "rated_up_today": bool(rate_today and rate_today.get("rating") == "up"),
         "shift": _shift_status(h),
         "checkin": checkin or None,
+        "notif_unread": await _helper_notif_unread(h),
         "media_token": make_helper_media_token(h["helper_id"], h["family_id"]),
     }
+
+
+# --- Helper self-service: in-portal notifications feed ---------------------
+async def _helper_notifications(h: dict, limit: int = 40) -> list:
+    """Aggregate an activity feed FOR the helper: parent 1:1 messages, Care Team
+    messages from others, parent handover notes, and family ratings/praise."""
+    fid = h["family_id"]
+    hid = h["helper_id"]
+    perms = h.get("permissions") or {}
+    items: list = []
+    if perms.get("chat"):
+        for m in await db.helper_messages.find(
+            {"helper_id": hid, "family_id": fid, "sender": "parent"}, {"_id": 0}
+        ).sort("created_at", -1).to_list(15):
+            preview = m.get("text") or ("📷 Photo" if m.get("photo_url") else "")
+            items.append({"kind": "chat", "emoji": "💬",
+                          "title": f"{m.get('sender_name') or 'Family'} sent you a message",
+                          "subtitle": preview, "route": "/helper-portal/chat",
+                          "created_at": m.get("created_at")})
+        for m in await db.care_team_messages.find(
+            {"family_id": fid, "sender_id": {"$ne": hid}}, {"_id": 0}
+        ).sort("created_at", -1).to_list(15):
+            preview = m.get("text") or ("🎤 Voice message" if m.get("audio_url")
+                                        else ("📷 Photo" if m.get("photo_url") else ""))
+            items.append({"kind": "care_team", "emoji": "👥",
+                          "title": f"{m.get('sender_name') or 'Care Team'} · Care Team",
+                          "subtitle": preview, "route": "/helper-portal/care-team",
+                          "created_at": m.get("created_at")})
+    for n in await db.helper_handovers.find(
+        {"helper_id": hid, "family_id": fid, "by": "parent"}, {"_id": 0}
+    ).sort("created_at", -1).to_list(10):
+        items.append({"kind": "handover", "emoji": "📝",
+                      "title": f"{n.get('author_name') or 'Family'} left a handover note",
+                      "subtitle": n.get("text"), "route": "/helper-portal/handover",
+                      "created_at": n.get("created_at")})
+    for r in await db.helper_ratings.find(
+        {"helper_id": hid, "family_id": fid}, {"_id": 0}
+    ).sort("created_at", -1).to_list(5):
+        up = r.get("rating") == "up"
+        items.append({"kind": "rating", "emoji": "🌟" if up else "🙏",
+                      "title": "You got a 👍 today!" if up else "New feedback from the family",
+                      "subtitle": r.get("note"), "route": "/helper-portal",
+                      "created_at": r.get("created_at")})
+    items = [it for it in items if it.get("created_at")]
+    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return items[:limit]
+
+
+async def _helper_notif_unread(h: dict) -> int:
+    last = h.get("helper_notifs_read_at") or ""
+    items = await _helper_notifications(h)
+    return sum(1 for it in items if (it.get("created_at") or "") > last)
+
+
+@api.get("/helper/notifications")
+async def helper_notifications(h: dict = Depends(get_current_helper)):
+    items = await _helper_notifications(h)
+    last = h.get("helper_notifs_read_at") or ""
+    unread = sum(1 for it in items if (it.get("created_at") or "") > last)
+    return {"items": items, "unread": unread, "last_read": last or None}
+
+
+@api.post("/helper/notifications/read")
+async def helper_notifications_read(h: dict = Depends(get_current_helper)):
+    await db.helpers.update_one({"helper_id": h["helper_id"]},
+                                {"$set": {"helper_notifs_read_at": now_iso()}})
+    return {"ok": True}
 
 
 @api.get("/helper/tasks")
