@@ -23,6 +23,13 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
   const { c, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const [chatUnread, setChatUnread] = useState(0);
+  const [isChild, setIsChild] = useState(false);
+
+  useEffect(() => {
+    api<any>("/families/me")
+      .then((r) => setIsChild(r?.viewer_role === "child"))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +46,8 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
       clearInterval(iv);
     };
   }, []);
+
+  const visibleTabs = isChild ? TABS.filter((t) => t.name !== "more") : TABS;
 
   return (
     <View style={[styles.wrap, { paddingBottom: insets.bottom || spacing.sm }]}>
@@ -59,9 +68,9 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
       />
       <View style={styles.row}>
         {state.routes
-          .filter((r) => TABS.some((t) => t.name === r.name))
+          .filter((r) => visibleTabs.some((t) => t.name === r.name))
           .map((route) => {
-            const tab = TABS.find((t) => t.name === route.name)!;
+            const tab = visibleTabs.find((t) => t.name === route.name)!;
             const index = state.routes.findIndex((r) => r.key === route.key);
             const focused = state.index === index;
             const onPress = () => {
@@ -70,7 +79,15 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
               if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
             };
             return (
-              <Pressable key={route.key} onPress={onPress} style={styles.tab} testID={`tab-${tab.name}`}>
+              <Pressable
+                key={route.key}
+                onPress={onPress}
+                style={styles.tab}
+                testID={`tab-${tab.name}`}
+                accessibilityRole="button"
+                accessibilityLabel={tab.label + (tab.name === "chat" && chatUnread > 0 ? `, ${chatUnread} unread` : "")}
+                accessibilityState={{ selected: focused }}
+              >
                 <View>
                   <Ionicons
                     name={focused ? tab.activeIcon : tab.icon}

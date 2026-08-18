@@ -84,13 +84,13 @@ export default function Chores() {
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} testID="chores-back">
+        <Pressable onPress={() => router.back()} hitSlop={12} testID="chores-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         <AppText family="display" weight="bold" size={20}>
           Chores & Stars
         </AppText>
-        <Pressable onPress={() => setAdding((a) => !a)} hitSlop={12} testID="toggle-add-chore">
+        <Pressable onPress={() => setAdding((a) => !a)} hitSlop={12} testID="toggle-add-chore" accessibilityRole="button" accessibilityLabel={adding ? "Close add chore" : "Add a chore"}>
           <Ionicons name={adding ? "close" : "add"} size={26} color={c.brand} />
         </Pressable>
       </View>
@@ -175,7 +175,7 @@ export default function Chores() {
               <View style={[styles.choreCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
                 {g.items.map((ch, i) => (
                   <View key={ch.chore_id} style={[styles.choreRow, i < g.items.length - 1 && { borderBottomWidth: 1, borderBottomColor: c.divider }]}>
-                    <Pressable onPress={() => toggle(ch)} hitSlop={8} testID={`chore-toggle-${ch.chore_id}`}>
+                    <Pressable onPress={() => toggle(ch)} hitSlop={8} testID={`chore-toggle-${ch.chore_id}`} accessibilityRole="checkbox" accessibilityState={{ checked: ch.done_today }} accessibilityLabel={`${ch.title}, ${ch.done_today ? "done" : "not done"}`}>
                       <View style={[styles.checkbox, { borderColor: ch.done_today ? c.success : c.borderStrong, backgroundColor: ch.done_today ? c.success : "transparent" }]}>
                         {ch.done_today ? <Ionicons name="checkmark" size={18} color="#fff" /> : null}
                       </View>
@@ -186,7 +186,7 @@ export default function Chores() {
                     <AppText size={13} color={c.warning}>
                       ⭐{ch.stars}
                     </AppText>
-                    <Pressable onPress={() => del(ch.chore_id)} hitSlop={8} testID={`chore-del-${ch.chore_id}`}>
+                    <Pressable onPress={() => del(ch.chore_id)} hitSlop={8} testID={`chore-del-${ch.chore_id}`} accessibilityRole="button" accessibilityLabel={`Delete chore ${ch.title}`}>
                       <Ionicons name="trash-outline" size={17} color={c.onSurfaceTertiary} />
                     </Pressable>
                   </View>

@@ -26,6 +26,8 @@ export default function AccessibilitySettings() {
     setLargeButtons,
     setReduceMotion,
     setIconLabels,
+    simpleHome,
+    setSimpleHome,
   } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -164,6 +166,23 @@ export default function AccessibilitySettings() {
             value={iconLabels}
             onValueChange={setIconLabels}
             testID="toggle-icon-labels"
+          />
+        </View>
+
+        {/* Simple home */}
+        <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={styles.sectionLabel}>
+          HOME LAYOUT
+        </AppText>
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border, paddingVertical: 0 }, shadow(1)]}>
+          <ToggleRow
+            icon="grid"
+            color="#C98A6A"
+            title="Simple Home"
+            desc="A calmer home with large buttons for Calendar, Messages, Send Love, Memories, Birthdays and Emergency. Great for grandparents."
+            value={simpleHome}
+            onValueChange={setSimpleHome}
+            testID="toggle-simple-home"
+            first
           />
         </View>
 

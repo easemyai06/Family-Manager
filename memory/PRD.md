@@ -314,3 +314,19 @@ teens, young kids, low-vision users). Kids Mode / Grandparent Mode deferred to a
   Send Love). Frontend-only; preview — Publish to ship.
 - PENDING later phases: (2) screen-reader label + contrast/touch-target audit across all core flows;
   (3) Kids Mode & Grandparent (Simplified) Mode; (4) localization-readiness string extraction.
+
+
+## Accessibility — Phase 2 + Kids Mode + Grandparent Mode — June 2026
+- A11y Phase 2: screen-reader labels (accessibilityRole/label/state) added to icon-only controls across
+  Home header, tab bar (selected + unread), Emergency (SOS/call/back), Chat (send/mic/attach/back),
+  Calendar (month nav/add FAB), Vault (back/lock/add), Chores (back/add/checkbox/delete).
+- Grandparent "Simple Home": opt-in toggle in Accessibility (HOME LAYOUT). When ON, Home renders a
+  large-button 6-tile grid: Family Calendar, Messages, Send Love, Memories, Birthdays, Emergency.
+- Kids Mode: when the logged-in user's member is a child (is_child || role==='child'), Home renders a
+  friendly KidsHome (greeting, Today, My Chores with big check toggles, Quick Actions: Hug parents /
+  Send Love / Family Chat / My Wishlist). The bottom tab bar hides the 'More' tab (admin) for child
+  accounts. persona detection via src/lib/dashboard.personaOf.
+- Verified: testing agent iteration_24 — 4/4 pass (Grandparent grid + navigation + toggle-off restore;
+  Kids Mode via join+claim child profile, More tab hidden, chore toggle + StarBurst; a11y labels;
+  adult regression). Frontend-only; preview — Publish to ship.
+- Still pending later: Phase 4 localization-readiness string extraction.

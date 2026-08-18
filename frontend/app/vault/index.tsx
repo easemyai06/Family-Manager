@@ -59,7 +59,7 @@ export default function VaultHome() {
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} testID="vault-back">
+        <Pressable onPress={() => router.back()} hitSlop={12} testID="vault-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         <AppText family="display" weight="bold" size={20}>
@@ -72,6 +72,8 @@ export default function VaultHome() {
           }}
           hitSlop={12}
           testID="vault-lock-btn"
+          accessibilityRole="button"
+          accessibilityLabel="Lock the vault"
         >
           <Ionicons name="lock-closed" size={22} color={c.brand} />
         </Pressable>
@@ -136,7 +138,7 @@ export default function VaultHome() {
         </View>
       </ScrollView>
 
-      <Pressable onPress={() => router.push("/vault/create")} style={[styles.fab, { backgroundColor: c.brand, bottom: insets.bottom + 20 }, shadow(3)]} testID="vault-add-btn">
+      <Pressable onPress={() => router.push("/vault/create")} style={[styles.fab, { backgroundColor: c.brand, bottom: insets.bottom + 20 }, shadow(3)]} testID="vault-add-btn" accessibilityRole="button" accessibilityLabel="Add to vault">
         <Ionicons name="add" size={26} color="#fff" />
         <AppText size={14} weight="bold" color="#fff">
           Add to Vault

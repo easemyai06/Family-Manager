@@ -55,7 +55,7 @@ export default function MemoryVault() {
   return (
     <View style={[styles.container, { backgroundColor: c.surface }]}>
       <View style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12} testID="vault-back">
+        <Pressable onPress={() => router.back()} hitSlop={12} testID="vault-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>

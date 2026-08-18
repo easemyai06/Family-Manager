@@ -1564,3 +1564,39 @@ batch24_a11y:
 agent_communication_batch24_a11y:
     -agent: "main"
     -message: "Batch #24 Accessibility Phase 1 (FRONTEND ONLY, no backend changes). Login testdad@fam.com/secret123. VERIFY: (1) More > Preferences > Accessibility & Display (testID more-accessibility) opens; Text Size chips text-size-1 / text-size-1.2 / text-size-1.45 change the preview + app-wide text; toggles toggle-contrast, toggle-large-buttons, toggle-reduce-motion, toggle-icon-labels flip. (2) PERSISTENCE: set Extra Large + High Contrast, navigate away (Home) and back — settings remain selected; text stays enlarged on Home/More. (3) High Contrast noticeably darkens text/borders (light) and brightens (dark). (4) Larger Buttons makes primary buttons taller (min-height 56). (5) REGRESSION: Home, Family, Calendar, Chat, Send Love still render and are usable at Default settings AND at Extra Large (check for major overlap/clipping only — minor wrapping is expected/acceptable). (6) Login: entering a wrong password shows the friendly 'We couldn't sign you in...' message (testID login-error), not a raw error. (7) Send Love still completes with Reduce Motion ON (no crash; animation simplified). Do NOT retest backend or unrelated features."
+
+# ============ Batch #25 — A11y Phase 2 + Kids Mode + Grandparent (Simple) Home ============
+batch25_a11y2:
+  - task: "Grandparent Simple Home (opt-in) + toggle"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/home/SimpleHome.tsx, frontend/src/theme/ThemeContext.tsx, frontend/app/settings/accessibility.tsx, frontend/app/(tabs)/index.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New 'Simple Home' toggle in Accessibility (HOME LAYOUT). When ON, Home tab renders a large-button 6-tile grid: Family Calendar, Messages, Send Love, Memories, Birthdays, Emergency. SCREENSHOT-VERIFIED: toggle -> Home shows the grid; each tile navigates. Toggling off restores the full dashboard."
+  - task: "Kids Mode home for child-role accounts + hide More tab"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/home/KidsHome.tsx, frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/_layout.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "When the logged-in user's member is a child (is_child || role==='child'), Home renders KidsHome: greeting, Today, My Chores (big check toggles via existing chore toggle), Quick Actions (Hug parents / Send Love / Family Chat / My Wishlist). Tab bar hides the 'More' tab for child accounts (viewer_role==='child'). NOT yet screenshot-verified (needs a child account)."
+  - task: "A11y Phase 2 screen-reader labels + tab labels"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/_layout.tsx, frontend/app/emergency/index.tsx, frontend/app/chat/[id].tsx, frontend/app/(tabs)/calendar.tsx, frontend/app/vault/index.tsx, frontend/app/chores/index.tsx"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Added accessibilityRole/label/state to icon-only controls: Home header (search/customize/chat/profile), tab bar buttons (selected state + unread), Emergency (SOS/call/back), Chat (send/mic/attach/back), Calendar (prev/next month, add-event FAB), Vault (back/lock/add), Chores (back/add/toggle checkbox/delete)."
+agent_communication_batch25_a11y2:
+    -agent: "main"
+    -message: "Batch #25 (FRONTEND ONLY; no backend changes). GRANDPARENT SIMPLE HOME: login testdad@fam.com/secret123 -> tab-more -> more-accessibility -> toggle-simple-home ON -> a11y-back -> tab-index: Home shows a 6-tile large-button grid (simple-tile-family/messages/send/memories/birthdays/emergency). Each tile navigates (e.g., simple-tile-family -> calendar). Toggle OFF restores the full dashboard. KIDS MODE (needs a child account — set up via API/UI): (a) login testdad and GET /api/families/invite for the code; (b) register a NEW user kidtest+<rand>@fam.com/secret123; (c) on onboarding Join a family, enter the code -> Continue -> pick a CHILD pending profile (e.g., 'Aarav' or 'Anaya') -> Join. Now that account's member is a child. VERIFY: Home shows KidsHome (Hi <name>, Today, My Chores with big check toggles kids-chore-<id>, Quick Actions kids-send-love/kids-chat/kids-wishlist and kids-hug-<parentId>); the bottom tab bar has NO 'More' tab (tab-more absent) for this child account; toggling a chore updates count and does not crash. A11Y LABELS: spot-check that icon-only controls expose accessibility labels (Home header home-search/home-customize/home-chat/home-avatar; Emergency sos-button/emergency-back/call-<id>; Chat chat-send-btn/chat-mic-btn/chat-image-btn/conv-back; Calendar cal-prev/cal-next/fab-create-event; Vault vault-back/vault-lock-btn/vault-add-btn; Chores chores-back/toggle-add-chore/chore-toggle-<id>/chore-del-<id>). REGRESSION: normal adult (testdad) Home dashboard still renders and is usable with Simple Home OFF. Do NOT retest backend or unrelated features."

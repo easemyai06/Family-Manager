@@ -322,7 +322,7 @@ export default function Conversation() {
   return (
     <View style={[styles.container, { backgroundColor: c.surface }]}>
       <View style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: c.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12} testID="conv-back">
+        <Pressable onPress={() => router.back()} hitSlop={12} testID="conv-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         {chat?.type === "direct" ? (
@@ -423,7 +423,7 @@ export default function Conversation() {
             <Pressable onPress={() => setShowAff((s) => !s)} hitSlop={8} testID="toggle-affection">
               <Ionicons name="heart" size={26} color={showAff ? c.brand : c.onSurfaceTertiary} />
             </Pressable>
-            <Pressable onPress={sendImage} hitSlop={8} testID="chat-image-btn">
+            <Pressable onPress={sendImage} hitSlop={8} testID="chat-image-btn" accessibilityRole="button" accessibilityLabel="Attach a photo">
               <Ionicons name="image-outline" size={24} color={c.onSurfaceTertiary} />
             </Pressable>
             <TextInput
@@ -436,7 +436,7 @@ export default function Conversation() {
               testID="chat-input"
             />
             {text.trim() ? (
-              <Pressable onPress={send} style={[styles.sendBtn, { backgroundColor: c.brand }]} testID="chat-send-btn">
+              <Pressable onPress={send} style={[styles.sendBtn, { backgroundColor: c.brand }]} testID="chat-send-btn" accessibilityRole="button" accessibilityLabel="Send message">
                 <Ionicons name="arrow-up" size={20} color="#fff" />
               </Pressable>
             ) : (
@@ -446,6 +446,8 @@ export default function Conversation() {
                 delayLongPress={99999}
                 style={[styles.sendBtn, { backgroundColor: c.surfaceSecondary }]}
                 testID="chat-mic-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Hold to record a voice message"
               >
                 <Ionicons name="mic" size={22} color={c.brand} />
               </Pressable>

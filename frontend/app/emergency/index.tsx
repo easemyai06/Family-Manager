@@ -89,7 +89,7 @@ export default function EmergencyHome() {
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} testID="emergency-back">
+        <Pressable onPress={() => router.back()} hitSlop={12} testID="emergency-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
         <AppText family="display" weight="bold" size={20}>
@@ -142,7 +142,7 @@ export default function EmergencyHome() {
         ))}
 
         {/* SOS button */}
-        <Pressable onPress={() => setConfirm(true)} disabled={sending} testID="sos-button">
+        <Pressable onPress={() => setConfirm(true)} disabled={sending} testID="sos-button" accessibilityRole="button" accessibilityLabel="Send emergency SOS alert to your family">
           <LinearGradient colors={["#FF6B6B", "#D63A3A"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.sos, shadow(3)]}>
             <Ionicons name="warning" size={40} color="#fff" />
             <AppText family="display" weight="bold" size={26} color="#fff" style={{ marginTop: spacing.sm }}>
@@ -171,7 +171,7 @@ export default function EmergencyHome() {
                     {ct.relationship} · {ct.phone}
                   </AppText>
                 </View>
-                <Pressable onPress={() => callNumber(ct.phone)} style={styles.callBtn} testID={`call-${ct.contact_id}`}>
+                <Pressable onPress={() => callNumber(ct.phone)} style={styles.callBtn} testID={`call-${ct.contact_id}`} accessibilityRole="button" accessibilityLabel={`Call ${ct.name}`}>
                   <Ionicons name="call" size={20} color="#fff" />
                   <AppText size={14} weight="bold" color="#fff">
                     Call

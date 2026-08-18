@@ -19,6 +19,8 @@ import { Avatar } from "@/src/components/ui/Avatar";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { AffectionAnimation } from "@/src/components/AffectionAnimation";
 import { StarBurst } from "@/src/components/StarBurst";
+import { KidsHome } from "@/src/components/home/KidsHome";
+import { SimpleHome } from "@/src/components/home/SimpleHome";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -42,7 +44,7 @@ const TONE_MAP: Record<string, string> = {
 };
 
 export default function Home() {
-  const { c } = useTheme();
+  const { c, simpleHome } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [home, setHome] = useState<any>(null);
@@ -184,6 +186,27 @@ export default function Home() {
 
   const go = (r: string) => router.push(r as any);
 
+  // Kids Mode: a child's account gets a simplified, friendly home.
+  if (home && persona === "child") {
+    return (
+      <KidsHome
+        home={home}
+        incoming={incoming}
+        onDismissAffection={dismissAffection}
+        onSendBack={sendBack}
+        onToggleChore={toggleChore}
+        celebrating={celebrating}
+        onCelebrateDone={() => setCelebrating(false)}
+      />
+    );
+  }
+  // Grandparent / Simple Home: opt-in large-button layout.
+  if (home && simpleHome) {
+    return (
+      <SimpleHome home={home} incoming={incoming} onDismissAffection={dismissAffection} onSendBack={sendBack} />
+    );
+  }
+
   const renderSection = (key: string) => {
     const p = { compact, c, go, router };
     switch (key) {
@@ -261,10 +284,10 @@ export default function Home() {
             </AppText>
             <AppText size={13} color={c.onSurfaceSecondary}>{home?.family?.name}</AppText>
           </View>
-          <HeaderIcon icon="search" onPress={() => go("/search")} c={c} testID="home-search" />
-          <HeaderIcon icon="options-outline" onPress={() => go("/dashboard/customize")} c={c} testID="home-customize" />
-          <HeaderIcon icon="chatbubble-ellipses" onPress={() => go("/(tabs)/chat")} c={c} badge={home?.unread_messages} testID="home-chat" />
-          <Pressable onPress={() => me && go(`/member/${me.member_id}`)} testID="home-avatar" style={{ marginLeft: 2 }}>
+          <HeaderIcon icon="search" onPress={() => go("/search")} c={c} testID="home-search" label="Search" />
+          <HeaderIcon icon="options-outline" onPress={() => go("/dashboard/customize")} c={c} testID="home-customize" label="Customize dashboard" />
+          <HeaderIcon icon="chatbubble-ellipses" onPress={() => go("/(tabs)/chat")} c={c} badge={home?.unread_messages} testID="home-chat" label="Open family chat" />
+          <Pressable onPress={() => me && go(`/member/${me.member_id}`)} testID="home-avatar" style={{ marginLeft: 2 }} accessibilityRole="button" accessibilityLabel="Your profile">
             <Avatar uri={me?.photo_url} name={me?.name} size={44} color={me?.color} ring />
           </Pressable>
         </View>
@@ -346,9 +369,9 @@ function SectionShell({ compact, children }: any) {
   return <View style={{ paddingHorizontal: spacing.lg, marginTop: compact ? spacing.sm : spacing.md }}>{children}</View>;
 }
 
-function HeaderIcon({ icon, onPress, c, badge, testID }: any) {
+function HeaderIcon({ icon, onPress, c, badge, testID, label }: any) {
   return (
-    <Pressable onPress={onPress} hitSlop={6} style={[styles.headerIcon, { backgroundColor: c.surface, borderColor: c.border }]} testID={testID}>
+    <Pressable onPress={onPress} hitSlop={6} style={[styles.headerIcon, { backgroundColor: c.surface, borderColor: c.border }]} testID={testID} accessibilityRole="button" accessibilityLabel={label}>
       <Ionicons name={icon} size={19} color={c.onSurface} />
       {badge ? (
         <View style={[styles.iconBadge, { backgroundColor: c.brand, borderColor: c.surface }]}>

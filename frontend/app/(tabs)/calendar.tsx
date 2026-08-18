@@ -118,7 +118,7 @@ export default function Calendar() {
           {month.format("MMMM YYYY")}
         </AppText>
         <View style={styles.headerBtns}>
-          <Pressable onPress={() => setMonth((m) => m.subtract(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-prev">
+          <Pressable onPress={() => setMonth((m) => m.subtract(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous month">
             <Ionicons name="chevron-back" size={22} color={c.onSurface} />
           </Pressable>
           <Pressable
@@ -133,7 +133,7 @@ export default function Calendar() {
               Today
             </AppText>
           </Pressable>
-          <Pressable onPress={() => setMonth((m) => m.add(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-next">
+          <Pressable onPress={() => setMonth((m) => m.add(1, "month"))} hitSlop={8} style={styles.navBtn} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next month">
             <Ionicons name="chevron-forward" size={22} color={c.onSurface} />
           </Pressable>
         </View>
@@ -285,6 +285,8 @@ export default function Calendar() {
         onPress={() => router.push(`/event/create?date=${selected}`)}
         style={[styles.fab, { backgroundColor: c.brand }, shadow(3)]}
         testID="fab-create-event"
+        accessibilityRole="button"
+        accessibilityLabel="Add event"
       >
         <Ionicons name="add" size={30} color="#fff" />
       </Pressable>
