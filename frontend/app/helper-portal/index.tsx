@@ -250,6 +250,27 @@ export default function HelperPortal() {
           </View>
         ) : null}
 
+        {data?.shift ? (
+          <View
+            style={[styles.shift, {
+              backgroundColor: data.shift.reminder ? c.warning + "20" : data.shift.on_duty ? c.success + "18" : c.surfaceSecondary,
+              borderColor: data.shift.reminder ? c.warning + "55" : data.shift.on_duty ? c.success + "40" : c.border,
+            }]}
+            testID="portal-shift"
+          >
+            <AppText size={20}>{data.shift.reminder ? "⏰" : data.shift.on_duty ? "🟢" : "🗓️"}</AppText>
+            <AppText size={13} weight="semibold" color={c.onSurface} style={{ flex: 1 }}>
+              {data.shift.reminder
+                ? `Your shift starts at ${data.shift.start_time} — about ${data.shift.minutes_until} min to go. Get ready!`
+                : data.shift.on_duty
+                ? `You're on shift${data.shift.end_time ? ` until ${data.shift.end_time}` : ""}.`
+                : data.shift.today
+                ? `Today's shift: ${data.shift.start_time}${data.shift.end_time ? `–${data.shift.end_time}` : ""}`
+                : `Next shift at ${data.shift.start_time}`}
+            </AppText>
+          </View>
+        ) : null}
+
         <View style={styles.navRow}>
           {data?.can_chat ? (
             <Pressable onPress={() => router.push("/helper-portal/chat")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-chat-btn">
@@ -541,6 +562,7 @@ const styles = StyleSheet.create({
   navRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
   navBtn: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
   praise: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  shift: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   navBadge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   navDot: { width: 8, height: 8, borderRadius: 4 },
   tripChip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 9, justifyContent: "center" },

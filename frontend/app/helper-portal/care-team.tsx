@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { CareTeamChatView, CareMsg } from "@/src/components/CareTeamChatView";
-import { helperApi, setHelperToken } from "@/src/lib/helperApi";
+import { helperApi, helperUpload, setHelperToken } from "@/src/lib/helperApi";
 
 export default function HelperPortalCareTeam() {
   const router = useRouter();
@@ -37,6 +37,12 @@ export default function HelperPortalCareTeam() {
     await load();
   };
 
+  const onSendPhoto = async (uri: string) => {
+    const up = await helperUpload(uri);
+    await helperApi("/helper/care-team", { method: "POST", body: { photo_url: up.url } });
+    await load();
+  };
+
   return (
     <CareTeamChatView
       subtitle="Parents + helpers"
@@ -45,6 +51,7 @@ export default function HelperPortalCareTeam() {
       myId={me}
       onBack={() => router.back()}
       onSend={onSend}
+      onSendPhoto={onSendPhoto}
     />
   );
 }

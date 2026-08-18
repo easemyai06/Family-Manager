@@ -592,3 +592,32 @@ live GPS only during an active pickup trip (device build needed to actually move
   Preview only — Publish to ship to production.
 - REMAINING backlog: live-GPS map polish (device build), device/session detail, selective
   emergency sharing beyond medical, English-only helper UI (i18n later).
+
+## Batch #33 — TRUSTED HELPERS Phase 4 (Care Team Photos / Trip ETA Alerts / Shift Reminders) (June 2026)
+- BUGFIX: create_helper_task now persists pickup_from/pickup_to (previously only PATCH did) + new
+  dest_lat/dest_lng on HelperTaskIn/Patch.
+- Care Team Photos: CareTeamMsgIn already carried photo_url; frontend CareTeamChatView now has a '+'
+  attach button (careteam-attach) -> Take photo (careteam-camera) / Gallery (careteam-gallery) with
+  camera+media permission flow; photo bubbles (ctphoto-*) render via SmartImage (tap opens full).
+  Parent uploads via uploadMedia, helper via helperUpload, then POST {photo_url}. Both care-team
+  screens pass onSendPhoto. Still isolated from Family Chat + 1:1 helper chat.
+- Trip ETA Alerts: POST /api/helper/tasks/{id}/location returns eta_min and, when the pickup task has
+  dest_lat/dest_lng and the live point is within ETA_ALERT_M (2000m) during en_route/picked_up, fires
+  a ONE-TIME parent notification "📍 <helper> is about N min from <dest>" (trip.eta_alerted guard;
+  _haversine_m; import math). Parent sets the drop-off point on each pickup task via a button
+  (dropoff-<task_id>) that captures their GPS -> PATCH dest_lat/dest_lng; shows "Arrival alerts on"
+  once set. Real GPS movement needs a device build.
+- Shift Reminders: _shift_status(h) reuses access.start_time/end_time/days (UTC). helper/dashboard
+  returns shift={start_time,end_time,today,on_duty,minutes_until,reminder(0<=mins<=60)}. Helper portal
+  shows a banner (portal-shift): ⏰ starts soon / 🟢 on shift / 🗓️ today's shift. Parents already set
+  working hours in the Add Helper form (no new setup UI).
+- Verified: testing agent Batch #33 — BACKEND 21/21 pytest
+  (backend/tests/test_batch33_trusted_helpers_phase4.py) incl. pickup create persistence, ETA far/near
+  single-fire + no-double + 400-before-trip, shift reminder true/false windows, care-team photo
+  persistence + isolation, plus security regressions (no-chat 403, cross-token 401, medical leak-free,
+  paused blocked). FRONTEND helper portal 100% (shift banner, praise, 4 nav, attach sheet, live toggle).
+  Parent-side UI not re-driven this run due to a known Playwright web-auth-storage harness limitation
+  (AsyncStorage/IndexedDB, not localStorage) — parent flows verified in #32 + all parent data paths
+  validated by backend. Preview only — Publish to ship to production.
+- REMAINING backlog: overnight-shift handling, timezone-aware working hours (currently UTC), true
+  background/push shift & ETA alerts (needs push setup), device-build validation for GPS/camera.

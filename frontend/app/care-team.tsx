@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import { CareTeamChatView, CareMsg } from "@/src/components/CareTeamChatView";
-import { api } from "@/src/lib/api";
+import { api, uploadMedia } from "@/src/lib/api";
 
 export default function ParentCareTeam() {
   const router = useRouter();
@@ -32,6 +32,12 @@ export default function ParentCareTeam() {
     await load();
   };
 
+  const onSendPhoto = async (uri: string) => {
+    const up = await uploadMedia(uri, "image");
+    await api("/care-team/chat", { method: "POST", body: { photo_url: up.url } });
+    await load();
+  };
+
   const subtitle = helpers.length ? `You + ${helpers.map((h) => h.name).join(", ")}` : "You + your helpers";
 
   return (
@@ -42,6 +48,7 @@ export default function ParentCareTeam() {
       myId={me}
       onBack={() => router.back()}
       onSend={onSend}
+      onSendPhoto={onSendPhoto}
     />
   );
 }

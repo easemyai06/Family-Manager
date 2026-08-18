@@ -7,6 +7,7 @@ demo-family seeder and Emergent Object Storage media upload/serving.
 import os
 import re
 import uuid
+import math
 import secrets
 import asyncio
 import ipaddress
@@ -5990,6 +5991,8 @@ class HelperTaskIn(BaseModel):
     category: str = "chore"                 # chore | meal | pickup | care | shopping | other
     pickup_from: Optional[str] = None       # pickup tasks
     pickup_to: Optional[str] = None
+    dest_lat: Optional[float] = None        # drop-off point (for ETA alerts)
+    dest_lng: Optional[float] = None
 
 
 class HelperTaskPatch(BaseModel):
@@ -6006,6 +6009,8 @@ class HelperTaskPatch(BaseModel):
     category: Optional[str] = None
     pickup_from: Optional[str] = None
     pickup_to: Optional[str] = None
+    dest_lat: Optional[float] = None
+    dest_lng: Optional[float] = None
 
 
 class HelperTaskCompleteIn(BaseModel):
@@ -6103,6 +6108,38 @@ def _within_hours(h: dict) -> bool:
         except ValueError:
             return True
     return True
+
+
+def _shift_status(h: dict) -> Optional[dict]:
+    """Shift info for the helper's own reminder banner (reuses working hours).
+    Times are compared in UTC, consistent with _within_hours."""
+    acc = h.get("access") or {}
+    st, et = acc.get("start_time"), acc.get("end_time")
+    if not st:
+        return None
+    try:
+        sh, sm = [int(x) for x in st.split(":")]
+    except ValueError:
+        return None
+    now = datetime.now(timezone.utc)
+    days = acc.get("days") or []
+    today_ok = (not days) or (now.weekday() in days)
+    start_min = sh * 60 + sm
+    cur = now.hour * 60 + now.minute
+    end_min = None
+    if et:
+        try:
+            eh, em = [int(x) for x in et.split(":")]
+            end_min = eh * 60 + em
+        except ValueError:
+            end_min = None
+    on_duty = bool(today_ok and cur >= start_min and (end_min is None or cur < end_min))
+    minutes_until = (start_min - cur) if (today_ok and cur < start_min) else None
+    return {
+        "start_time": st, "end_time": et, "today": today_ok, "on_duty": on_duty,
+        "minutes_until": minutes_until,
+        "reminder": bool(minutes_until is not None and 0 <= minutes_until <= 60),
+    }
 
 
 async def get_current_helper(authorization: Optional[str] = Header(None),
@@ -6442,7 +6479,11 @@ async def create_helper_task(helper_id: str, body: HelperTaskIn, user: dict = De
         "days": body.days or [], "date": body.date or datetime.now(timezone.utc).date().isoformat(),
         "checklist": body.checklist or [], "photo_url": body.photo_url,
         "require_proof": body.require_proof if body.require_proof in ("photo", "note", "confirm") else None,
-        "category": body.category, "created_by": user["user_id"], "created_at": now_iso(),
+        "category": body.category,
+        "pickup_from": (body.pickup_from or "").strip() or None,
+        "pickup_to": (body.pickup_to or "").strip() or None,
+        "dest_lat": body.dest_lat, "dest_lng": body.dest_lng,
+        "created_by": user["user_id"], "created_at": now_iso(),
     }
     await db.helper_tasks.insert_one(task)
     return {"task": helper_task_public(task)}
@@ -6796,6 +6837,7 @@ async def helper_dashboard(h: dict = Depends(get_current_helper)):
         "unread_chat": unread_chat, "handover_today": handover_today,
         "care_team_unread": care_team_unread,
         "rated_up_today": bool(rate_today and rate_today.get("rating") == "up"),
+        "shift": _shift_status(h),
     }
 
 
@@ -6945,17 +6987,49 @@ async def helper_handover_add(body: HelperHandoverIn, h: dict = Depends(get_curr
 
 
 # --- Helper self-service: live pickup location, care team, medical ---------
+ETA_ALERT_M = 2000                          # notify parents within ~this distance of drop-off
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 @api.post("/helper/tasks/{task_id}/location")
 async def helper_task_location(task_id: str, body: HelperTripLocIn, h: dict = Depends(get_current_helper)):
-    """Driver shares live GPS DURING an active pickup trip (must Start Trip first)."""
-    await _get_helper_task(h, task_id)
+    """Driver shares live GPS DURING an active pickup trip (must Start Trip first).
+    When close to the drop-off point, fires a one-time ETA alert to parents."""
+    t = await _get_helper_task(h, task_id)
     tkey = datetime.now(timezone.utc).date().isoformat()
     r = await db.helper_task_completions.update_one(
         {"task_id": task_id, "date": tkey},
         {"$set": {"trip.lat": body.lat, "trip.lng": body.lng, "trip.loc_updated_at": now_iso()}})
     if not r.matched_count:
         raise HTTPException(status_code=400, detail="Start the trip before sharing your location")
-    return {"ok": True}
+
+    eta = None
+    if t.get("dest_lat") is not None and t.get("dest_lng") is not None:
+        comp = await db.helper_task_completions.find_one({"task_id": task_id, "date": tkey}, {"_id": 0})
+        trip = (comp or {}).get("trip") or {}
+        dist = _haversine_m(body.lat, body.lng, float(t["dest_lat"]), float(t["dest_lng"]))
+        eta = max(1, round(dist / 500))
+        if trip.get("status") in ("en_route", "picked_up") and not trip.get("eta_alerted") and dist <= ETA_ALERT_M:
+            await db.helper_task_completions.update_one(
+                {"task_id": task_id, "date": tkey}, {"$set": {"trip.eta_alerted": True, "trip.eta_min": eta}})
+            who = ""
+            if t.get("for_member_id"):
+                m = await db.members.find_one({"member_id": t["for_member_id"]}, {"_id": 0, "name": 1})
+                if m:
+                    who = (m.get("name") or "").split(" ")[0]
+            dest = t.get("pickup_to") or "the destination"
+            await _notify_parents_helper(
+                h, f"{h.get('name')} is about {eta} min from {dest}",
+                f"With {who}" if who else t.get("title"), "📍", f"/helper/{h['helper_id']}")
+    return {"ok": True, "eta_min": eta}
 
 
 @api.get("/helper/care-team")

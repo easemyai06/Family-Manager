@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Modal, Alert, Linking } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal, Alert, Linking, Platform } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
 import { TextField } from "@/src/components/ui/TextField";
@@ -92,6 +93,25 @@ export default function HelperDetail() {
       flash(e?.message || "Couldn't save");
     }
     setBusy(false);
+  };
+
+  const setDropoff = async (t: any) => {
+    try {
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (!perm.granted && perm.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
+      if (!perm.granted) {
+        flash("Enable location to set the drop-off point");
+        if (Platform.OS !== "web" && !perm.canAskAgain) Linking.openSettings();
+        return;
+      }
+      flash("Getting your location…");
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      await api(`/helper-tasks/${t.task_id}`, { method: "PATCH", body: { dest_lat: pos.coords.latitude, dest_lng: pos.coords.longitude } });
+      flash("Drop-off point saved ✓ — you'll be alerted near arrival");
+      load();
+    } catch {
+      flash("Couldn't set location");
+    }
   };
 
   const act = async (path: string, method = "POST", body?: any) => {
@@ -309,6 +329,14 @@ export default function HelperDetail() {
                   <AppText size={12} color={c.onSurfaceSecondary} style={{ marginTop: 2 }}>
                     🚗 {t.pickup_from || "—"} → {t.pickup_to || "—"}
                   </AppText>
+                ) : null}
+                {t.category === "pickup" ? (
+                  <Pressable onPress={() => setDropoff(t)} style={styles.dropBtn} testID={`dropoff-${t.task_id}`}>
+                    <Ionicons name={t.dest_lat ? "location" : "location-outline"} size={13} color={t.dest_lat ? c.success : c.brandPrimary} />
+                    <AppText size={12} weight="semibold" color={t.dest_lat ? c.success : c.brandPrimary}>
+                      {t.dest_lat ? "Arrival alerts on · tap to update drop-off" : "Set drop-off point (for arrival alerts)"}
+                    </AppText>
+                  </Pressable>
                 ) : null}
                 {tripByTask[t.task_id] ? (
                   <View style={[styles.tripBadge, { backgroundColor: c.success + "1e" }]}>
@@ -547,6 +575,7 @@ const styles = StyleSheet.create({
   badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   tripBadge: { alignSelf: "flex-start", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3, marginTop: 5 },
   tripMap: { width: "100%", height: 130, borderRadius: radius.md },
+  dropBtn: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 },
   rateRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   rateBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: radius.md, borderWidth: 1, paddingVertical: spacing.md },
   rateHist: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 5 },

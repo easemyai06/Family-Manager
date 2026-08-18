@@ -2089,3 +2089,89 @@ frontend_batch32:
 agent_communication_batch32:
     -agent: "main"
     -message: "Batch #32 = TRUSTED HELPERS Phase 3. Builds on #30/#31 (both passed). CREDS: parent/admin storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' — NOW granted 'medical' permission + assigned child Aarav (has a seeded medical card O+/Peanuts/Dr.Mehta/Apollo). Sunita has a daily pickup task 'Pick up Aarav from school' (Delhi Public School -> Home); today's completions were reset so the trip flow is fresh. TEST BOTH backend+frontend. BACKEND regression + SECURITY: (1) CARE TEAM isolation — /api/care-team/chat and /helper/care-team share ONLY care_team_messages, never Family Chat (db.messages) nor 1:1 helper chat (db.helper_messages); helper WITHOUT chat perm -> 403 on /helper/care-team; family token -> 401 on /helper/*; helper token -> 401 on /api/care-team/*. (2) LIVE LOCATION — POST /api/helper/tasks/{id}/location returns 400 before Start Trip, 200 after; coords land in the trip completion and parent sees them via /helpers/{id}/activity. (3) MEDICAL — /helper/medical requires 'medical' perm (403 without); returns ONLY assigned members; response MUST NOT contain medication/conditions/insurance_provider/policy_reference (privacy!). Create a 2nd helper assigned to a DIFFERENT member to confirm scoping (they must NOT see Aarav). (4) RATINGS — parent POST/GET /api/helpers/{id}/rating(s); bad rating value -> 400; one-per-day upsert; dashboard rated_up_today. (5) lifecycle: paused/removed helper blocked on all Phase 3 helper endpoints. FRONTEND (in-app nav, 390x844): HELPER (sunita/1234): portal shows Chat + Care Team + Handover + Medical buttons + a 'family appreciated your work' praise banner; open Care Team -> send msg; open Medical -> see Aarav's card (blood group/allergies/doctor), confirm NO medication/insurance shown; pickup task -> Start Trip -> 'Share live location' toggle appears (web will ask geolocation permission; a single point is OK — full GPS needs device build). PARENT (storytester): Family tab -> Trusted Helpers -> Care Team Chat card (send a msg, see helper's msg) + open Sunita -> 'How was today?' 👍/👎 + note (rate-up/rate-down/rate-note) saves + history; if a live trip is active, pickup row shows a map. Web geolocation may be denied in the harness — that's fine, just confirm the toggle/button appears and no crash. Do NOT run destructive cleanup."
+
+# ============ Feature Batch #33 — TRUSTED HELPERS Phase 4 (Care Team Photos / Trip ETA Alerts / Shift Reminders) ============
+backend_batch33:
+  - task: "FIX: create_helper_task now persists pickup_from/pickup_to (+ dest_lat/dest_lng)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Latent Phase-2 bug: create_helper_task built the task dict WITHOUT pickup_from/pickup_to (only PATCH persisted them). Now create persists pickup_from, pickup_to, dest_lat, dest_lng. HelperTaskIn/Patch gained dest_lat/dest_lng."
+  - task: "Trip ETA alerts (notify parents near drop-off)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/helper/tasks/{id}/location now returns eta_min and, when the pickup task has dest_lat/dest_lng and the live point is within ETA_ALERT_M (2000m) during en_route/picked_up, fires a ONE-TIME parent notification '📍 <helper> is about N min from <dest>'. Guarded by trip.eta_alerted so it never double-fires. _haversine_m added; import math added. Curl-verified: far point no alert, near point 1 alert, repeat near NO 2nd alert."
+  - task: "Shift reminders (helper dashboard, reuses working hours)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "_shift_status(h) reuses access.start_time/end_time/days (UTC, like _within_hours). helper/dashboard returns shift={start_time,end_time,today,on_duty,minutes_until,reminder(0<=mins<=60)}. Curl-verified reminder True with minutes_until 30 when start set 30 min ahead."
+  - task: "Care Team photo messages (backend already supported)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "CareTeamMsgIn already had photo_url; parent /api/care-team/chat and helper /helper/care-team accept and return photo_url. Uploads via existing /upload (parent) and /helper/upload (helper). No backend change beyond confirming acceptance."
+
+frontend_batch33:
+  - task: "Care Team photos (camera/gallery attach + photo bubbles)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/CareTeamChatView.tsx, frontend/app/care-team.tsx, frontend/app/helper-portal/care-team.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "CareTeamChatView gained a '+' attach button (careteam-attach) -> sheet with Take photo (careteam-camera) / Gallery (careteam-gallery); camera + media-library permission handling (check->request->Settings). Photo messages render as SmartImage bubbles (ctphoto-*), tap opens full URL. Parent uploads via uploadMedia, helper via helperUpload, then POST {photo_url}. Smoke-verified attach button present on both sides."
+  - task: "Trip ETA drop-off point (parent sets home via GPS)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "On each pickup task the parent sees a button (dropoff-<task_id>): 'Set drop-off point (for arrival alerts)' -> captures parent GPS (expo-location perm flow) -> PATCH /helper-tasks/{id} {dest_lat,dest_lng}; once set shows 'Arrival alerts on · tap to update'. When the driver later nears it, the parent gets the 📍 ETA notification in the bell. (Web geolocation may be denied in the harness — confirm button + no crash.)"
+  - task: "Shift reminder banner (helper portal)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Portal shows a shift banner (portal-shift) from dashboard.shift: ⏰ 'Your shift starts at HH:MM — about N min to go' when reminder; 🟢 'You're on shift until HH:MM' when on_duty; 🗓️ 'Today's shift: HH:MM–HH:MM' otherwise. Smoke-verified banner + praise + 4 nav buttons render."
+
+agent_communication_batch33:
+    -agent: "main"
+    -message: "Batch #33 = TRUSTED HELPERS Phase 4. Builds on #30-#32 (all passed). CREDS: parent storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' — has a pickup task 'Pick up Aarav from school' with dest_lat/dest_lng SET (28.6,77.2) and working hours set ~40 min ahead so the shift reminder shows. TEST BOTH. BACKEND regression: (1) create_helper_task now persists pickup_from/pickup_to AND dest_lat/dest_lng (previously pickup fields were dropped on create!). (2) ETA: POST /api/helper/tasks/{id}/location returns eta_min; when task has dest coords + live point within 2000m during an active trip, fires EXACTLY ONE parent notification (emoji 📍) — a far point must NOT alert, a 2nd near point must NOT re-alert (trip.eta_alerted). Still 400 before Start Trip. (3) Shift: /helper/dashboard.shift has reminder true only when 0<=minutes_until<=60 before start_time (UTC). (4) Care Team photos: parent POST /api/care-team/chat {photo_url} and helper POST /helper/care-team {photo_url} store+return photo_url; still isolated from Family Chat. (5) SECURITY regression: helper WITHOUT chat perm still 403 on /helper/care-team; cross-token 401 still holds; medical still leak-free. FRONTEND (mobile 390x844): HELPER (sunita/1234): portal shows a shift reminder banner (portal-shift) + praise + Care Team button; open Care Team -> tap '+' (careteam-attach) -> see Take photo/Gallery options (careteam-camera/careteam-gallery); on web the picker/geolocation may be blocked — just confirm the sheet appears and no crash; pickup task -> Start Trip -> 'Share live location' (trip-live-*). PARENT (storytester): open Sunita -> each pickup task shows a drop-off button (dropoff-<task_id>) that says 'Arrival alerts on' (dest already set) — tapping re-captures location (web may deny, that's fine); Care Team Chat card on Family tab opens the group chat with a '+' attach button too. Do NOT run destructive cleanup — keep demo helper Sunita, her pickup task dest coords, working hours, ratings, care-team messages."
