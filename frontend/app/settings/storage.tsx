@@ -57,6 +57,7 @@ export default function StorageSettings() {
   const isWeb = Platform.OS === "web";
 
   const [usage, setUsage] = useState<any>(null);
+  const [breakdown, setBreakdown] = useState<any[]>([]);
   const [cacheBytes, setCacheBytes] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [note, setNote] = useState("");
@@ -73,6 +74,10 @@ export default function StorageSettings() {
   const loadUsage = useCallback(async () => {
     try {
       setUsage(await api("/storage/usage"));
+    } catch {}
+    try {
+      const bd = await api("/storage/breakdown");
+      setBreakdown(bd.months || []);
     } catch {}
   }, []);
 
@@ -150,6 +155,36 @@ export default function StorageSettings() {
             <Stat n={usage?.media_files ?? 0} label="Stored files" c={c} />
           </View>
         </View>
+
+        {/* per-month breakdown */}
+        {breakdown.length > 0 ? (
+          <>
+            <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginTop: spacing.xl, marginBottom: spacing.sm }}>
+              WHERE YOUR SPACE GOES
+            </AppText>
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
+              {breakdown.map((m, i) => {
+                const max = Math.max(...breakdown.map((x) => x.messages || 0), 1);
+                const pct = Math.max(0.06, (m.messages || 0) / max);
+                return (
+                  <View key={m.month} style={[styles.monthRow, i > 0 && { marginTop: spacing.md }]}>
+                    <View style={styles.monthTop}>
+                      <AppText size={14} weight="semibold">
+                        {m.label}
+                      </AppText>
+                      <AppText size={12} color={c.onSurfaceTertiary}>
+                        {m.messages} msg{m.media ? ` · ${m.media} media` : ""}
+                      </AppText>
+                    </View>
+                    <View style={[styles.barTrack, { backgroundColor: c.surfaceSecondary }]}>
+                      <View style={[styles.barFill, { width: `${pct * 100}%`, backgroundColor: c.brand }]} />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
 
         {/* Option A — device cache */}
         <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={{ letterSpacing: 1, marginTop: spacing.xl, marginBottom: spacing.sm }}>
@@ -327,6 +362,10 @@ const styles = StyleSheet.create({
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
   statsRow: { flexDirection: "row", justifyContent: "space-around" },
   stat: { alignItems: "center", flex: 1 },
+  monthRow: {},
+  monthTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+  barTrack: { height: 8, borderRadius: 4, overflow: "hidden" },
+  barFill: { height: 8, borderRadius: 4 },
   optRow: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
   optIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   infoBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },

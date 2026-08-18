@@ -17,6 +17,7 @@
       },
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Share family photos in posts and profiles",
+        "NSPhotoLibraryAddUsageDescription": "Save family photos to your phone",
         "NSCameraUsageDescription": "Capture family moments to share",
         "NSMicrophoneUsageDescription": "Record voice messages for your family",
         "NSFaceIDUsageDescription": "Unlock your private Family Vault",
@@ -54,6 +55,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Share family photos in posts and profiles"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Share family photos in posts and profiles",
+          "savePhotosPermission": "Save family photos to your phone",
+          "isAccessMediaLocationEnabled": false
         }
       ],
       [

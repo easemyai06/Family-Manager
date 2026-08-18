@@ -56,6 +56,7 @@ export default function Home() {
   const [incoming, setIncoming] = useState<any>(null);
   const [nudge, setNudge] = useState<any>(null);
   const [storageNudge, setStorageNudge] = useState<any>(null);
+  const [bdayNudge, setBdayNudge] = useState<any>(null);
   const [taskFilter, setTaskFilter] = useState<"mine" | "kids" | "family">("family");
   const [celebrating, setCelebrating] = useState(false);
 
@@ -88,6 +89,16 @@ export default function Home() {
         if (!seen) setStorageNudge(h.storage_hint);
       } else {
         setStorageNudge(null);
+      }
+      const ub = (h?.upcoming_birthdays || []).filter((b: any) => b.days <= 7);
+      if (ub.length) {
+        const b = ub[0];
+        const bkey = `bdayNudge:${b.member?.member_id}:${new Date().toISOString().slice(0, 10)}`;
+        const seen = await storage.getItem<boolean>(bkey, false);
+        if (!seen) setBdayNudge({ ...b, key: bkey });
+        else setBdayNudge(null);
+      } else {
+        setBdayNudge(null);
       }
     } catch {}
   }, []);
@@ -132,6 +143,16 @@ export default function Home() {
   const openStorageNudge = async () => {
     await dismissStorageNudge();
     router.push("/settings/storage");
+  };
+
+  const dismissBdayNudge = async () => {
+    if (bdayNudge?.key) await storage.setItem(bdayNudge.key, true);
+    setBdayNudge(null);
+  };
+  const sendWish = async () => {
+    const mid = bdayNudge?.member?.member_id;
+    await dismissBdayNudge();
+    if (mid) router.push(`/affection/send?member=${mid}`);
   };
 
   const openStatusEditor = () => {
@@ -332,6 +353,28 @@ export default function Home() {
               </Pressable>
             </LinearGradient>
           </Pressable>
+        ) : null}
+
+        {bdayNudge ? (
+          <View style={styles.nudgeWrap} testID="bday-nudge">
+            <LinearGradient colors={["#FFE0EC", "#FFC2D9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.nudge}>
+              <AppText size={22}>🎂</AppText>
+              <View style={{ flex: 1 }}>
+                <AppText family="display" weight="bold" size={14} color="#3A2230" numberOfLines={2}>
+                  {`${(bdayNudge.member?.name || "Someone").split(" ")[0]}'s birthday ${bdayNudge.days === 0 ? "is today! 🎉" : bdayNudge.days === 1 ? "is tomorrow!" : `is in ${bdayNudge.days} days`}`}
+                </AppText>
+                <Pressable onPress={sendWish} style={styles.wishBtn} testID="bday-nudge-wish">
+                  <Ionicons name="heart" size={13} color="#fff" />
+                  <AppText size={12} weight="bold" color="#fff">
+                    Send a wish
+                  </AppText>
+                </Pressable>
+              </View>
+              <Pressable onPress={dismissBdayNudge} hitSlop={12} testID="bday-nudge-dismiss">
+                <Ionicons name="close" size={18} color="#3A2230" />
+              </Pressable>
+            </LinearGradient>
+          </View>
         ) : null}
 
         {/* Header */}
@@ -1095,6 +1138,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   nudgeWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   nudge: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, ...shadow(1) },
+  wishBtn: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#E8638F", borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6, marginTop: 6 },
 
   headerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: 6 },
   headerIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },

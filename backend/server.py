@@ -5112,6 +5112,34 @@ async def storage_usage(user: dict = Depends(get_current_user)):
     return {"messages": msg_total, "media_messages": media_msgs, "media_files": media_files}
 
 
+@api.get("/storage/breakdown")
+async def storage_breakdown(user: dict = Depends(get_current_user)):
+    """Per-month breakdown of family chat data so parents see where space goes."""
+    fid = require_family(user)
+    pipeline = [
+        {"$match": {"family_id": fid}},
+        {
+            "$group": {
+                "_id": {"$substr": ["$created_at", 0, 7]},
+                "messages": {"$sum": 1},
+                "media": {"$sum": {"$cond": [{"$gt": [{"$size": {"$ifNull": ["$media", []]}}, 0]}, 1, 0]}},
+            }
+        },
+        {"$sort": {"_id": -1}},
+        {"$limit": 24},
+    ]
+    months = []
+    async for row in db.messages.aggregate(pipeline):
+        key = row.get("_id") or ""
+        label = key
+        try:
+            label = datetime.strptime(key, "%Y-%m").strftime("%B %Y")
+        except ValueError:
+            pass
+        months.append({"month": key, "label": label, "messages": row.get("messages", 0), "media": row.get("media", 0)})
+    return {"months": months}
+
+
 @api.post("/storage/cleanup")
 async def storage_cleanup(body: CleanupIn, user: dict = Depends(get_current_user)):
     """Permanently remove old chat data to free space. Parents/admin only."""

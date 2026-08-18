@@ -453,13 +453,15 @@ export default function Conversation() {
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: hasCoords ? 6 : 0 }}>
                     <Ionicons name="location" size={16} color={mine ? "#fff" : c.brand} />
                     <AppText size={13} weight="bold" color={mine ? "#fff" : c.onSurface}>
-                      {item.type === "live_location" ? (isLiveActive(item) ? "Live location" : "Live location ended") : "Location"}
+                      {item.type === "live_location" ? (isLiveActive(item) ? "Live location" : "Last known location") : "Location"}
                     </AppText>
                   </View>
                   <AppText size={11} color={mine ? "rgba(255,255,255,0.85)" : c.onSurfaceSecondary}>
                     {isLiveActive(item)
                       ? `Updated ${timeAgo(item.location_updated_at || item.created_at)} · until ${dayjs(item.live_until).format("h:mm A")}`
-                      : "Tap to open in Maps"}
+                      : item.type === "live_location"
+                        ? `Shared until ${dayjs(item.live_until).format("h:mm A")} · tap to open in Maps`
+                        : "Tap to open in Maps"}
                   </AppText>
                   {mine && isLiveActive(item) ? (
                     <Pressable onPress={() => stopSharing(item)} style={[styles.stopBtn, { borderColor: mine ? "rgba(255,255,255,0.6)" : c.error }]} testID={`stop-live-${item.message_id}`}>

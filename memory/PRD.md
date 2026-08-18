@@ -475,3 +475,17 @@ User asks (all delivered): (1) family-wide chat auto-deletion with Off/24h/7d/30
 - Auto Cleanup Reminder: /api/home returns storage_hint (parents only) when family messages>=800 or
   media_files>=120; Home shows a dismissible (once/day) card (storage-nudge) -> /settings/storage.
   Verified: endpoint returns key (null below threshold on demo).
+
+## Batch #29c — More delights (June 2026)
+- Storage Breakdown: GET /api/storage/breakdown -> per-month {month,label,messages,media} (aggregate,
+  last 24 months). Storage screen shows "WHERE YOUR SPACE GOES" with a bar per month. Verified: "August
+  2026 · 12 msg · 1 media".
+- Birthday Reminders: Home shows a dismissible (once/day/member) pink card (bday-nudge) for the nearest
+  member with a birthday within 7 days + "Send a wish" button (bday-nudge-wish) -> /affection/send?member=.
+  Uses home.upcoming_birthdays. Verified: "Aarav's birthday is in 2 days".
+- Photo Save: chat gallery lightbox now has a Save button (gallery-lightbox-save) — downloads via
+  expo-file-system then expo-media-library.saveToLibraryAsync with permission flow; web shows a note.
+  Installed expo-media-library@18.2.1 + app.json plugin + NSPhotoLibraryAddUsageDescription. Native/device
+  only for the actual save. Gallery verified loading with the new import (no web bundle break).
+- Location Snapshot: ended live-location bubble now reads "Last known location" and keeps the last map
+  pin + "Shared until <time> · tap to open in Maps" (frontend polish; native geolocation to create).

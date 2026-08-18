@@ -1,8 +1,10 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Modal, Linking, useWindowDimensions } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal, Linking, Platform, useWindowDimensions } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as MediaLibrary from "expo-media-library";
+import * as FileSystem from "expo-file-system/legacy";
 import { AppText } from "@/src/components/ui/AppText";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -21,6 +23,13 @@ export default function ChatGallery() {
   const [photos, setPhotos] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState("");
+
+  const flash = (m: string) => {
+    setNote(m);
+    setTimeout(() => setNote(""), 2800);
+  };
 
   const gap = spacing.xs;
   const cols = 3;
@@ -43,6 +52,33 @@ export default function ChatGallery() {
   const openFile = (url?: string) => {
     const u = mediaUrl(url);
     if (u) Linking.openURL(u);
+  };
+
+  const savePhoto = async (url: string | null) => {
+    if (!url) return;
+    if (Platform.OS === "web") {
+      flash("Saving to your gallery works in the mobile app");
+      return;
+    }
+    const full = mediaUrl(url);
+    if (!full) return;
+    let perm = await MediaLibrary.getPermissionsAsync();
+    if (!perm.granted && perm.canAskAgain) perm = await MediaLibrary.requestPermissionsAsync();
+    if (!perm.granted) {
+      flash("Allow photo access in Settings to save");
+      if (!perm.canAskAgain) Linking.openSettings();
+      return;
+    }
+    setSaving(true);
+    try {
+      const dest = `${FileSystem.cacheDirectory}familyhome_${Date.now()}.jpg`;
+      const dl = await FileSystem.downloadAsync(full, dest);
+      await MediaLibrary.saveToLibraryAsync(dl.uri);
+      flash("Saved to your photos 📸");
+    } catch {
+      flash("Couldn't save this photo");
+    }
+    setSaving(false);
   };
 
   return (
@@ -125,15 +161,31 @@ export default function ChatGallery() {
             <Ionicons name="close" size={26} color="#fff" />
           </Pressable>
           {lightbox ? (
-            <Pressable onPress={() => openFile(lightbox)} style={[styles.lbOpen, { bottom: insets.bottom + spacing.xl }]} testID="gallery-lightbox-open">
-              <Ionicons name="open-outline" size={18} color="#fff" />
-              <AppText size={14} weight="bold" color="#fff">
-                Open
-              </AppText>
-            </Pressable>
+            <View style={[styles.lbActions, { bottom: insets.bottom + spacing.xl }]}>
+              <Pressable onPress={() => savePhoto(lightbox)} disabled={saving} style={styles.lbBtn} testID="gallery-lightbox-save">
+                <Ionicons name={saving ? "hourglass-outline" : "download-outline"} size={18} color="#fff" />
+                <AppText size={14} weight="bold" color="#fff">
+                  {saving ? "Saving…" : "Save"}
+                </AppText>
+              </Pressable>
+              <Pressable onPress={() => openFile(lightbox)} style={styles.lbBtn} testID="gallery-lightbox-open">
+                <Ionicons name="open-outline" size={18} color="#fff" />
+                <AppText size={14} weight="bold" color="#fff">
+                  Open
+                </AppText>
+              </Pressable>
+            </View>
           ) : null}
         </Pressable>
       </Modal>
+
+      {note ? (
+        <View style={[styles.toast, { backgroundColor: c.surfaceInverse, bottom: insets.bottom + 30 }]} testID="gallery-toast">
+          <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>
+            {note}
+          </AppText>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -161,5 +213,7 @@ const styles = StyleSheet.create({
   lightbox: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)", alignItems: "center", justifyContent: "center" },
   lightboxImg: { width: "100%", height: "80%" },
   lbClose: { position: "absolute", right: spacing.lg, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  lbOpen: { position: "absolute", alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.22)", borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  lbActions: { position: "absolute", alignSelf: "center", flexDirection: "row", gap: spacing.md },
+  lbBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.22)", borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  toast: { position: "absolute", alignSelf: "center", maxWidth: "88%", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
 });
