@@ -415,6 +415,7 @@ class MemberIn(BaseModel):
 class MemberPatch(BaseModel):
     name: Optional[str] = None
     relationship: Optional[str] = None
+    role: Optional[str] = None       # parent | child | adult (admin can't be set/changed here)
     color: Optional[str] = None
     birthday: Optional[str] = None
     photo_url: Optional[str] = None
@@ -994,6 +995,17 @@ async def patch_member(member_id: str, body: MemberPatch, user: dict = Depends(g
     if not mine or (mine["member_id"] != member_id and mine.get("role") not in ("admin", "parent")):
         raise HTTPException(status_code=403, detail="Not allowed to edit this member")
     updates = {k: v for k, v in body.dict().items() if v is not None}
+    if body.role is not None:
+        # Role changes are an admin/parent action only, limited to parent/child/adult,
+        # and the family admin's role is protected.
+        if mine.get("role") not in ("admin", "parent"):
+            raise HTTPException(status_code=403, detail="Only parents or admins can change roles")
+        if body.role not in ("parent", "child", "adult"):
+            raise HTTPException(status_code=400, detail="Invalid role")
+        target = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
+        if target and target.get("role") == "admin":
+            raise HTTPException(status_code=403, detail="The family admin's role can't be changed")
+        updates["is_child"] = body.role == "child"
     if updates:
         await db.members.update_one({"member_id": member_id, "family_id": fid}, {"$set": updates})
     return await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
@@ -1218,6 +1230,22 @@ async def get_invite(user: dict = Depends(get_current_user)):
     return {"invite_code": code, "family_name": fam["name"]}
 
 
+@api.get("/families/preview")
+async def preview_family(code: str, user: dict = Depends(get_current_user)):
+    """Look up a family by invite code (before joining) so a new member can pick
+    the pending profile that represents them instead of creating a duplicate."""
+    code = (code or "").strip().upper()
+    fam = await db.families.find_one({"invite_code": code}, {"_id": 0})
+    if not fam:
+        raise HTTPException(status_code=404, detail="Invalid invite code")
+    pend = await db.members.find(
+        {"family_id": fam["family_id"], "linked_user_id": None}, {"_id": 0}
+    ).to_list(200)
+    fields = ("member_id", "name", "relationship", "role", "photo_url", "color", "is_child")
+    members = [{k: m.get(k) for k in fields} for m in pend]
+    return {"family_name": fam["name"], "pending_members": members}
+
+
 @api.post("/families/join")
 async def join_family(body: dict, user: dict = Depends(get_current_user)):
     if user.get("family_id"):
@@ -1227,15 +1255,26 @@ async def join_family(body: dict, user: dict = Depends(get_current_user)):
     if not fam:
         raise HTTPException(status_code=404, detail="Invalid invite code")
     fid = fam["family_id"]
-    count = await db.members.count_documents({"family_id": fid})
-    member = {
-        "member_id": new_id("mem_"), "family_id": fid, "name": user.get("name") or "Me",
-        "relationship": "Member", "role": "adult",
-        "color": DEFAULT_COLORS[count % len(DEFAULT_COLORS)], "birthday": None,
-        "photo_url": user.get("picture"), "is_child": False,
-        "linked_user_id": user["user_id"], "created_at": now_iso(),
-    }
-    await db.members.insert_one(member)
+    claim_id = body.get("claim_member_id")
+    if claim_id:
+        # Claim an existing pending profile instead of creating a new member.
+        target = await db.members.find_one({"member_id": claim_id, "family_id": fid}, {"_id": 0})
+        if not target or target.get("linked_user_id"):
+            raise HTTPException(status_code=400, detail="That profile is no longer available to claim")
+        updates = {"linked_user_id": user["user_id"]}
+        if not target.get("photo_url") and user.get("picture"):
+            updates["photo_url"] = user["picture"]
+        await db.members.update_one({"member_id": claim_id, "family_id": fid}, {"$set": updates})
+    else:
+        count = await db.members.count_documents({"family_id": fid})
+        member = {
+            "member_id": new_id("mem_"), "family_id": fid, "name": user.get("name") or "Me",
+            "relationship": "Member", "role": "adult",
+            "color": DEFAULT_COLORS[count % len(DEFAULT_COLORS)], "birthday": None,
+            "photo_url": user.get("picture"), "is_child": False,
+            "linked_user_id": user["user_id"], "created_at": now_iso(),
+        }
+        await db.members.insert_one(member)
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"family_id": fid}})
     return {"family": fam}
 

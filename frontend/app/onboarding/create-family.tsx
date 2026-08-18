@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
 import { Button } from "@/src/components/ui/Button";
 import { Card } from "@/src/components/ui/Card";
+import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
@@ -25,19 +26,50 @@ export default function CreateFamily() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [joinStep, setJoinStep] = useState<"code" | "claim">("code");
+  const [pending, setPending] = useState<any[]>([]);
+  const [previewName, setPreviewName] = useState("");
+  const [claimId, setClaimId] = useState<string | null>(null);
+
+  // Look up a family by code and show its pending profiles to claim.
+  const checkCode = useCallback(async (raw: string) => {
+    const value = raw.trim().toUpperCase();
+    if (!value) {
+      setError("Please enter an invite code");
+      return;
+    }
+    setError("");
+    setLoading("check");
+    try {
+      const res = await api<{ family_name: string; pending_members: any[] }>(
+        `/families/preview?code=${encodeURIComponent(value)}`
+      );
+      setPreviewName(res.family_name);
+      setPending(res.pending_members || []);
+      setClaimId(null);
+      setMode("join");
+      setJoinStep("claim");
+    } catch (e: any) {
+      setMode("join");
+      setJoinStep("code");
+      setError(e.message || "Invalid invite code");
+    } finally {
+      setLoading(null);
+    }
+  }, []);
 
   // If the user arrived via an invite deep link, jump straight to Join with the
-  // code pre-filled.
+  // code pre-filled + the family's pending profiles loaded.
   useEffect(() => {
     (async () => {
-      const code = await storage.getItem<string>("pendingInviteCode", "");
-      if (code) {
-        setCode(code);
-        setMode("join");
+      const saved = await storage.getItem<string>("pendingInviteCode", "");
+      if (saved) {
+        setCode(saved);
         await storage.removeItem("pendingInviteCode");
+        checkCode(saved);
       }
     })();
-  }, []);
+  }, [checkCode]);
 
   const run = async (key: string, fn: () => Promise<any>) => {
     setError("");
@@ -61,11 +93,12 @@ export default function CreateFamily() {
     run("create", () => api("/families", { method: "POST", body: { name: familyName.trim() } }));
   };
   const joinFamily = () => {
-    if (!code.trim()) {
-      setError("Please enter an invite code");
-      return;
-    }
-    run("join", () => api("/families/join", { method: "POST", body: { code: code.trim() } }));
+    run("join", () =>
+      api("/families/join", {
+        method: "POST",
+        body: { code: code.trim().toUpperCase(), claim_member_id: claimId || null },
+      })
+    );
   };
 
   return (
@@ -162,7 +195,7 @@ export default function CreateFamily() {
           </View>
         )}
 
-        {mode === "join" && (
+        {mode === "join" && joinStep === "code" && (
           <View style={{ marginTop: spacing.xl, gap: spacing.lg }}>
             <TextField
               label="Invite Code"
@@ -173,8 +206,64 @@ export default function CreateFamily() {
               onChangeText={setCode}
               testID="invite-code-input"
             />
-            <Button label="Join Family" onPress={joinFamily} loading={loading === "join"} testID="join-family-submit" />
-            <Button label="Back" variant="ghost" onPress={() => setMode("menu")} />
+            <Button label="Continue" onPress={() => checkCode(code)} loading={loading === "check"} testID="join-continue-btn" />
+            <Button label="Back" variant="ghost" onPress={() => { setMode("menu"); setError(""); }} />
+          </View>
+        )}
+
+        {mode === "join" && joinStep === "claim" && (
+          <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
+            <AppText family="display" weight="bold" size={20} center>
+              Join {previewName} 🏡
+            </AppText>
+            <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginBottom: spacing.sm }}>
+              {pending.length ? "Which one is you?" : "You're all set to join this family."}
+            </AppText>
+
+            {pending.map((m) => {
+              const sel = claimId === m.member_id;
+              return (
+                <Pressable
+                  key={m.member_id}
+                  onPress={() => setClaimId(m.member_id)}
+                  style={[styles.claimRow, { backgroundColor: c.surface, borderColor: sel ? c.brand : c.border }]}
+                  testID={`claim-${m.member_id}`}
+                >
+                  <Avatar uri={m.photo_url} name={m.name} size={44} color={m.color} />
+                  <View style={{ flex: 1 }}>
+                    <AppText size={15} weight="bold">
+                      {m.name}
+                    </AppText>
+                    <AppText size={12} color={c.onSurfaceTertiary}>
+                      {m.relationship}
+                    </AppText>
+                  </View>
+                  <Ionicons name={sel ? "checkmark-circle" : "ellipse-outline"} size={22} color={sel ? c.brand : c.onSurfaceTertiary} />
+                </Pressable>
+              );
+            })}
+
+            <Pressable
+              onPress={() => setClaimId(null)}
+              style={[styles.claimRow, { backgroundColor: c.surface, borderColor: claimId === null ? c.brand : c.border }]}
+              testID="claim-new"
+            >
+              <View style={[styles.claimNewIcon, { backgroundColor: c.brandTertiary }]}>
+                <Ionicons name="person-add" size={20} color={c.brand} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText size={15} weight="bold">
+                  I'm a new member
+                </AppText>
+                <AppText size={12} color={c.onSurfaceTertiary}>
+                  Create a fresh profile for me
+                </AppText>
+              </View>
+              <Ionicons name={claimId === null ? "checkmark-circle" : "ellipse-outline"} size={22} color={claimId === null ? c.brand : c.onSurfaceTertiary} />
+            </Pressable>
+
+            <Button label="Join Family" onPress={joinFamily} loading={loading === "join"} testID="join-family-submit" style={{ marginTop: spacing.sm }} />
+            <Button label="Back" variant="ghost" onPress={() => { setJoinStep("code"); setError(""); }} />
           </View>
         )}
 
@@ -202,4 +291,6 @@ const styles = StyleSheet.create({
   bigCard: { borderRadius: radius.lg, padding: spacing.xl },
   optionRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   optionIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  claimRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, borderWidth: 1.5, padding: spacing.md },
+  claimNewIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
 });

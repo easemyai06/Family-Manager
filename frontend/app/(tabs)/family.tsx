@@ -11,7 +11,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { AFFECTION_MAP } from "@/src/lib/constants";
-import { shareInvite as shareInviteMsg } from "@/src/lib/invite";
+import { shareInvite as shareInviteMsg, shareInviteWhatsApp } from "@/src/lib/invite";
 
 export default function Family() {
   const { c } = useTheme();
@@ -23,7 +23,8 @@ export default function Family() {
   const [canManage, setCanManage] = useState(false);
   const [invite, setInvite] = useState<any>(null);
   const [manage, setManage] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<any>(null);
+  const [actionMember, setActionMember] = useState<any>(null);
+  const [removePhase, setRemovePhase] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -54,12 +55,17 @@ export default function Family() {
     } catch {}
   };
 
-  const confirmRemove = async () => {
-    if (!removeTarget) return;
+  const closeActions = () => {
+    setActionMember(null);
+    setRemovePhase(false);
+  };
+
+  const changeRole = async (role: string) => {
+    if (!actionMember || busy) return;
     setBusy(true);
     try {
-      await api(`/families/members/${removeTarget.member_id}`, { method: "DELETE" });
-      setRemoveTarget(null);
+      await api(`/families/members/${actionMember.member_id}`, { method: "PATCH", body: { role } });
+      setActionMember((prev: any) => (prev ? { ...prev, role, is_child: role === "child" } : prev));
       await load();
     } catch {
     } finally {
@@ -67,7 +73,22 @@ export default function Family() {
     }
   };
 
-  const removable = (m: any) => canManage && manage && !m.is_me && m.role !== "admin";
+  const confirmRemove = async () => {
+    if (!actionMember) return;
+    setBusy(true);
+    try {
+      await api(`/families/members/${actionMember.member_id}`, { method: "DELETE" });
+      closeActions();
+      await load();
+    } catch {
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A member has admin actions if the viewer manages the family and it's not
+  // themselves or the family admin.
+  const hasActions = (m: any) => canManage && !m.is_me && m.role !== "admin";
 
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
@@ -112,7 +133,7 @@ export default function Family() {
 
           {manage ? (
             <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: -6, marginBottom: spacing.md }}>
-              Tap ✕ to remove a member from the family
+              Tap a member to change their role, resend an invite, or remove them
             </AppText>
           ) : null}
 
@@ -121,14 +142,16 @@ export default function Family() {
               <Pressable
                 key={m.member_id}
                 style={styles.memberItem}
-                onPress={() => (removable(m) ? setRemoveTarget(m) : router.push(`/member/${m.member_id}`))}
+                onPress={() =>
+                  manage && hasActions(m) ? setActionMember(m) : router.push(`/member/${m.member_id}`)
+                }
                 testID={`member-${m.member_id}`}
               >
                 <View>
                   <Avatar uri={m.photo_url} name={m.name} size={68} color={m.color} ring />
-                  {removable(m) ? (
-                    <View style={[styles.removeBadge, { backgroundColor: c.error }]} testID={`remove-${m.member_id}`}>
-                      <Ionicons name="close" size={16} color="#fff" />
+                  {manage && hasActions(m) ? (
+                    <View style={[styles.manageBadge, { backgroundColor: c.brand }]} testID={`manage-${m.member_id}`}>
+                      <Ionicons name="ellipsis-horizontal" size={16} color="#fff" />
                     </View>
                   ) : null}
                 </View>
@@ -230,40 +253,120 @@ export default function Family() {
         </View>
       </ScrollView>
 
-      {/* remove confirmation */}
-      <Modal visible={!!removeTarget} transparent animationType="fade" onRequestClose={() => setRemoveTarget(null)}>
-        <Pressable style={styles.backdrop} onPress={() => !busy && setRemoveTarget(null)}>
+      {/* member actions: role / resend invite / remove */}
+      <Modal visible={!!actionMember} transparent animationType="fade" onRequestClose={closeActions}>
+        <Pressable style={styles.backdrop} onPress={() => !busy && closeActions()}>
           <Pressable style={[styles.sheet, { backgroundColor: c.surface }]} onPress={() => {}}>
-            <View style={[styles.warnIcon, { backgroundColor: c.error + "1A" }]}>
-              <Ionicons name="person-remove" size={26} color={c.error} />
-            </View>
-            <AppText family="display" weight="bold" size={18} center style={{ marginTop: spacing.md }}>
-              Remove {removeTarget?.name}?
-            </AppText>
-            <AppText size={13} color={c.onSurfaceSecondary} center style={{ marginTop: 6 }}>
-              {removeTarget?.joined
-                ? "They'll lose access to your family and will need a new invite to re-join."
-                : "This pending member will be removed from your family."}
-            </AppText>
-            <Pressable
-              onPress={confirmRemove}
-              disabled={busy}
-              style={[styles.removeBtn, { backgroundColor: c.error }]}
-              testID="confirm-remove-member"
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <AppText size={15} weight="bold" color="#fff">
-                  Remove from family
+            {actionMember && !removePhase ? (
+              <>
+                <Avatar uri={actionMember.photo_url} name={actionMember.name} size={64} color={actionMember.color} ring />
+                <AppText family="display" weight="bold" size={18} center style={{ marginTop: spacing.sm }}>
+                  {actionMember.name}
                 </AppText>
-              )}
-            </Pressable>
-            <Pressable onPress={() => !busy && setRemoveTarget(null)} style={styles.cancelBtn} testID="cancel-remove-member">
-              <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>
-                Cancel
-              </AppText>
-            </Pressable>
+                <View
+                  style={[
+                    styles.statusPill,
+                    { backgroundColor: (actionMember.joined ? c.success : c.warning) + "26", marginTop: 4 },
+                  ]}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: actionMember.joined ? c.success : c.warning }]} />
+                  <AppText size={11} weight="bold" color={actionMember.joined ? c.success : c.warning}>
+                    {actionMember.joined ? "Joined" : "Pending invite"}
+                  </AppText>
+                </View>
+
+                {/* role editor */}
+                <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={styles.sheetLabel}>
+                  ROLE
+                </AppText>
+                <View style={styles.roleRow}>
+                  {["parent", "child", "adult"].map((r) => {
+                    const sel = actionMember.role === r;
+                    return (
+                      <Pressable
+                        key={r}
+                        disabled={busy}
+                        onPress={() => changeRole(r)}
+                        style={[styles.roleChip, { backgroundColor: sel ? c.brandTertiary : c.surfaceSecondary, borderColor: sel ? c.brand : "transparent" }]}
+                        testID={`role-${r}`}
+                      >
+                        <AppText size={13} weight="bold" color={sel ? c.onBrandTertiary : c.onSurfaceSecondary} style={{ textTransform: "capitalize" }}>
+                          {r}
+                        </AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* resend invite (pending only) */}
+                {!actionMember.joined && invite ? (
+                  <>
+                    <AppText size={12} weight="bold" color={c.onSurfaceTertiary} style={styles.sheetLabel}>
+                      RESEND INVITE
+                    </AppText>
+                    <Pressable
+                      onPress={() => shareInviteWhatsApp(invite.invite_code, invite.family_name)}
+                      style={[styles.waBtn, { backgroundColor: "#25D366" }]}
+                      testID="resend-whatsapp"
+                    >
+                      <Ionicons name="logo-whatsapp" size={20} color="#fff" />
+                      <AppText size={14} weight="bold" color="#fff">
+                        Invite via WhatsApp
+                      </AppText>
+                    </Pressable>
+                    <Pressable onPress={shareInvite} style={[styles.sheetBtn, { backgroundColor: c.surfaceSecondary }]} testID="resend-share">
+                      <Ionicons name="share-social" size={18} color={c.onSurface} />
+                      <AppText size={14} weight="semibold" color={c.onSurface}>
+                        Share invite link
+                      </AppText>
+                    </Pressable>
+                  </>
+                ) : null}
+
+                {/* remove */}
+                <Pressable onPress={() => setRemovePhase(true)} style={[styles.sheetBtn, { backgroundColor: c.error + "12", marginTop: spacing.lg }]} testID="open-remove">
+                  <Ionicons name="person-remove" size={18} color={c.error} />
+                  <AppText size={14} weight="bold" color={c.error}>
+                    Remove from family
+                  </AppText>
+                </Pressable>
+                <Pressable onPress={closeActions} style={styles.cancelBtn} testID="close-actions">
+                  <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>
+                    Done
+                  </AppText>
+                </Pressable>
+              </>
+            ) : null}
+
+            {actionMember && removePhase ? (
+              <>
+                <View style={[styles.warnIcon, { backgroundColor: c.error + "1A" }]}>
+                  <Ionicons name="person-remove" size={26} color={c.error} />
+                </View>
+                <AppText family="display" weight="bold" size={18} center style={{ marginTop: spacing.md }}>
+                  Remove {actionMember.name}?
+                </AppText>
+                <AppText size={13} color={c.onSurfaceSecondary} center style={{ marginTop: 6 }}>
+                  {actionMember.joined
+                    ? "They'll lose access to your family and will need a new invite to re-join."
+                    : "This pending member will be removed from your family."}
+                </AppText>
+                <Pressable onPress={confirmRemove} disabled={busy} style={[styles.removeBtn, { backgroundColor: c.error }]} testID="confirm-remove-member">
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <AppText size={15} weight="bold" color="#fff">
+                      Remove from family
+                    </AppText>
+                  )}
+                </Pressable>
+                <Pressable onPress={() => !busy && setRemovePhase(false)} style={styles.cancelBtn} testID="cancel-remove-member">
+                  <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>
+                    Back
+                  </AppText>
+                </Pressable>
+              </>
+            ) : null}
           </Pressable>
         </Pressable>
       </Modal>
@@ -280,7 +383,7 @@ const styles = StyleSheet.create({
   headActions: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   memberGrid: { flexDirection: "row", flexWrap: "wrap" },
   memberItem: { alignItems: "center", width: "25%", marginBottom: spacing.lg },
-  removeBadge: { position: "absolute", top: -2, right: -2, width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
+  manageBadge: { position: "absolute", top: -2, right: -2, width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, marginTop: 5 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
@@ -293,6 +396,11 @@ const styles = StyleSheet.create({
   emptyLove: { borderRadius: radius.lg, padding: spacing.xl, borderWidth: 1 },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   sheet: { width: "100%", maxWidth: 380, borderRadius: radius.lg, padding: spacing.xl, alignItems: "center" },
+  sheetLabel: { alignSelf: "flex-start", marginTop: spacing.lg, marginBottom: spacing.sm, letterSpacing: 0.5 },
+  roleRow: { flexDirection: "row", gap: spacing.sm, alignSelf: "stretch" },
+  roleChip: { flex: 1, alignItems: "center", borderRadius: radius.pill, paddingVertical: 11, borderWidth: 1.5 },
+  waBtn: { alignSelf: "stretch", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderRadius: radius.pill, paddingVertical: 13 },
+  sheetBtn: { alignSelf: "stretch", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderRadius: radius.pill, paddingVertical: 13, marginTop: spacing.sm },
   warnIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   removeBtn: { alignSelf: "stretch", borderRadius: radius.lg, paddingVertical: 14, alignItems: "center", marginTop: spacing.xl },
   cancelBtn: { alignSelf: "stretch", borderRadius: radius.lg, paddingVertical: 12, alignItems: "center", marginTop: spacing.xs },

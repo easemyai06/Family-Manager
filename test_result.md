@@ -1492,3 +1492,39 @@ batch22:
 agent_communication_batch22:
     -agent: "main"
     -message: "Batch #22. Use a FRESH account: register tester+<rand>@fam.com/secret123, then tap 'Explore the Sharma Family' (try-demo-btn) to seed a demo family where you are the ADMIN (Raj). Do NOT disturb shared demo accounts. BACKEND to verify: (1) GET /api/families/me returns per-member joined + is_me and top-level can_manage/viewer_role (admin=true). (2) DELETE /api/families/members/{id}: as admin, removing a PENDING member (linked_user_id null) => 200 and member count drops; removing SELF => 400; removing an admin member => 403. (3) Non-admin auth: a member whose role is child/adult must get 403 on DELETE (you can PATCH a member's role to 'adult' won't help since it's not linked; instead just assert the 403 branch by calling DELETE without admin/parent — e.g. there is only one linked admin in a fresh demo, so this branch is covered by code review; do a best-effort). FRONTEND to verify: Family tab shows green 'Joined' vs amber 'Pending' pills; admin sees 'Manage' + '+ Add'; tapping Manage shows red x on removable members; tapping x opens a confirm modal; confirming removes the member and the list refreshes. Add flow: '+ Add' -> fill name -> Add Member -> success screen with 'Invite via WhatsApp' + 'Share invite link' + 'Done'. NOTE: deep-link auto-fill of the code and the WhatsApp launch can't be exercised on web/Expo Go — just confirm the buttons render and don't crash. Do NOT retest unrelated older features."
+
+# ============ Batch #23 — Auto-link invites + Role editing + Resend invite ============
+batch23:
+  - task: "Auto-link invites: GET /api/families/preview + POST /api/families/join {claim_member_id}"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, frontend/app/onboarding/create-family.tsx, frontend/app/join.tsx, frontend/src/auth/AuthContext.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /families/preview?code= returns family_name + pending_members (linked_user_id null). join now accepts claim_member_id: links that pending member to the joiner (no duplicate) instead of creating a new one. Onboarding Join is now 2-step: enter code -> Continue (preview) -> pick 'which one is you' from pending profiles or 'I'm a new member' -> Join. Deep-link auto-fills the code and jumps to the claim step. Curl-verified: preview lists 4 pending; claiming Priya -> count stays 5, Priya joined=true & is_me for joiner."
+  - task: "Role editing from Family tab (PATCH /api/families/members/{id} role)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, frontend/app/(tabs)/family.tsx"
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "MemberPatch gained role; PATCH now admin/parent-only for role, limited to parent/child/adult, admin role protected, is_child kept in sync. Family tab Manage mode: each non-admin member shows a … badge -> tapping opens an actions modal with a Role segmented control (Parent/Child/Adult). Curl: child->adult 200 (is_child false), invalid role 400, admin target 403, parent caller 200. SCREENSHOT: actions modal renders."
+  - task: "Resend invite from member actions modal (pending members)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/family.tsx"
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "The member actions modal shows a RESEND INVITE section for PENDING members: 'Invite via WhatsApp' + 'Share invite link' (reuses the family invite code via src/lib/invite.ts, web-safe). SCREENSHOT-VERIFIED on web (Priya modal)."
+agent_communication_batch23:
+    -agent: "main"
+    -message: "Batch #23 (follow-ups to Batch #22). Use FRESH accounts. BACKEND: (A) register admin + POST /api/seed/demo -> GET /api/families/invite for the code. (B) register a 2nd user (no family), GET /api/families/preview?code=CODE => 200 with family_name + pending_members; POST /api/families/join {code, claim_member_id: <a pending member id>} => 200; then GET /api/families/me as the joiner: member COUNT is unchanged (no duplicate) and the claimed member now has joined=true & is_me=true. Also join with claim_member_id=null creates a brand-new member (count+1). (C) Role: PATCH /api/families/members/{id} {role:'adult'} as admin => 200 (is_child false); {role:'superadmin'} => 400; changing the admin member's role => 403. FRONTEND: (1) Onboarding Join is 2-step: Join a family -> enter code -> Continue -> a 'Which one is you?' list of pending profiles + 'I'm a new member' -> Join Family. (2) Family tab (admin) -> Manage -> tap a non-admin member's … badge -> actions modal: change Role via Parent/Child/Adult chips (persists after reopening), 'Invite via WhatsApp' + 'Share invite link' appear for PENDING members only, 'Remove from family' -> confirm removes. Curl already verified all backend paths; focus on the onboarding claim UI + role change persistence. Deep-link/WhatsApp launch are native-only (can't run on web). Do NOT retest unrelated features."

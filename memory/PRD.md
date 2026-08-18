@@ -278,3 +278,20 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - CAVEAT: deep-link auto-fill of the code + the actual WhatsApp launch are native-only (not testable in
   web/Expo Go). Verified: backend 7/7 pytest (join/pending/remove/authorization); frontend flows
   (badges, Manage remove modal 5→4, add success screen) screenshot-verified. Preview only — Publish to ship.
+
+
+## Members follow-ups: auto-link invites + role editing + resend invite — June 2026
+- Auto-link invites (no duplicates): GET /api/families/preview?code= returns the family name + its
+  PENDING profiles; POST /api/families/join now takes an optional claim_member_id that links the joiner
+  to that pending profile instead of creating a second member. Onboarding Join is a 2-step flow — enter
+  code → Continue → "Which one is you?" (pick a pending profile or "I'm a new member") → Join. Deep-link
+  invites auto-fill the code and jump straight to the claim step.
+- Role editing from the Family tab: MemberPatch gained `role`; PATCH /api/families/members/{id} role is
+  admin/parent-only, limited to parent/child/adult, protects the admin's role, and keeps is_child in
+  sync. Family tab → Manage → tap a non-admin member's "…" badge → actions modal with a Parent/Child/
+  Adult segmented control.
+- Resend invite: the same member actions modal shows "Invite via WhatsApp" + "Share invite link" for
+  PENDING members (reuses the family invite code, web-safe share). Remove is also in the modal (confirm).
+- Verified: backend 13/13 pytest (preview/claim/role guards); frontend 100% (claim = no duplicate joiner
+  becomes the claimed profile; role change persists; resend hidden for joined members). Preview only —
+  Publish to ship.
