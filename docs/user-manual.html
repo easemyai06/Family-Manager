@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FamilyHome — User Manual</title>
+<style>
+  :root{
+    --bg:#FBF7F2; --card:#FFFFFF; --ink:#2B2B2B; --muted:#6B6259;
+    --brand:#E05A5A; --brandSoft:#FBE3E1; --line:#EADFD4; --accent:#8AB07D;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.6;}
+  .wrap{max-width:960px;margin:0 auto;padding:0 22px 80px;}
+  a{color:var(--brand);}
+  /* Cover */
+  .cover{padding:70px 22px 46px;text-align:center;}
+  .logo{font-size:30px;font-weight:800;color:var(--brand);letter-spacing:.5px;}
+  .cover h1{font-size:40px;margin:14px 0 6px;letter-spacing:-.5px;}
+  .cover p{color:var(--muted);font-size:17px;max-width:560px;margin:6px auto 0;}
+  .pill{display:inline-block;margin-top:20px;background:var(--brandSoft);color:var(--brand);
+    font-weight:700;font-size:13px;padding:7px 14px;border-radius:999px;}
+  /* TOC */
+  .toc{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 26px;margin:20px 0 40px;}
+  .toc h2{margin:0 0 12px;font-size:18px;}
+  .toc ol{margin:0;padding-left:22px;columns:2;column-gap:40px;}
+  .toc li{margin:5px 0;break-inside:avoid;}
+  .toc a{text-decoration:none;color:var(--ink);}
+  .toc a:hover{color:var(--brand);}
+  /* Sections */
+  section{background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:26px 28px;margin:0 0 26px;overflow:hidden;}
+  section h2{font-size:24px;margin:0 0 4px;}
+  .kicker{color:var(--brand);font-weight:800;font-size:12px;letter-spacing:1.4px;text-transform:uppercase;}
+  .row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:14px;}
+  .row.reverse{flex-direction:row-reverse;}
+  .txt{flex:1 1 300px;min-width:260px;}
+  .shotwrap{flex:0 0 auto;width:250px;}
+  .shot{width:250px;border-radius:26px;border:1px solid var(--line);
+    box-shadow:0 10px 30px rgba(0,0,0,.10);display:block;background:#fff;}
+  .cap{color:var(--muted);font-size:12px;text-align:center;margin-top:8px;}
+  h3{font-size:17px;margin:18px 0 4px;}
+  ul{margin:8px 0;padding-left:20px;}
+  li{margin:4px 0;}
+  .tip{background:var(--brandSoft);border-radius:14px;padding:12px 16px;margin:14px 0 0;
+    font-size:14.5px;color:#7a3b3b;}
+  .tip b{color:var(--brand);}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:22px;margin-top:16px;}
+  .gcard{text-align:center;}
+  .gcard img{width:100%;max-width:210px;border-radius:22px;border:1px solid var(--line);
+    box-shadow:0 8px 22px rgba(0,0,0,.09);}
+  .gcard .t{font-weight:700;margin-top:8px;font-size:14px;}
+  .gcard .d{color:var(--muted);font-size:12.5px;}
+  footer{text-align:center;color:var(--muted);font-size:13px;padding:30px 0 0;}
+  hr{border:none;border-top:1px solid var(--line);margin:34px 0;}
+  @media print{
+    body{background:#fff;}
+    section,.toc{break-inside:avoid;box-shadow:none;}
+    .cover{padding-top:40px;}
+  }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="logo">❤ FamilyHome</div>
+  <h1>The Family Handbook</h1>
+  <p>Everything your family needs in one warm, private place — calendars, chores, chat, memories, wish lists, emergency info and more. This guide walks you through every screen.</p>
+  <div class="pill">User Manual · Version 1</div>
+</div>
+
+<div class="wrap">
+
+  <div class="toc">
+    <h2>What's inside</h2>
+    <ol>
+      <li><a href="#start">Getting started</a></li>
+      <li><a href="#signin">Signing in (password, PIN, forgot)</a></li>
+      <li><a href="#home">The Home screen</a></li>
+      <li><a href="#activity">Activity &amp; notifications</a></li>
+      <li><a href="#calendar">Calendar &amp; events</a></li>
+      <li><a href="#family">Family &amp; members</a></li>
+      <li><a href="#kids">Kids' logins &amp; PINs</a></li>
+      <li><a href="#profile">Your profile</a></li>
+      <li><a href="#chat">Family Chat</a></li>
+      <li><a href="#love">Send some love</a></li>
+      <li><a href="#chores">Chores &amp; rewards</a></li>
+      <li><a href="#lists">Shopping, meals &amp; recipes</a></li>
+      <li><a href="#wish">Wish lists &amp; gifts</a></li>
+      <li><a href="#memories">Memories &amp; family tree</a></li>
+      <li><a href="#vault">Family Vault</a></li>
+      <li><a href="#emergency">Emergency Center &amp; SOS</a></li>
+      <li><a href="#settings">Settings &amp; accessibility</a></li>
+      <li><a href="#account">Account, PIN &amp; your data</a></li>
+    </ol>
+  </div>
+
+  <!-- GETTING STARTED -->
+  <section id="start">
+    <div class="kicker">Chapter 1</div>
+    <h2>Getting started</h2>
+    <div class="row">
+      <div class="txt">
+        <p>When you first open FamilyHome you'll land on the welcome screen. From here you can:</p>
+        <ul>
+          <li><b>Get Started</b> — create a brand-new family space. You'll pick a family name and become the family organizer.</li>
+          <li><b>Continue with Google</b> — sign in quickly with your Google account.</li>
+          <li><b>I already have an account</b> — sign in with your email and password.</li>
+        </ul>
+        <p>Once your family exists, invite everyone else with a <b>shareable invite link</b> or a short <b>invite code</b> (see “Family &amp; members”). New members can also claim a profile you've already created for them, so nothing gets duplicated.</p>
+        <div class="tip"><b>Tip:</b> One person creates the family and becomes the organizer. Everyone else <i>joins</i> — they don't create their own family.</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/00_welcome.png" alt="Welcome screen" />
+        <div class="cap">Welcome screen</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SIGN IN -->
+  <section id="signin">
+    <div class="kicker">Chapter 2</div>
+    <h2>Signing in</h2>
+    <div class="row">
+      <div class="txt">
+        <h3>Email &amp; password</h3>
+        <p>Enter your email (or username, for kids) and password, then tap <b>Sign In</b>.</p>
+        <h3>Forgot your password?</h3>
+        <p>Tap <b>Forgot password?</b> on the login screen. We'll email you a <b>6-digit code</b>. Enter the code plus a new password and you're back in — no waiting.</p>
+        <h3>Quick sign-in with a PIN</h3>
+        <p>Tap <b>Family member? Sign in with a PIN</b> to see the faces saved on this device. Tap your photo and type your 4-digit PIN. Grown-ups set their PIN in <i>Account → Quick Sign-In</i>; kids get theirs from a parent.</p>
+        <div class="tip"><b>Good to know:</b> PINs only work on a phone where someone has already signed in once, so your family stays protected on new devices.</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/01_login.png" alt="Login screen" />
+        <div class="cap">Sign-in screen</div>
+      </div>
+    </div>
+    <div class="row reverse">
+      <div class="txt"></div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/02_forgot.png" alt="Forgot password" />
+        <div class="cap">Reset password with a code</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/03_pin.png" alt="PIN sign-in" />
+        <div class="cap">PIN sign-in — “Who's this?”</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOME -->
+  <section id="home">
+    <div class="kicker">Chapter 3</div>
+    <h2>The Home screen</h2>
+    <div class="row">
+      <div class="txt">
+        <p>Home is your family's daily glance. At the top you'll find:</p>
+        <ul>
+          <li><b>Family status strip</b> — everyone's photo; tap your own to set a status (e.g. “At work”, “Free later”).</li>
+          <li><b>Search</b>, <b>Customize</b> and the <b>🔔 bell</b> (Activity) in the header.</li>
+          <li><b>Needs your attention</b> — the important stuff today: an active SOS, chores left, items to buy, documents expiring soon, upcoming birthdays.</li>
+          <li><b>Today at a glance</b> — the day's events.</li>
+        </ul>
+        <p>The bottom bar switches between <b>Home</b>, <b>Calendar</b>, <b>Family</b>, <b>Chat</b> and <b>More</b>.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/10_home.png" alt="Home screen" />
+        <div class="cap">Home dashboard</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVITY -->
+  <section id="activity">
+    <div class="kicker">Chapter 4</div>
+    <h2>Activity &amp; notifications</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p>Tap the <b>🔔 bell</b> on Home to open your <b>Activity</b> inbox — one tidy list of everything happening in the family:</p>
+        <ul>
+          <li>New posts, memories and messages</li>
+          <li>Chores your kids finished and love that was sent</li>
+          <li>Events and notes others added</li>
+          <li>Upcoming birthdays</li>
+        </ul>
+        <p>Anything new shows a red dot and a count on the bell. Tap any item to jump straight to it. Pull down to refresh.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/11_notifications.png" alt="Activity inbox" />
+        <div class="cap">Activity inbox</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CALENDAR -->
+  <section id="calendar">
+    <div class="kicker">Chapter 5</div>
+    <h2>Calendar &amp; events</h2>
+    <div class="row">
+      <div class="txt">
+        <p>The <b>Calendar</b> tab shows the family's plans. Tap a day to see events, or use the <b>+</b> button to add one.</p>
+        <ul>
+          <li>Add a title, date/time, location and who's involved.</li>
+          <li>Make it <b>repeat</b> (daily, weekly, monthly) for things like classes or bin day.</li>
+          <li>Invite people and collect <b>RSVPs</b> — see who's coming at a glance.</li>
+          <li>Share an event to other calendars with a standard calendar file.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/13_calendar.png" alt="Calendar" />
+        <div class="cap">Calendar tab</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAMILY -->
+  <section id="family">
+    <div class="kicker">Chapter 6</div>
+    <h2>Family &amp; members</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p>The <b>Family</b> tab lists everyone. Members are either <b>Joined</b> (they've signed in) or <b>Pending</b> (a profile waiting to be claimed).</p>
+        <p>Tap a member (organizer/parents only) to:</p>
+        <ul>
+          <li><b>Change their role</b> (parent, adult, child)</li>
+          <li><b>Set up or reset a login &amp; PIN</b> — great for kids (see next chapter)</li>
+          <li><b>Re-send an invite</b> (via WhatsApp or a share link)</li>
+          <li><b>Remove</b> a member</li>
+        </ul>
+        <p>Invite new people from <b>More → Invite Family</b> using the link or code.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/14_family.png" alt="Family tab" />
+        <div class="cap">Family members</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- KIDS -->
+  <section id="kids">
+    <div class="kicker">Chapter 7</div>
+    <h2>Kids' logins &amp; PINs</h2>
+    <div class="txt">
+      <p>Children don't need their own email. A parent can give each child a simple login:</p>
+      <ul>
+        <li>Go to the <b>Family</b> tab and tap a child.</li>
+        <li>Choose <b>Set up login &amp; PIN</b>.</li>
+        <li>Pick a <b>username</b> and a <b>4-digit PIN</b> (a password is optional).</li>
+      </ul>
+      <p>Now your child can sign in by tapping <b>Family member? Sign in with a PIN</b>, choosing their photo and typing their PIN. Need to change it later? Open the same screen and tap <b>Reset login &amp; PIN</b> any time.</p>
+      <div class="tip"><b>Safety:</b> Only parents and the organizer can manage a child's login, and no one can turn a member into an organizer this way.</div>
+    </div>
+  </section>
+
+  <!-- PROFILE -->
+  <section id="profile">
+    <div class="kicker">Chapter 8</div>
+    <h2>Your profile</h2>
+    <div class="row">
+      <div class="txt">
+        <p>Tap your photo on Home (or open a member from the Family tab) to see a profile: photo, role, birthday, and their part in the family. Parents can edit member details and photos.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/12_member.png" alt="Member profile" />
+        <div class="cap">Member profile</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="chat">
+    <div class="kicker">Chapter 9</div>
+    <h2>Family Chat</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p>Tap the <b>Chat</b> tab to open your family's single group conversation — simple and in one place. You can:</p>
+        <ul>
+          <li>Send text, photos and <b>voice notes</b> (tap the mic)</li>
+          <li>Send a quick <b>❤ love</b> tap</li>
+          <li>See who's read messages and reply to specific ones</li>
+        </ul>
+        <p>Emergency <b>SOS</b> alerts also appear here so everyone sees them instantly.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/15_chat.png" alt="Family Chat" />
+        <div class="cap">Family Chat</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOVE -->
+  <section id="love">
+    <div class="kicker">Chapter 10</div>
+    <h2>Send some love</h2>
+    <div class="row">
+      <div class="txt">
+        <p>From <b>More → Send Some Love</b>, send a hug, kiss, high-five or a little note to one person or the whole family. They'll get a warm animation and a spot in their Activity inbox.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/16_affection.png" alt="Send love" />
+        <div class="cap">Send Some Love</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHORES + REWARDS -->
+  <section id="chores">
+    <div class="kicker">Chapter 11</div>
+    <h2>Chores &amp; rewards</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p><b>More → Kids Chores</b> lets you set up jobs for each child. Kids tick them off and earn <b>stars</b>. Build streaks, unlock badges, and see everyone on the <b>Family Rewards</b> leaderboard — a fun way to make helping out feel like a game.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/17_chores.png" alt="Chores" />
+        <div class="cap">Kids' chores</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/18_rewards.png" alt="Rewards" />
+        <div class="cap">Family rewards</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LISTS -->
+  <section id="lists">
+    <div class="kicker">Chapter 12</div>
+    <h2>Shopping, meals &amp; recipes</h2>
+    <div class="row">
+      <div class="txt">
+        <ul>
+          <li><b>Shopping Lists</b> — a shared list everyone can add to and tick off.</li>
+          <li><b>To-Do Lists</b> — simple shared tasks.</li>
+          <li><b>Meal Planner</b> — plan the week's meals together.</li>
+          <li><b>Recipes</b> — save family favourites and auto-add their ingredients to the shopping list.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/19_shopping.png" alt="Shopping" />
+        <div class="cap">Shopping list</div>
+      </div>
+    </div>
+    <div class="row reverse">
+      <div class="txt"></div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/20_meals.png" alt="Meal planner" />
+        <div class="cap">Meal planner</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/21_recipes.png" alt="Recipes" />
+        <div class="cap">Recipes</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WISH -->
+  <section id="wish">
+    <div class="kicker">Chapter 13</div>
+    <h2>Wish lists &amp; gifts</h2>
+    <div class="row">
+      <div class="txt">
+        <p><b>More → Wish Lists</b> gives everyone a gift wish list. Family members can quietly <b>reserve</b> a gift so you don't double-up — and the person whose list it is never sees who reserved what. Perfect for birthdays and holidays.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/22_wishlist.png" alt="Wish lists" />
+        <div class="cap">Wish lists</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MEMORIES -->
+  <section id="memories">
+    <div class="kicker">Chapter 14</div>
+    <h2>Memories &amp; family tree</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p>Keep your family's story in one place:</p>
+        <ul>
+          <li><b>Our Family Story</b> — a timeline of milestones and memories, with an “On This Day” look-back.</li>
+          <li><b>Family Albums</b> &amp; <b>Places We've Been</b> — photos and the map of your adventures.</li>
+          <li><b>Weekly Highlights</b> &amp; <b>Time Capsules</b> — messages to open in the future.</li>
+          <li><b>Family Tree</b> — see how everyone connects.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/23_timeline.png" alt="Timeline" />
+        <div class="cap">Our Family Story</div>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/24_tree.png" alt="Family tree" />
+        <div class="cap">Family tree</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VAULT -->
+  <section id="vault">
+    <div class="kicker">Chapter 15</div>
+    <h2>Family Vault</h2>
+    <div class="row">
+      <div class="txt">
+        <p><b>More → Family Vault</b> is a private, PIN-protected place for important documents — insurance, IDs, warranties, school papers. The first time you open it you'll <b>create a 4-digit Vault PIN</b>.</p>
+        <ul>
+          <li>Organise documents into folders.</li>
+          <li>Set who can see each item (whole family, parents only, or specific people).</li>
+          <li>Get gentle reminders before things like insurance <b>expire</b>.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/25_vault.png" alt="Vault PIN" />
+        <div class="cap">Vault PIN screen</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EMERGENCY -->
+  <section id="emergency">
+    <div class="kicker">Chapter 16</div>
+    <h2>Emergency Center &amp; SOS</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p>The <b>Emergency Center</b> (More → Emergency Center) keeps everything you'd need in a crisis:</p>
+        <ul>
+          <li><b>Medical at a glance</b> — blood group and allergies for each person (detailed medical info stays private to that person, parents and trusted contacts).</li>
+          <li><b>Emergency contacts</b> and a family plan.</li>
+          <li><b>Trusted access</b> — let an adult relative view key info if needed.</li>
+          <li><b>SOS</b> — send an instant alert (with your location, if you allow it) to the whole family; it appears in Family Chat.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/26_emergency.png" alt="Emergency Center" />
+        <div class="cap">Emergency Center</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settings">
+    <div class="kicker">Chapter 17</div>
+    <h2>Settings &amp; accessibility</h2>
+    <div class="row">
+      <div class="txt">
+        <p><b>More → Accessibility &amp; Display</b> makes the app comfortable for everyone:</p>
+        <ul>
+          <li><b>Text size</b> — up to Extra Large.</li>
+          <li><b>High contrast</b> and <b>reduced motion</b>.</li>
+          <li><b>Bigger buttons</b> and labels with icons.</li>
+          <li><b>Grandparent mode</b> — a big, simple Home with just the essentials.</li>
+          <li><b>Kids mode</b> — a friendly Home focused on a child's day.</li>
+        </ul>
+        <p>You can also pick a theme and manage notification preferences from the More menu.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/27_accessibility.png" alt="Accessibility settings" />
+        <div class="cap">Accessibility &amp; Display</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section id="account">
+    <div class="kicker">Chapter 18</div>
+    <h2>Account, PIN &amp; your data</h2>
+    <div class="row reverse">
+      <div class="txt">
+        <p><b>More → Account &amp; Data</b> is where you manage your own sign-in and data:</p>
+        <ul>
+          <li><b>Quick Sign-In</b> — set, change or remove your 4-digit unlock PIN.</li>
+          <li>See and link your sign-in methods (email, Google, Apple).</li>
+          <li>The organizer can <b>export</b> the family's data.</li>
+          <li><b>Delete</b> your account and data whenever you choose.</li>
+        </ul>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/28_account.png" alt="Account settings" />
+        <div class="cap">Account &amp; Data</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="txt">
+        <h3>The “More” menu</h3>
+        <p>Everything that isn't a main tab lives under <b>More</b> — send love, chores, lists, meals, recipes, memories, wish lists, rewards, the vault, the emergency center, invites, your profile and all settings.</p>
+      </div>
+      <div class="shotwrap">
+        <img class="shot" src="manual/29_more.png" alt="More menu" />
+        <div class="cap">The More menu</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    ❤ FamilyHome — made to keep families close.<br/>
+    Screens shown use a sample “Sharma Family”. Your app will show your own family's information.
+  </footer>
+
+</div>
+</body>
+</html>
