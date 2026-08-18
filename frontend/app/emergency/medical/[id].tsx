@@ -100,6 +100,15 @@ export default function MedicalCard() {
           </View>
         </View>
 
+        {card.detail_restricted && !editing ? (
+          <View style={[styles.noteCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Ionicons name="lock-closed" size={16} color={c.onSurfaceTertiary} />
+            <AppText size={12} color={c.onSurfaceTertiary} style={{ flex: 1 }}>
+              Detailed medical info is private — only {m.name?.split(" ")[0] || "they"}, parents and trusted contacts can view it.
+            </AppText>
+          </View>
+        ) : null}
+
         {editing ? (
           <>
             {FIELDS.map((f) => (
@@ -162,6 +171,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   person: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
+  noteCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginTop: spacing.md },
   bigCard: { flex: 1, borderRadius: radius.lg, borderWidth: 1.5, padding: spacing.md },
   card: { borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: spacing.lg, overflow: "hidden" },
   row: { flexDirection: "row", justifyContent: "space-between", gap: spacing.md, paddingVertical: spacing.md },

@@ -345,6 +345,26 @@ after Publish). New invite/member/role lifecycle passed the audit. Fixes applied
   backend/tests/test_bola_shopping_todo_invite.py. Preview only — Publish to ship to production.
 
 
+## Security Audit #5 remediation — June 2026
+Read-only audit (codebase/preview; production not reachable by tooling — Publish to deploy). Verdict:
+CONDITIONAL PASS — no Critical/High; strong family_id tenant isolation throughout. Fixes applied
+(user chose to fix SEC-001 + SEC-003; SEC-002 deferred):
+- SEC-001 (MEDIUM) FIXED — medical cards over-exposed: GET /api/emergency/medical/{id} now gates the
+  DETAILED fields (medication/conditions/doctor/hospital/insurance_provider/policy_reference/
+  emergency_contact) to self, parents/admin, and a trusted emergency delegate (for children they
+  cover). Blood group + allergies stay family-visible for the emergency "Medical at a Glance". Response
+  carries can_view_detail + detail_restricted; the /emergency/medical LIST endpoint was already
+  summary-only. Frontend medical screen shows a "detailed info is private" note when restricted.
+  Helper _can_view_medical_detail (server.py) mirrors the Vault delegate context via _secure_viewer.
+- SEC-003 (LOW) FIXED — POST /families/members now allowlists role to parent|child|adult (rejects
+  'admin'/unknown with 400), preventing a claimed pending profile from gaining organizer power.
+- SEC-002 (LOW) DEFERRED per user — login throttle keys on left-most X-Forwarded-For (spoofable);
+  bcrypt + dummy-hash still limit guessing. To revisit with correct proxy hop depth later.
+- Verified via curl: admin sees full card (no regression); non-parent adult viewer gets summary-only
+  (detail_restricted true); self sees own detail; add-member role admin/superuser -> 400, child -> 200.
+  Preview only — Publish to ship to production.
+
+
 ## Responsive layout & alignment pass (Batch #27) — June 2026
 Mandate: full responsive-layout / font-alignment / text-wrapping / mobile-UI audit across the app for
 small/standard/large Android + iPhones (layout-only; no functionality changes; Dynamic Type preserved).

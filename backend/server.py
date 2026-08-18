@@ -992,6 +992,10 @@ async def add_member(body: MemberIn, user: dict = Depends(get_current_user)):
     viewer = await member_for_user(user)
     if not (viewer and viewer.get("role") in ("admin", "parent")):
         raise HTTPException(status_code=403, detail="Only parents can add family members")
+    # Role is limited to parent/child/adult — an 'admin' can never be minted here
+    # (prevents a claimed pending profile from granting organizer power).
+    if body.role not in ("parent", "child", "adult"):
+        raise HTTPException(status_code=400, detail="Invalid role")
     count = await db.members.count_documents({"family_id": fid})
     member = {
         "member_id": new_id("mem_"), "family_id": fid, "name": body.name.strip(),
@@ -4077,6 +4081,26 @@ async def _secure_viewer(user: dict) -> Optional[dict]:
     return viewer
 
 
+_MEDICAL_DETAIL_FIELDS = ("medication", "conditions", "doctor", "hospital",
+                          "insurance_provider", "policy_reference", "emergency_contact")
+
+
+def _can_view_medical_detail(viewer: Optional[dict], member_id: str) -> bool:
+    """Detailed medical fields (medication/conditions/doctor/hospital/insurance) are
+    limited to the member themselves, parents/admin, and a trusted emergency delegate
+    (for the children they cover). Blood group + allergies stay family-visible for
+    fast emergency access ('Medical at a Glance')."""
+    if not viewer:
+        return False
+    if viewer.get("member_id") == member_id:
+        return True
+    if viewer.get("role") in ("admin", "parent"):
+        return True
+    if viewer.get("_emergency_delegate") and member_id in (viewer.get("_child_member_ids") or set()):
+        return True
+    return False
+
+
 def _days_until(expiry: Optional[str]) -> Optional[int]:
     if not expiry:
         return None
@@ -4367,8 +4391,20 @@ async def get_medical_card(member_id: str, user: dict = Depends(get_current_user
     m = await db.members.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
+    viewer = await _secure_viewer(user)
+    can_detail = _can_view_medical_detail(viewer, member_id)
     card = await db.medical_cards.find_one({"member_id": member_id, "family_id": fid}, {"_id": 0})
-    return card or {"member_id": member_id, "member": _member_card(m)}
+    if not card:
+        return {"member_id": member_id, "member": _member_card(m), "can_view_detail": can_detail}
+    out = dict(card)
+    out["member"] = _member_card(m)
+    out["can_view_detail"] = can_detail
+    if not can_detail:
+        # keep only the emergency 'at a glance' fields; hide sensitive detail
+        for f in _MEDICAL_DETAIL_FIELDS:
+            out.pop(f, None)
+        out["detail_restricted"] = True
+    return out
 
 
 @api.put("/emergency/medical/{member_id}")
