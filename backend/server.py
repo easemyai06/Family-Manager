@@ -318,6 +318,10 @@ async def _record_failure(tkey: str) -> None:
     ]
     await db.auth_throttles.find_one_and_update(
         {"_id": tkey}, pipeline, upsert=True, return_document=ReturnDocument.AFTER)
+    # Opportunistically purge expired ephemeral throttle records at request time
+    # (not a startup TTL) so the collection stays bounded. Rate-limit decisions
+    # rely on locked_until/window_started_at, never on this cleanup.
+    await db.auth_throttles.delete_many({"expires_at": {"$lt": datetime.now(timezone.utc)}})
 
 
 async def _clear_failures(*keys: str) -> None:
@@ -5222,7 +5226,11 @@ async def startup():
         await db.posts.create_index("family_id")
         await db.events.create_index([("family_id", 1), ("date", 1)])
         await db.affections.create_index([("family_id", 1), ("to_member_id", 1)])
-        await db.auth_throttles.create_index("expires_at", expireAfterSeconds=0)
+        try:
+            await db.auth_throttles.drop_index("expires_at_1")
+        except Exception:
+            pass
+        await db.auth_throttles.create_index("expires_at")
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:
