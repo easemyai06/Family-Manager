@@ -462,3 +462,16 @@ User asks (all delivered): (1) family-wide chat auto-deletion with Off/24h/7d/30
   used shadow(4) (helper only supports 1|2|3) -> shadow(3). Main agent re-smoked Storage screen (stats +
   both cleanup sections render) and Event date/time pickers (calendar opens, dd-mm-yyyy). Preview only —
   Publish to ship.
+
+## Batch #29b — Follow-up delights (June 2026)
+- File Gallery: GET /api/chats/{id}/media {photos[],files[]} (family-scoped). New screen /chat/gallery
+  (from chat ⋮ > "Shared files & photos", settings-gallery) with Photos/Files tabs
+  (gallery-tab-photos/files), 3-col photo grid + tap lightbox, file rows (fileIcon+size+sender+dd-mm-yyyy).
+  Verified: demo shows Files (1) batch29_test.pdf.
+- Birthday Countdown: time.ts daysUntilBirthday/birthdayCountdown; Family tab shows "🎂 in X days" badge
+  (bday-<member_id>) when a member's birthday is within 30 days. Verified: Aarav "🎂 in 2 days".
+- Location Preview: live_location bubbles now show a "LIVE" chip (red pulse dot) over the map + "Updated
+  <ago> · until <time>"; static OSM map refreshes as coords PATCH in. Native geolocation only.
+- Auto Cleanup Reminder: /api/home returns storage_hint (parents only) when family messages>=800 or
+  media_files>=120; Home shows a dismissible (once/day) card (storage-nudge) -> /settings/storage.
+  Verified: endpoint returns key (null below threshold on demo).

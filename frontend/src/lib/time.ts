@@ -46,3 +46,23 @@ export function ageFrom(birthday?: string | null) {
   if (!birthday) return null;
   return dayjs().diff(dayjs(birthday), "year");
 }
+
+// Days until the member's NEXT birthday (0 = today). null if no/invalid date.
+export function daysUntilBirthday(iso?: string | null): number | null {
+  if (!iso) return null;
+  const d = dayjs(iso);
+  if (!d.isValid()) return null;
+  const today = dayjs().startOf("day");
+  let next = d.year(today.year()).startOf("day");
+  if (next.isBefore(today)) next = next.add(1, "year");
+  return next.diff(today, "day");
+}
+
+// Friendly countdown label ("Today", "Tomorrow", "in 5 days").
+export function birthdayCountdown(iso?: string | null): string | null {
+  const n = daysUntilBirthday(iso);
+  if (n == null) return null;
+  if (n === 0) return "Today";
+  if (n === 1) return "Tomorrow";
+  return `in ${n} days`;
+}

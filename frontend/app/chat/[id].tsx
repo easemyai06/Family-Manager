@@ -437,7 +437,19 @@ export default function Conversation() {
                   style={{ width: 220 }}
                   testID={`loc-${item.message_id}`}
                 >
-                  {hasCoords ? <SmartImage uri={staticMapUrl(item.lat, item.lng)} style={styles.locMap} /> : null}
+                  {hasCoords ? (
+                    <View>
+                      <SmartImage uri={staticMapUrl(item.lat, item.lng)} style={styles.locMap} />
+                      {isLiveActive(item) ? (
+                        <View style={styles.liveChip}>
+                          <View style={styles.livePulse} />
+                          <AppText size={10} weight="bold" color="#fff">
+                            LIVE
+                          </AppText>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: hasCoords ? 6 : 0 }}>
                     <Ionicons name="location" size={16} color={mine ? "#fff" : c.brand} />
                     <AppText size={13} weight="bold" color={mine ? "#fff" : c.onSurface}>
@@ -445,7 +457,9 @@ export default function Conversation() {
                     </AppText>
                   </View>
                   <AppText size={11} color={mine ? "rgba(255,255,255,0.85)" : c.onSurfaceSecondary}>
-                    {isLiveActive(item) ? `Sharing until ${dayjs(item.live_until).format("h:mm A")}` : "Tap to open in Maps"}
+                    {isLiveActive(item)
+                      ? `Updated ${timeAgo(item.location_updated_at || item.created_at)} · until ${dayjs(item.live_until).format("h:mm A")}`
+                      : "Tap to open in Maps"}
                   </AppText>
                   {mine && isLiveActive(item) ? (
                     <Pressable onPress={() => stopSharing(item)} style={[styles.stopBtn, { borderColor: mine ? "rgba(255,255,255,0.6)" : c.error }]} testID={`stop-live-${item.message_id}`}>
@@ -768,6 +782,20 @@ export default function Conversation() {
               })}
             </View>
 
+            <Pressable
+              onPress={() => {
+                setShowSettings(false);
+                router.push(`/chat/gallery?id=${id}`);
+              }}
+              style={[styles.actionBtn, { backgroundColor: c.surfaceSecondary, marginTop: spacing.sm }]}
+              testID="settings-gallery"
+            >
+              <Ionicons name="images" size={18} color={c.onSurface} />
+              <AppText size={15} weight="semibold">
+                Shared files & photos
+              </AppText>
+            </Pressable>
+
             {chat?.type === "group" ? (
               <Pressable
                 onPress={() => {
@@ -809,6 +837,8 @@ const styles = StyleSheet.create({
   replyPreview: { borderLeftWidth: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 },
   msgImage: { width: 210, height: 210, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },
   locMap: { width: 220, height: 120, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },
+  liveChip: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  livePulse: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#FF5252" },
   stopBtn: { alignSelf: "flex-start", marginTop: 8, borderWidth: 1.5, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
   fileCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minWidth: 210, paddingVertical: 2 },
   fileIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },

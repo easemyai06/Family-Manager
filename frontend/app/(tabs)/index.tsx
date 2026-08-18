@@ -55,6 +55,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [incoming, setIncoming] = useState<any>(null);
   const [nudge, setNudge] = useState<any>(null);
+  const [storageNudge, setStorageNudge] = useState<any>(null);
   const [taskFilter, setTaskFilter] = useState<"mine" | "kids" | "family">("family");
   const [celebrating, setCelebrating] = useState(false);
 
@@ -80,6 +81,13 @@ export default function Home() {
         const key = `otdNudge:${new Date().toISOString().slice(0, 10)}`;
         const seen = await storage.getItem<boolean>(key, false);
         if (!seen) setNudge(h.on_this_day[0]);
+      }
+      if (h?.storage_hint) {
+        const skey = `storageNudge:${new Date().toISOString().slice(0, 10)}`;
+        const seen = await storage.getItem<boolean>(skey, false);
+        if (!seen) setStorageNudge(h.storage_hint);
+      } else {
+        setStorageNudge(null);
       }
     } catch {}
   }, []);
@@ -115,6 +123,15 @@ export default function Home() {
     const tid = nudge?.timeline_id;
     await dismissNudge();
     if (tid) router.push(`/timeline/${tid}`);
+  };
+
+  const dismissStorageNudge = async () => {
+    await storage.setItem(`storageNudge:${new Date().toISOString().slice(0, 10)}`, true);
+    setStorageNudge(null);
+  };
+  const openStorageNudge = async () => {
+    await dismissStorageNudge();
+    router.push("/settings/storage");
   };
 
   const openStatusEditor = () => {
@@ -293,6 +310,25 @@ export default function Home() {
               </View>
               <Pressable onPress={dismissNudge} hitSlop={12} testID="otd-nudge-dismiss">
                 <Ionicons name="close" size={18} color="#2C2C28" />
+              </Pressable>
+            </LinearGradient>
+          </Pressable>
+        ) : null}
+
+        {storageNudge ? (
+          <Pressable onPress={openStorageNudge} style={styles.nudgeWrap} testID="storage-nudge">
+            <LinearGradient colors={["#DCE9F5", "#B9D4EC"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.nudge}>
+              <AppText size={22}>🧹</AppText>
+              <View style={{ flex: 1 }}>
+                <AppText family="display" weight="bold" size={14} color="#22303A" numberOfLines={2}>
+                  Your family chat is getting full
+                </AppText>
+                <AppText size={12} color="rgba(34,48,58,0.72)">
+                  {`${storageNudge.messages} messages · ${storageNudge.media_files} files · tap to free up space`}
+                </AppText>
+              </View>
+              <Pressable onPress={dismissStorageNudge} hitSlop={12} testID="storage-nudge-dismiss">
+                <Ionicons name="close" size={18} color="#22303A" />
               </Pressable>
             </LinearGradient>
           </Pressable>

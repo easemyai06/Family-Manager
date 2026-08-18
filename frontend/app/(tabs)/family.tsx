@@ -11,6 +11,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { AFFECTION_MAP } from "@/src/lib/constants";
+import { birthdayCountdown, daysUntilBirthday } from "@/src/lib/time";
 import { shareInvite as shareInviteMsg, shareInviteWhatsApp } from "@/src/lib/invite";
 
 export default function Family() {
@@ -172,6 +173,17 @@ export default function Family() {
                     {m.joined ? "Joined" : "Pending"}
                   </AppText>
                 </View>
+                {(() => {
+                  const bd = daysUntilBirthday(m.birthday);
+                  if (bd == null || bd > 30) return null;
+                  return (
+                    <View style={[styles.bdayBadge, { backgroundColor: c.brandTertiary }]} testID={`bday-${m.member_id}`}>
+                      <AppText size={10} weight="bold" color={c.onBrandTertiary}>
+                        🎂 {birthdayCountdown(m.birthday)}
+                      </AppText>
+                    </View>
+                  );
+                })()}
               </Pressable>
             ))}
           </View>
@@ -411,6 +423,7 @@ const styles = StyleSheet.create({
   manageBadge: { position: "absolute", top: -2, right: -2, width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, marginTop: 5 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
+  bdayBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
   inviteIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   loveCard: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: spacing.xl },

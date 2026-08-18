@@ -3035,6 +3035,13 @@ async def home(user: dict = Depends(get_current_user)):
             "owner": _member_card(await db.members.find_one({"member_id": d.get("owner_member_id")}, {"_id": 0})),
         })
 
+    storage_hint = None
+    if mine and mine.get("role") in ("admin", "parent"):
+        msg_total = await db.messages.count_documents({"family_id": fid})
+        media_files = await db.media.count_documents({"family_id": fid})
+        if msg_total >= 800 or media_files >= 120:
+            storage_hint = {"messages": msg_total, "media_files": media_files}
+
     return {
         "family": fam,
         "me": mine,
@@ -3061,6 +3068,7 @@ async def home(user: dict = Depends(get_current_user)):
         "active_sos": active_sos,
         "today_summary": today_summary,
         "notices": notices,
+        "storage_hint": storage_hint,
     }
 
 
@@ -3478,6 +3486,30 @@ async def stop_live_location(chat_id: str, message_id: str, user: dict = Depends
         raise HTTPException(status_code=403, detail="Only the sender can stop sharing")
     await db.messages.update_one({"message_id": message_id}, {"$set": {"live_until": now_iso()}})
     return {"ok": True}
+
+
+@api.get("/chats/{chat_id}/media")
+async def chat_media(chat_id: str, user: dict = Depends(get_current_user)):
+    """All photos + files shared in a conversation, newest first (for the gallery)."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    chat = await _require_chat(chat_id, fid, mine)
+    await _purge_expired_messages(chat)
+    photos, files = [], []
+    cursor = db.messages.find({"chat_id": chat_id, "type": {"$in": ["image", "file"]}}, {"_id": 0}).sort("created_at", -1)
+    async for m in cursor:
+        if not m.get("media"):
+            continue
+        sender = await db.members.find_one({"member_id": m["sender_member_id"]}, {"_id": 0})
+        card = _member_card(sender) if sender else None
+        if m.get("type") == "image":
+            photos.append({"message_id": m["message_id"], "url": m["media"][0]["url"],
+                           "created_at": m["created_at"], "sender": card})
+        else:
+            files.append({"message_id": m["message_id"], "url": m["media"][0]["url"],
+                          "file_name": m.get("file_name"), "file_size": m.get("file_size"),
+                          "file_mime": m.get("file_mime"), "created_at": m["created_at"], "sender": card})
+    return {"photos": photos, "files": files}
 
 
 @api.get("/chats/{chat_id}/messages")
