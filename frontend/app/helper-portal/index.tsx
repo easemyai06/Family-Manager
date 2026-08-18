@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { View, StyleSheet, Pressable, ScrollView, RefreshControl, Modal, Linking, Platform } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
 import { TextField } from "@/src/components/ui/TextField";
@@ -42,6 +43,8 @@ export default function HelperPortal() {
   const [issueTask, setIssueTask] = useState<any>(null);
   const [issueReason, setIssueReason] = useState("");
   const [issueNote, setIssueNote] = useState("");
+  const [liveTask, setLiveTask] = useState<string | null>(null);
+  const liveWatch = useRef<any>(null);
 
   const flash = (m: string) => {
     setToast(m);
@@ -155,10 +158,50 @@ export default function HelperPortal() {
   const advanceTrip = async (t: any, stage: "en_route" | "picked_up" | "reached") => {
     try {
       await helperApi(`/helper/tasks/${t.task_id}/trip`, { method: "POST", body: { stage } });
+      if (stage === "reached") stopShare();
       flash(stage === "en_route" ? "Trip started 🚗" : stage === "picked_up" ? "Picked up 🧒" : "Reached home ✅");
       load();
     } catch {
       flash("Couldn't update");
+    }
+  };
+
+  const ensureLocation = async () => {
+    let perm = await Location.getForegroundPermissionsAsync();
+    if (perm.granted) return true;
+    if (perm.canAskAgain) {
+      perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.granted) return true;
+    }
+    flash("Enable location in Settings to share your live position");
+    if (Platform.OS !== "web" && !perm.canAskAgain) Linking.openSettings();
+    return false;
+  };
+
+  const stopShare = () => {
+    if (liveWatch.current) {
+      try { liveWatch.current.remove(); } catch {}
+      liveWatch.current = null;
+    }
+    setLiveTask(null);
+  };
+
+  const startShare = async (t: any) => {
+    if (!(await ensureLocation())) return;
+    try {
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      await helperApi(`/helper/tasks/${t.task_id}/location`, { method: "POST", body: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
+      setLiveTask(t.task_id);
+      flash("Sharing your live location 📍");
+      if (Platform.OS === "web") return; // web can't keep a background watcher
+      liveWatch.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 30 },
+        (p) => {
+          helperApi(`/helper/tasks/${t.task_id}/location`, { method: "POST", body: { lat: p.coords.latitude, lng: p.coords.longitude } }).catch(() => {});
+        }
+      );
+    } catch {
+      flash("Couldn't get your location");
     }
   };
 
@@ -198,6 +241,15 @@ export default function HelperPortal() {
           </AppText>
         </View>
 
+        {data?.rated_up_today ? (
+          <View style={[styles.praise, { backgroundColor: c.success + "18", borderColor: c.success + "40" }]} testID="portal-praise">
+            <AppText size={20}>👍</AppText>
+            <AppText size={13} weight="semibold" color={c.success} style={{ flex: 1 }}>
+              The family appreciated your work today. Thank you!
+            </AppText>
+          </View>
+        ) : null}
+
         <View style={styles.navRow}>
           {data?.can_chat ? (
             <Pressable onPress={() => router.push("/helper-portal/chat")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-chat-btn">
@@ -210,6 +262,17 @@ export default function HelperPortal() {
               ) : null}
             </Pressable>
           ) : null}
+          {data?.can_chat ? (
+            <Pressable onPress={() => router.push("/helper-portal/care-team")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-careteam-btn">
+              <Ionicons name="people-outline" size={20} color={c.brandPrimary} />
+              <AppText size={13} weight="bold" color={c.onSurface}>Care Team</AppText>
+              {data?.care_team_unread ? (
+                <View style={[styles.navBadge, { backgroundColor: c.error }]}>
+                  <AppText size={10} weight="bold" color="#fff">{data.care_team_unread}</AppText>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => router.push("/helper-portal/handover")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-handover-btn">
             <Ionicons name="clipboard-outline" size={20} color={c.brandPrimary} />
             <AppText size={13} weight="bold" color={c.onSurface}>Handover</AppText>
@@ -217,6 +280,12 @@ export default function HelperPortal() {
               <View style={[styles.navDot, { backgroundColor: c.brandPrimary }]} />
             ) : null}
           </Pressable>
+          {data?.can_view_medical ? (
+            <Pressable onPress={() => router.push("/helper-portal/medical")} style={[styles.navBtn, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]} testID="portal-medical-btn">
+              <Ionicons name="medkit-outline" size={20} color="#C24B4B" />
+              <AppText size={13} weight="bold" color={c.onSurface}>Medical</AppText>
+            </Pressable>
+          ) : null}
         </View>
 
         {tasks.length === 0 ? (
@@ -324,6 +393,14 @@ export default function HelperPortal() {
                         </>
                       );
                     })()}
+                    {["en_route", "picked_up"].includes(t.completion?.trip?.status) ? (
+                      <Pressable onPress={() => (liveTask === t.task_id ? stopShare() : startShare(t))} style={[styles.actBtn, { backgroundColor: liveTask === t.task_id ? c.error : c.surfaceSecondary }]} testID={`trip-live-${t.task_id}`}>
+                        <Ionicons name={liveTask === t.task_id ? "stop" : "location"} size={15} color={liveTask === t.task_id ? "#fff" : c.onSurface} />
+                        <AppText size={13} weight="bold" color={liveTask === t.task_id ? "#fff" : c.onSurface}>
+                          {liveTask === t.task_id ? "Stop sharing" : "Share live location"}
+                        </AppText>
+                      </Pressable>
+                    ) : null}
                     <Pressable onPress={() => { setIssueTask(t); setIssueReason(""); setIssueNote(""); }} style={[styles.actBtn, { backgroundColor: "#E86A6A18" }]} testID={`htask-help-${t.task_id}`}>
                       <Ionicons name="help-buoy-outline" size={15} color="#C24B4B" />
                       <AppText size={13} weight="bold" color="#C24B4B">Need help</AppText>
@@ -461,8 +538,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", ...shadow(1) },
   progress: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
-  navRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
-  navBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
+  navRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
+  navBtn: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
+  praise: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   navBadge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   navDot: { width: 8, height: 8, borderRadius: 4 },
   tripChip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 9, justifyContent: "center" },

@@ -6033,6 +6033,21 @@ class HelperTripIn(BaseModel):
     note: Optional[str] = None
 
 
+class HelperTripLocIn(BaseModel):
+    lat: float
+    lng: float
+
+
+class CareTeamMsgIn(BaseModel):
+    text: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class HelperRatingIn(BaseModel):
+    rating: str                             # up | down
+    note: Optional[str] = None
+
+
 def make_helper_token(helper_id: str, family_id: str, tv: int, jti: str) -> str:
     payload = {"account_type": "helper", "helper_id": helper_id, "family_id": family_id,
                "tv": tv, "jti": jti,
@@ -6551,6 +6566,83 @@ async def parent_helper_handover_add(helper_id: str, body: HelperHandoverIn, use
     return {"note": clean(doc)}
 
 
+# --- Parent/admin: Care Team group chat (parents + all active helpers) -----
+def care_msg_public(m: dict) -> dict:
+    return {"message_id": m["message_id"], "sender_type": m.get("sender_type"),
+            "sender_id": m.get("sender_id"), "sender_name": m.get("sender_name"),
+            "sender_role": m.get("sender_role"), "text": m.get("text"),
+            "photo_url": m.get("photo_url"), "created_at": m.get("created_at")}
+
+
+@api.get("/care-team/chat")
+async def parent_care_team(user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    mine = await member_for_user(user)
+    reader = f"m:{(mine or {}).get('member_id')}"
+    await db.care_team_messages.update_many(
+        {"family_id": fid, "read_by": {"$ne": reader}}, {"$addToSet": {"read_by": reader}})
+    msgs = await db.care_team_messages.find({"family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    roster = []
+    async for h in db.helpers.find({"family_id": fid, "status": "active"}, {"_id": 0, "name": 1, "role": 1, "photo_url": 1}):
+        roster.append({"name": h.get("name"), "role": ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"], "photo_url": h.get("photo_url")})
+    return {"messages": [care_msg_public(m) for m in msgs], "helpers": roster,
+            "me": (mine or {}).get("member_id"), "my_type": "parent"}
+
+
+@api.post("/care-team/chat")
+async def parent_care_team_send(body: CareTeamMsgIn, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    text = (body.text or "").strip()
+    if not text and not body.photo_url:
+        raise HTTPException(status_code=400, detail="Type a message")
+    mine = await member_for_user(user)
+    reader = f"m:{(mine or {}).get('member_id')}"
+    doc = {"message_id": new_id("ctm_"), "family_id": fid, "sender_type": "parent",
+           "sender_id": (mine or {}).get("member_id"), "sender_name": (mine or {}).get("name") or "Family",
+           "sender_role": "Parent", "text": text or None, "photo_url": body.photo_url,
+           "read_by": [reader], "created_at": now_iso()}
+    await db.care_team_messages.insert_one(doc)
+    return {"message": care_msg_public(doc)}
+
+
+@api.get("/care-team/unread")
+async def parent_care_team_unread(user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    mine = await member_for_user(user)
+    reader = f"m:{(mine or {}).get('member_id')}"
+    n = await db.care_team_messages.count_documents(
+        {"family_id": fid, "read_by": {"$ne": reader}, "sender_id": {"$ne": (mine or {}).get("member_id")}})
+    return {"count": n}
+
+
+# --- Parent/admin: helper ratings (daily 👍/👎 + note) ---------------------
+@api.post("/helpers/{helper_id}/rating")
+async def rate_helper(helper_id: str, body: HelperRatingIn, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await _get_managed_helper(fid, helper_id)
+    if body.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="Rating must be up or down")
+    mine = await member_for_user(user)
+    today = datetime.now(timezone.utc).date().isoformat()
+    await db.helper_ratings.update_one(
+        {"helper_id": helper_id, "family_id": fid, "date": today},
+        {"$set": {"rating": body.rating, "note": (body.note or "").strip() or None,
+                  "by": (mine or {}).get("member_id"), "by_name": (mine or {}).get("name"),
+                  "created_at": now_iso()},
+         "$setOnInsert": {"rating_id": new_id("hrate_")}}, upsert=True)
+    return {"ok": True, "rating": body.rating}
+
+
+@api.get("/helpers/{helper_id}/ratings")
+async def list_helper_ratings(helper_id: str, user: dict = Depends(get_current_user)):
+    fid = await _require_helper_manager(user)
+    await _get_managed_helper(fid, helper_id)
+    out = await db.helper_ratings.find({"helper_id": helper_id, "family_id": fid}, {"_id": 0}).sort("date", -1).to_list(30)
+    today = datetime.now(timezone.utc).date().isoformat()
+    return {"ratings": out, "up": sum(1 for r in out if r.get("rating") == "up"),
+            "total": len(out), "today": next((r for r in out if r.get("date") == today), None)}
+
+
 # --- Helper today-task computation (shared) --------------------------------
 def _task_due_today(t: dict, today: date) -> bool:
     sched = t.get("schedule", "once")
@@ -6688,13 +6780,22 @@ async def helper_dashboard(h: dict = Depends(get_current_helper)):
     today = datetime.now(timezone.utc).date().isoformat()
     handover_today = await db.helper_handovers.count_documents(
         {"helper_id": h["helper_id"], "family_id": h["family_id"], "by": "parent", "date": today})
+    care_team_unread = 0
+    if perms.get("chat"):
+        care_team_unread = await db.care_team_messages.count_documents(
+            {"family_id": h["family_id"], "read_by": {"$ne": f"h:{h['helper_id']}"},
+             "sender_id": {"$ne": h["helper_id"]}})
+    rate_today = await db.helper_ratings.find_one({"helper_id": h["helper_id"], "date": today}, {"_id": 0})
     return {
         "name": h.get("name"), "role_label": ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"],
         "family_name": fam.get("name") if fam else None,
         "tasks": tasks, "total": len(tasks), "done": sum(1 for t in tasks if t.get("done")),
         "assigned_members": await _member_cards(h["family_id"], h.get("assigned_member_ids") or []),
         "permissions": perms, "can_chat": bool(perms.get("chat")),
+        "can_view_medical": bool(perms.get("medical")),
         "unread_chat": unread_chat, "handover_today": handover_today,
+        "care_team_unread": care_team_unread,
+        "rated_up_today": bool(rate_today and rate_today.get("rating") == "up"),
     }
 
 
@@ -6843,6 +6944,71 @@ async def helper_handover_add(body: HelperHandoverIn, h: dict = Depends(get_curr
     return {"note": clean(doc)}
 
 
+# --- Helper self-service: live pickup location, care team, medical ---------
+@api.post("/helper/tasks/{task_id}/location")
+async def helper_task_location(task_id: str, body: HelperTripLocIn, h: dict = Depends(get_current_helper)):
+    """Driver shares live GPS DURING an active pickup trip (must Start Trip first)."""
+    await _get_helper_task(h, task_id)
+    tkey = datetime.now(timezone.utc).date().isoformat()
+    r = await db.helper_task_completions.update_one(
+        {"task_id": task_id, "date": tkey},
+        {"$set": {"trip.lat": body.lat, "trip.lng": body.lng, "trip.loc_updated_at": now_iso()}})
+    if not r.matched_count:
+        raise HTTPException(status_code=400, detail="Start the trip before sharing your location")
+    return {"ok": True}
+
+
+@api.get("/helper/care-team")
+async def helper_care_team(h: dict = Depends(require_helper_permission("chat"))):
+    fid = h["family_id"]
+    reader = f"h:{h['helper_id']}"
+    await db.care_team_messages.update_many(
+        {"family_id": fid, "read_by": {"$ne": reader}}, {"$addToSet": {"read_by": reader}})
+    msgs = await db.care_team_messages.find({"family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(300)
+    return {"messages": [care_msg_public(m) for m in msgs], "me": h["helper_id"], "my_type": "helper"}
+
+
+@api.post("/helper/care-team")
+async def helper_care_team_send(body: CareTeamMsgIn, h: dict = Depends(require_helper_permission("chat"))):
+    text = (body.text or "").strip()
+    if not text and not body.photo_url:
+        raise HTTPException(status_code=400, detail="Type a message")
+    reader = f"h:{h['helper_id']}"
+    role = ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"]
+    doc = {"message_id": new_id("ctm_"), "family_id": h["family_id"], "sender_type": "helper",
+           "sender_id": h["helper_id"], "sender_name": h.get("name"), "sender_role": role,
+           "text": text or None, "photo_url": body.photo_url, "read_by": [reader], "created_at": now_iso()}
+    await db.care_team_messages.insert_one(doc)
+    await _notify_parents_helper(h, f"{h.get('name')} posted in the Care Team",
+                                 (text or "📷 Photo")[:90], "👥", "/care-team")
+    return {"message": care_msg_public(doc)}
+
+
+@api.get("/helper/medical")
+async def helper_medical(h: dict = Depends(require_helper_permission("medical"))):
+    """View-only, emergency medical info for the helper's ASSIGNED members only.
+    Exposes blood group, allergies, doctor, hospital and emergency contact — NOT
+    medications/conditions or insurance/policy numbers."""
+    fid = h["family_id"]
+    if h.get("assigned_all"):
+        mids = [m["member_id"] for m in await db.members.find({"family_id": fid}, {"_id": 0, "member_id": 1}).to_list(200)]
+    else:
+        mids = h.get("assigned_member_ids") or []
+    cards = []
+    for mid in mids:
+        m = await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0})
+        if not m:
+            continue
+        card = await db.medical_cards.find_one({"member_id": mid, "family_id": fid}, {"_id": 0}) or {}
+        cards.append({
+            "member": {"member_id": mid, "name": m.get("name"), "photo_url": m.get("photo_url"), "color": m.get("color")},
+            "blood_group": card.get("blood_group"), "allergies": card.get("allergies"),
+            "doctor": card.get("doctor"), "hospital": card.get("hospital"),
+            "emergency_contact": card.get("emergency_contact"),
+        })
+    return {"cards": cards}
+
+
 @api.post("/helper/upload")
 async def helper_upload(file: UploadFile = File(...), kind: str = Form("image"), h: dict = Depends(get_current_helper)):
     """Helper-scoped upload (proof photos). Stored under the helper's family."""
@@ -6927,6 +7093,8 @@ async def startup():
         await db.helper_messages.create_index([("helper_id", 1), ("created_at", 1)])
         await db.helper_handovers.create_index([("helper_id", 1), ("created_at", 1)])
         await db.helper_events.create_index([("family_id", 1), ("created_at", -1)])
+        await db.care_team_messages.create_index([("family_id", 1), ("created_at", 1)])
+        await db.helper_ratings.create_index([("helper_id", 1), ("date", 1)], unique=True)
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:

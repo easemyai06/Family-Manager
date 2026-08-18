@@ -24,6 +24,7 @@ export default function Family() {
   const [canManage, setCanManage] = useState(false);
   const [invite, setInvite] = useState<any>(null);
   const [helpers, setHelpers] = useState<any[]>([]);
+  const [careUnread, setCareUnread] = useState(0);
   const [manage, setManage] = useState(false);
   const [actionMember, setActionMember] = useState<any>(null);
   const [removePhase, setRemovePhase] = useState(false);
@@ -45,6 +46,8 @@ export default function Family() {
         try {
           const h = await api("/helpers");
           setHelpers(h.helpers || []);
+          const cu = await api("/care-team/unread").catch(() => null);
+          setCareUnread(cu?.count || 0);
         } catch {}
       }
     } catch {}
@@ -285,6 +288,29 @@ export default function Family() {
                 </Pressable>
               ))
             )}
+            {helpers.some((h) => h.status === "active") ? (
+              <Pressable
+                onPress={() => router.push("/care-team")}
+                style={[styles.careTeamCard, { backgroundColor: c.brandTertiary }]}
+                testID="care-team-cta"
+              >
+                <View style={[styles.roleIcon, { backgroundColor: c.surface }]}>
+                  <AppText size={20}>👥</AppText>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText size={15} weight="bold" color={c.onBrandTertiary}>Care Team Chat</AppText>
+                  <AppText size={12} color={c.onBrandTertiary}>Coordinate with all your helpers together</AppText>
+                </View>
+                {careUnread ? (
+                  <View style={[styles.helperUnread, { backgroundColor: c.error }]} testID="care-team-unread">
+                    <Ionicons name="chatbubble" size={10} color="#fff" />
+                    <AppText size={10} weight="bold" color="#fff">{careUnread}</AppText>
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color={c.onBrandTertiary} />
+                )}
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -505,6 +531,7 @@ const styles = StyleSheet.create({
   roleIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
   helperStatus: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   helperUnread: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
+  careTeamCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.sm },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
   inviteIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   loveCard: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: spacing.xl },

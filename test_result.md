@@ -1992,3 +1992,100 @@ frontend_batch31:
 agent_communication_batch31:
     -agent: "main"
     -message: "Batch #31 = TRUSTED HELPERS Phase 2. CREDS: parent/admin storytester@fam.com / secret123 (helper_id help_c77a0a30120545bb); demo helper login username 'sunita' PIN '1234' (Nanny, assigned Aarav; has a pickup task 'Pick up Aarav from school' Delhi Public School -> Home; today's completions cleared so trip flow is fresh; 2 seeded chat msgs + 2 handover notes exist). TEST BOTH backend + frontend. BACKEND (curl-verified by main agent, please regression + SECURITY): (1) PRIVATE CHAT isolation — helper /helper/chat must ONLY return helper<->parent messages, NEVER Family Chat (db.messages); a helper WITHOUT chat permission must get 403 on /helper/chat (create a helper with chat denied to verify); family token must 401 on /helper/*; helper token must 401 on parent /helpers/{id}/chat. (2) HANDOVER — parent POST note -> helper GET sees it; helper POST end-of-day -> parent GET sees it; scoped to that helper+family only (cross-family 404). (3) TRIP — helper POST /helper/tasks/{id}/trip stages en_route/picked_up/reached (bad stage 400); 'reached' marks task done; each fires a parent notification. (4) NOTIFICATIONS — parent GET /api/notifications includes type 'helper' items; a CHILD/non-parent viewer must NOT see helper events. (5) lifecycle: paused/removed helper -> chat/handover/trip endpoints blocked (401/403). FRONTEND (in-app nav, 390x844): HELPER (login sunita/1234): portal shows Chat + Handover buttons; open Chat -> see parent msg -> send a reply; open Handover -> see family note -> add end-of-day note; the pickup task shows Start Trip -> tap -> Child Picked Up -> tap -> Reached Home (task then shows done). PARENT (storytester): Family tab -> Trusted Helpers -> open Sunita -> Chat (see helper reply, send a message) + Handover (see helper note, add a note) + Tasks show pickup route + trip badge; Notifications bell shows helper activity. Web geolocation/native pickers not required here (Phase 2 pickup is task-status only, no live GPS). Do NOT run destructive cleanup."
+
+# ============ Feature Batch #32 — TRUSTED HELPERS Phase 3 (Care Team / Live Pickup Map / Medical / Ratings) ============
+backend_batch32:
+  - task: "Care Team group chat (parents + all active helpers)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New db.care_team_messages (family-scoped group, read_by[] per-reader). Parent GET/POST /api/care-team/chat (+ roster of active helpers + me/my_type) and GET /api/care-team/unread (parent/admin). Helper GET/POST /api/helper/care-team gated by require_helper_permission('chat'). Isolated from Family Chat AND from 1:1 helper chat. Helper post fires _notify_parents_helper(👥, route /care-team). Curl-verified round trip + roster + unread clear."
+  - task: "Live pickup location during active trip"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "POST /api/helper/tasks/{id}/location {lat,lng} updates trip.lat/lng/loc_updated_at on today's completion; returns 400 if no active trip (must Start Trip first) — curl-verified 400 before trip, 200 after en_route. Parent reads coords via /helpers/{id}/activity trip object."
+  - task: "Medical sharing (view-only, assigned members, permission-gated)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/helper/medical gated by require_helper_permission('medical') (Nanny default has NO medical -> 403 verified). Returns ONLY assigned members (assigned_all -> all). Exposes blood_group, allergies, doctor, hospital, emergency_contact ONLY. LEAK CHECK curl-verified: medication/conditions/insurance_provider/policy_reference NOT present in response. Demo: granted Sunita medical perm; she sees only Aarav (her assigned child)."
+  - task: "Helper daily ratings (👍/👎 + note)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "db.helper_ratings unique (helper_id,date). Parent POST /api/helpers/{id}/rating {rating up|down, note} (upsert per day; 400 for bad rating) + GET /api/helpers/{id}/ratings (history + up/total + today). helper/dashboard adds rated_up_today. Curl-verified."
+
+frontend_batch32:
+  - task: "Care Team chat screens (parent + helper) + Family tab entry"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/CareTeamChatView.tsx, frontend/app/care-team.tsx, frontend/app/helper-portal/care-team.tsx, frontend/app/(tabs)/family.tsx, frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Group chat view (bubbles L/R by sender identity, sender name+role on others, poll 4s). Parent: Family tab shows Care Team Chat card (care-team-cta, care-team-unread badge) when >=1 active helper. Helper portal: Care Team button (portal-careteam-btn, unread badge) when can_chat. testIDs careteam-send/careteam-input/ctmsg-*."
+  - task: "Live pickup map (helper share + parent map view)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx, frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Helper portal pickup task shows 'Share live location' toggle (trip-live-<id>) while trip en_route/picked_up; uses expo-location getForeground/request + watchPositionAsync (native) POST /helper/tasks/{id}/location; web posts one-time. Stops on Reached Home. Parent /helper/[id] pickup row shows a static OSM map (trip-map-<id>) + 'Live · updated Xm ago' + tap opens Maps, when trip has coords. NOTE: actual GPS movement needs a real device build; web preview only shows a single point."
+  - task: "Helper medical screen (portal)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/medical.tsx, frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Portal Medical button (portal-medical-btn) shown only when can_view_medical. Screen lists assigned kids' cards (medcard-<id>) with blood group pill, allergies, doctor, hospital, emergency contact + tap-to-call (medcall-<id>). Emergency-only banner. No sensitive fields shown."
+  - task: "Helper ratings UI (parent detail + helper praise banner)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper/[id].tsx, frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Parent /helper/[id] 'How was today?' section: 👍 (rate-up) / 👎 (rate-down) + optional note (rate-note) + history (rate-hist-*). Helper portal shows praise banner (portal-praise) when rated_up_today. Smoke-verified: portal shows all 4 nav buttons + praise banner + Start Trip."
+
+agent_communication_batch32:
+    -agent: "main"
+    -message: "Batch #32 = TRUSTED HELPERS Phase 3. Builds on #30/#31 (both passed). CREDS: parent/admin storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' — NOW granted 'medical' permission + assigned child Aarav (has a seeded medical card O+/Peanuts/Dr.Mehta/Apollo). Sunita has a daily pickup task 'Pick up Aarav from school' (Delhi Public School -> Home); today's completions were reset so the trip flow is fresh. TEST BOTH backend+frontend. BACKEND regression + SECURITY: (1) CARE TEAM isolation — /api/care-team/chat and /helper/care-team share ONLY care_team_messages, never Family Chat (db.messages) nor 1:1 helper chat (db.helper_messages); helper WITHOUT chat perm -> 403 on /helper/care-team; family token -> 401 on /helper/*; helper token -> 401 on /api/care-team/*. (2) LIVE LOCATION — POST /api/helper/tasks/{id}/location returns 400 before Start Trip, 200 after; coords land in the trip completion and parent sees them via /helpers/{id}/activity. (3) MEDICAL — /helper/medical requires 'medical' perm (403 without); returns ONLY assigned members; response MUST NOT contain medication/conditions/insurance_provider/policy_reference (privacy!). Create a 2nd helper assigned to a DIFFERENT member to confirm scoping (they must NOT see Aarav). (4) RATINGS — parent POST/GET /api/helpers/{id}/rating(s); bad rating value -> 400; one-per-day upsert; dashboard rated_up_today. (5) lifecycle: paused/removed helper blocked on all Phase 3 helper endpoints. FRONTEND (in-app nav, 390x844): HELPER (sunita/1234): portal shows Chat + Care Team + Handover + Medical buttons + a 'family appreciated your work' praise banner; open Care Team -> send msg; open Medical -> see Aarav's card (blood group/allergies/doctor), confirm NO medication/insurance shown; pickup task -> Start Trip -> 'Share live location' toggle appears (web will ask geolocation permission; a single point is OK — full GPS needs device build). PARENT (storytester): Family tab -> Trusted Helpers -> Care Team Chat card (send a msg, see helper's msg) + open Sunita -> 'How was today?' 👍/👎 + note (rate-up/rate-down/rate-note) saves + history; if a live trip is active, pickup row shows a map. Web geolocation may be denied in the harness — that's fine, just confirm the toggle/button appears and no crash. Do NOT run destructive cleanup."

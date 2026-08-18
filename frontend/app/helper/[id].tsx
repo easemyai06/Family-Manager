@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Modal, Alert } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal, Alert, Linking } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,11 +8,13 @@ import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
 import { TextField } from "@/src/components/ui/TextField";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { SmartImage } from "@/src/components/ui/SmartImage";
 import { TimeField } from "@/src/components/ui/DateTimeField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { timeAgo } from "@/src/lib/time";
+import { mapsUrl, staticMapUrl } from "@/src/lib/fileMeta";
 
 const DAYS = ["M", "T", "W", "T", "F", "S", "S"];
 const CATS = [
@@ -53,6 +55,10 @@ export default function HelperDetail() {
   const [pUser, setPUser] = useState("");
   const [pPin, setPPin] = useState("");
 
+  const [ratings, setRatings] = useState<any[]>([]);
+  const [ratingToday, setRatingToday] = useState<any>(null);
+  const [ratingNote, setRatingNote] = useState("");
+
   const flash = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(""), 2600);
@@ -60,17 +66,33 @@ export default function HelperDetail() {
 
   const load = useCallback(async () => {
     try {
-      const [h, t, a, s] = await Promise.all([
-        api(`/helpers/${id}`), api(`/helpers/${id}/tasks`), api(`/helpers/${id}/activity`), api(`/helpers/${id}/sessions`),
+      const [h, t, a, s, r] = await Promise.all([
+        api(`/helpers/${id}`), api(`/helpers/${id}/tasks`), api(`/helpers/${id}/activity`),
+        api(`/helpers/${id}/sessions`), api(`/helpers/${id}/ratings`),
       ]);
       setHelper(h.helper);
       setTasks(t.tasks || []);
       setActivity(a.activity || []);
       setSessions(s.sessions || []);
+      setRatings(r.ratings || []);
+      setRatingToday(r.today || null);
     } catch {}
   }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const rate = async (val: "up" | "down") => {
+    setBusy(true);
+    try {
+      await api(`/helpers/${id}/rating`, { method: "POST", body: { rating: val, note: ratingNote.trim() || null } });
+      setRatingNote("");
+      flash(val === "up" ? "Thanks — logged 👍" : "Noted 👎");
+      load();
+    } catch (e: any) {
+      flash(e?.message || "Couldn't save");
+    }
+    setBusy(false);
+  };
 
   const act = async (path: string, method = "POST", body?: any) => {
     setBusy(true);
@@ -295,6 +317,14 @@ export default function HelperDetail() {
                     </AppText>
                   </View>
                 ) : null}
+                {tripByTask[t.task_id]?.lat && ["en_route", "picked_up"].includes(tripByTask[t.task_id]?.status) ? (
+                  <Pressable onPress={() => Linking.openURL(mapsUrl(tripByTask[t.task_id].lat, tripByTask[t.task_id].lng))} style={{ marginTop: 8 }} testID={`trip-map-${t.task_id}`}>
+                    <SmartImage uri={staticMapUrl(tripByTask[t.task_id].lat, tripByTask[t.task_id].lng, 400, 150)} style={styles.tripMap} />
+                    <AppText size={11} color={c.onSurfaceTertiary} style={{ marginTop: 4 }}>
+                      📍 Live · updated {timeAgo(tripByTask[t.task_id].loc_updated_at)} · tap to open in Maps
+                    </AppText>
+                  </Pressable>
+                ) : null}
               </View>
               <Pressable onPress={() => deleteTask(t.task_id)} hitSlop={8} testID={`del-task-${t.task_id}`}>
                 <Ionicons name="trash-outline" size={18} color={c.onSurfaceTertiary} />
@@ -323,6 +353,47 @@ export default function HelperDetail() {
             </View>
           </>
         ) : null}
+
+        {/* daily rating */}
+        <SectionTitle c={c}>How was today?</SectionTitle>
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <View style={styles.rateRow}>
+            <Pressable
+              onPress={() => rate("up")}
+              style={[styles.rateBtn, { borderColor: ratingToday?.rating === "up" ? c.success : c.border, backgroundColor: ratingToday?.rating === "up" ? c.success + "1e" : c.surfaceSecondary }]}
+              testID="rate-up"
+            >
+              <AppText size={22}>👍</AppText>
+              <AppText size={13} weight="bold" color={ratingToday?.rating === "up" ? c.success : c.onSurface}>Great</AppText>
+            </Pressable>
+            <Pressable
+              onPress={() => rate("down")}
+              style={[styles.rateBtn, { borderColor: ratingToday?.rating === "down" ? c.error : c.border, backgroundColor: ratingToday?.rating === "down" ? c.error + "1e" : c.surfaceSecondary }]}
+              testID="rate-down"
+            >
+              <AppText size={22}>👎</AppText>
+              <AppText size={13} weight="bold" color={ratingToday?.rating === "down" ? c.error : c.onSurface}>Needs work</AppText>
+            </Pressable>
+          </View>
+          <TextField label="" value={ratingNote} onChangeText={setRatingNote} placeholder="Add a note (optional)" testID="rate-note" />
+          {ratingToday ? (
+            <AppText size={12} color={c.onSurfaceTertiary} style={{ marginTop: 2 }}>
+              Today logged: {ratingToday.rating === "up" ? "👍" : "👎"}{ratingToday.note ? ` · ${ratingToday.note}` : ""}
+            </AppText>
+          ) : null}
+          {ratings.length ? (
+            <View style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: c.border, paddingTop: spacing.sm }}>
+              {ratings.slice(0, 6).map((r) => (
+                <View key={r.rating_id} style={styles.rateHist} testID={`rate-hist-${r.rating_id}`}>
+                  <AppText size={14}>{r.rating === "up" ? "👍" : "👎"}</AppText>
+                  <View style={{ flex: 1 }}>
+                    <AppText size={12} color={c.onSurface}>{r.date}{r.note ? ` · ${r.note}` : ""}</AppText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
 
         {/* sessions */}
         {sessions.length ? (
@@ -475,6 +546,10 @@ const styles = StyleSheet.create({
   quickBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
   badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   tripBadge: { alignSelf: "flex-start", borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3, marginTop: 5 },
+  tripMap: { width: "100%", height: 130, borderRadius: radius.md },
+  rateRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
+  rateBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: radius.md, borderWidth: 1, paddingVertical: spacing.md },
+  rateHist: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 5 },
   accRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6 },
   sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl, marginBottom: spacing.sm },
   addTask: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 7 },

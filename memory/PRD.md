@@ -559,3 +559,36 @@ Follow-on to Phase 1. Three parent-approved features, all backend-authorized (ne
   Home + seeded chat/handover. Preview only — Publish to ship to production.
 - PENDING (Phase 3, per user-approved phasing): Care Team chat, selective Emergency/Medical sharing,
   live-GPS pickup map (permissions already wired), device/session detail polish. (English only.)
+
+## Batch #32 — TRUSTED HELPERS Phase 3 (Care Team / Live Pickup Map / Medical / Ratings) (June 2026)
+User-selected follow-ups; user choices: one family Care Team (all active helpers + parents);
+medical fields = allergies+blood group+doctor+emergency contact (view-only, NO insurance/policy/
+meds/conditions); medical only when the 'medical' permission is granted; ratings = daily 👍/👎 + note;
+live GPS only during an active pickup trip (device build needed to actually move).
+- Care Team group chat: new `db.care_team_messages` (family-scoped group, per-reader read_by[]),
+  isolated from Family Chat AND from the 1:1 helper chat. Parent GET/POST /api/care-team/chat (+roster
+  +me/my_type), GET /api/care-team/unread. Helper GET/POST /api/helper/care-team gated by chat perm.
+  Shared component CareTeamChatView. Parent entry: Family tab "Care Team Chat" card (care-team-cta,
+  unread badge) when >=1 active helper. Helper entry: portal Care Team button (portal-careteam-btn).
+- Live Pickup Map: POST /api/helper/tasks/{id}/location {lat,lng} writes trip.lat/lng/loc_updated_at
+  (400 before Start Trip). Helper portal pickup task shows a "Share live location" toggle (trip-live-*)
+  while trip is en_route/picked_up (expo-location watchPositionAsync on native; web posts one point;
+  auto-stops on Reached Home). Parent /helper/[id] pickup row shows a static OSM map (trip-map-*) +
+  "Live · updated Xm ago" + tap opens Maps. Real GPS movement requires a device build.
+- Medical Sharing: GET /helper/medical gated by 'medical' permission (403 without). Returns ONLY the
+  helper's assigned members and ONLY {blood_group, allergies, doctor, hospital, emergency_contact} —
+  meds/conditions/insurance/policy are NEVER sent (privacy verified). Portal Medical button
+  (portal-medical-btn) shown only when can_view_medical; screen = /helper-portal/medical (medcard-*,
+  tap-to-call emergency contact). Nanny role has NO medical perm by default.
+- Helper Ratings: `db.helper_ratings` unique (helper_id,date). Parent POST /api/helpers/{id}/rating
+  {up|down, note} (one-per-day upsert) + GET /api/helpers/{id}/ratings. Parent /helper/[id] "How was
+  today?" (rate-up/rate-down/rate-note + history). Helper portal praise banner (portal-praise) when
+  rated_up_today. helper/dashboard exposes can_view_medical, care_team_unread, rated_up_today.
+- Verified: testing agent Batch #32 — BACKEND 26/26 pytest
+  (backend/tests/test_batch32_trusted_helpers_phase3.py) incl. care-team isolation, no-chat-perm 403,
+  cross-token 401 matrix, location 400-before-trip guard, MEDICAL leak-check (no meds/insurance) +
+  cross-helper scoping, rating validation/upsert, paused/removed lifecycle blocks. FRONTEND all flows
+  pass. Demo helper Sunita granted 'medical' perm + assigned Aarav (seeded medical card).
+  Preview only — Publish to ship to production.
+- REMAINING backlog: live-GPS map polish (device build), device/session detail, selective
+  emergency sharing beyond medical, English-only helper UI (i18n later).
