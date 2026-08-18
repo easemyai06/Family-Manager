@@ -38,6 +38,12 @@ export default function ParentCareTeam() {
     await load();
   };
 
+  const onSendAudio = async (uri: string, durMs: number) => {
+    const up = await uploadMedia(uri, "audio");
+    await api("/care-team/chat", { method: "POST", body: { audio_url: up.url, audio_dur: Math.round(durMs / 1000) } });
+    await load();
+  };
+
   const subtitle = helpers.length ? `You + ${helpers.map((h) => h.name).join(", ")}` : "You + your helpers";
 
   return (
@@ -49,6 +55,7 @@ export default function ParentCareTeam() {
       onBack={() => router.back()}
       onSend={onSend}
       onSendPhoto={onSendPhoto}
+      onSendAudio={onSendAudio}
     />
   );
 }

@@ -5203,6 +5203,35 @@ async def storage_cleanup(body: CleanupIn, user: dict = Depends(get_current_user
     return {"ok": True, "messages_removed": len(ids)}
 
 
+async def _serve_file_for_helper(path: str, payload: dict):
+    """Media access for helper tokens — least privilege: only files that belong
+    to the Care Team chat, this helper's 1:1 chat, or the helper's own uploads."""
+    hid, fid = payload.get("helper_id"), payload.get("family_id")
+    h = await db.helpers.find_one({"helper_id": hid, "family_id": fid}, {"_id": 0, "status": 1})
+    if not h or h.get("status") != "active":
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    rec = await db.media.find_one({"storage_path": path}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="File not found")
+    if rec.get("family_id") not in (fid, None):
+        raise HTTPException(status_code=404, detail="File not found")
+    url = f"/api/files/{path}"
+    allowed = rec.get("owner_id") == hid
+    if not allowed:
+        allowed = bool(await db.care_team_messages.find_one(
+            {"family_id": fid, "$or": [{"photo_url": url}, {"audio_url": url}]}, {"_id": 1}))
+    if not allowed:
+        allowed = bool(await db.helper_messages.find_one(
+            {"helper_id": hid, "$or": [{"photo_url": url}, {"audio_url": url}]}, {"_id": 1}))
+    if not allowed:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        content, ct = await run_in_threadpool(_get_object, path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+    return Response(content=content, media_type=ct, headers={"Cache-Control": "private, max-age=86400"})
+
+
 @api.get("/files/{path:path}")
 async def serve_file(path: str, authorization: Optional[str] = Header(None),
                      token: Optional[str] = Query(None)):
@@ -5214,6 +5243,8 @@ async def serve_file(path: str, authorization: Optional[str] = Header(None),
     payload = _decode_token(raw) if raw else None
     if not payload:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if payload.get("account_type") in ("helper", "helper_media"):
+        return await _serve_file_for_helper(path, payload)
     u = await db.users.find_one({"user_id": payload.get("user_id")}, {"_id": 0})
     if not u:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -6036,6 +6067,7 @@ class HelperHandoverIn(BaseModel):
 class HelperTripIn(BaseModel):
     stage: str                              # en_route | picked_up | reached
     note: Optional[str] = None
+    proof_url: Optional[str] = None         # optional arrival photo on "reached"
 
 
 class HelperTripLocIn(BaseModel):
@@ -6046,6 +6078,8 @@ class HelperTripLocIn(BaseModel):
 class CareTeamMsgIn(BaseModel):
     text: Optional[str] = None
     photo_url: Optional[str] = None
+    audio_url: Optional[str] = None
+    audio_dur: Optional[int] = None
 
 
 class HelperRatingIn(BaseModel):
@@ -6057,6 +6091,14 @@ def make_helper_token(helper_id: str, family_id: str, tv: int, jti: str) -> str:
     payload = {"account_type": "helper", "helper_id": helper_id, "family_id": family_id,
                "tv": tv, "jti": jti,
                "exp": datetime.now(timezone.utc) + timedelta(days=HELPER_TOKEN_DAYS)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def make_helper_media_token(helper_id: str, family_id: str) -> str:
+    """Short-lived, read-only token used ONLY in helper media URLs, so the
+    helper's login token never travels in a URL (web <img>, audio playback)."""
+    payload = {"account_type": "helper_media", "helper_id": helper_id, "family_id": family_id,
+               "scope": "media", "exp": datetime.now(timezone.utc) + timedelta(hours=6)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 
@@ -6240,6 +6282,7 @@ async def helper_roles(user: dict = Depends(get_current_user)):
 async def list_helpers(user: dict = Depends(get_current_user)):
     fid = await _require_helper_manager(user)
     out = []
+    _today_str = datetime.now(timezone.utc).date().isoformat()
     async for h in db.helpers.find({"family_id": fid, "status": {"$ne": "removed"}}, {"_id": 0}).sort("created_at", -1):
         pub = helper_public(h)
         pub["assigned_members"] = await _member_cards(fid, h.get("assigned_member_ids") or [])
@@ -6249,6 +6292,10 @@ async def list_helpers(user: dict = Depends(get_current_user)):
         pub["tasks_done"] = sum(1 for t in tasks if t.get("done"))
         pub["next_task"] = next((t for t in tasks if not t.get("done")), None)
         pub["unread_chat"] = await _helper_unread_for_parent(fid, h["helper_id"])
+        ci = await db.helper_checkins.find_one(
+            {"helper_id": h["helper_id"], "date": _today_str}, {"_id": 0, "checked_in_at": 1, "checked_out_at": 1})
+        pub["checked_in_at"] = (ci or {}).get("checked_in_at")
+        pub["checked_out_at"] = (ci or {}).get("checked_out_at")
         out.append(pub)
     return {"helpers": out}
 
@@ -6308,6 +6355,11 @@ async def get_helper(helper_id: str, user: dict = Depends(get_current_user)):
     pub["has_login"] = bool(h.get("username"))
     pub["invite_code"] = h.get("invite_code")
     pub["unread_chat"] = await _helper_unread_for_parent(fid, helper_id)
+    ci = await db.helper_checkins.find_one(
+        {"helper_id": helper_id, "date": datetime.now(timezone.utc).date().isoformat()},
+        {"_id": 0, "checked_in_at": 1, "checked_out_at": 1})
+    pub["checked_in_at"] = (ci or {}).get("checked_in_at")
+    pub["checked_out_at"] = (ci or {}).get("checked_out_at")
     return {"helper": pub}
 
 
@@ -6612,7 +6664,8 @@ def care_msg_public(m: dict) -> dict:
     return {"message_id": m["message_id"], "sender_type": m.get("sender_type"),
             "sender_id": m.get("sender_id"), "sender_name": m.get("sender_name"),
             "sender_role": m.get("sender_role"), "text": m.get("text"),
-            "photo_url": m.get("photo_url"), "created_at": m.get("created_at")}
+            "photo_url": m.get("photo_url"), "audio_url": m.get("audio_url"),
+            "audio_dur": m.get("audio_dur"), "created_at": m.get("created_at")}
 
 
 @api.get("/care-team/chat")
@@ -6634,13 +6687,14 @@ async def parent_care_team(user: dict = Depends(get_current_user)):
 async def parent_care_team_send(body: CareTeamMsgIn, user: dict = Depends(get_current_user)):
     fid = await _require_helper_manager(user)
     text = (body.text or "").strip()
-    if not text and not body.photo_url:
+    if not text and not body.photo_url and not body.audio_url:
         raise HTTPException(status_code=400, detail="Type a message")
     mine = await member_for_user(user)
     reader = f"m:{(mine or {}).get('member_id')}"
     doc = {"message_id": new_id("ctm_"), "family_id": fid, "sender_type": "parent",
            "sender_id": (mine or {}).get("member_id"), "sender_name": (mine or {}).get("name") or "Family",
            "sender_role": "Parent", "text": text or None, "photo_url": body.photo_url,
+           "audio_url": body.audio_url, "audio_dur": body.audio_dur,
            "read_by": [reader], "created_at": now_iso()}
     await db.care_team_messages.insert_one(doc)
     return {"message": care_msg_public(doc)}
@@ -6796,7 +6850,8 @@ async def _issue_helper_session(h: dict, request: Request) -> dict:
         "device": (request.headers.get("user-agent") or "")[:120] if request else None,
     })
     token = make_helper_token(h["helper_id"], h["family_id"], tv, jti)
-    return {"token": token, "helper": helper_public(h)}
+    return {"token": token, "media_token": make_helper_media_token(h["helper_id"], h["family_id"]),
+            "helper": helper_public(h)}
 
 
 @api.get("/helper/me")
@@ -6805,7 +6860,7 @@ async def helper_me(h: dict = Depends(get_current_helper)):
     pub = helper_public(h)
     pub["assigned_members"] = await _member_cards(h["family_id"], h.get("assigned_member_ids") or [])
     pub["family_name"] = fam.get("name") if fam else None
-    return {"helper": pub}
+    return {"helper": pub, "media_token": make_helper_media_token(h["helper_id"], h["family_id"])}
 
 
 @api.get("/helper/dashboard")
@@ -6827,6 +6882,8 @@ async def helper_dashboard(h: dict = Depends(get_current_helper)):
             {"family_id": h["family_id"], "read_by": {"$ne": f"h:{h['helper_id']}"},
              "sender_id": {"$ne": h["helper_id"]}})
     rate_today = await db.helper_ratings.find_one({"helper_id": h["helper_id"], "date": today}, {"_id": 0})
+    checkin = await db.helper_checkins.find_one(
+        {"helper_id": h["helper_id"], "date": today}, {"_id": 0, "checked_in_at": 1, "checked_out_at": 1})
     return {
         "name": h.get("name"), "role_label": ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"],
         "family_name": fam.get("name") if fam else None,
@@ -6838,6 +6895,8 @@ async def helper_dashboard(h: dict = Depends(get_current_helper)):
         "care_team_unread": care_team_unread,
         "rated_up_today": bool(rate_today and rate_today.get("rating") == "up"),
         "shift": _shift_status(h),
+        "checkin": checkin or None,
+        "media_token": make_helper_media_token(h["helper_id"], h["family_id"]),
     }
 
 
@@ -6919,6 +6978,8 @@ async def helper_task_trip(task_id: str, body: HelperTripIn, h: dict = Depends(g
     if stage == "reached":
         sets["completed_at"] = at
         sets["status"] = "done"
+        if body.proof_url:
+            sets["trip.proof_url"] = body.proof_url
     else:
         sets["started_at"] = sets.get("started_at") or at
         sets["status"] = "in_progress"
@@ -6933,8 +6994,12 @@ async def helper_task_trip(task_id: str, body: HelperTripIn, h: dict = Depends(g
     label = {"en_route": "started the trip",
              "picked_up": f"picked up {who}",
              "reached": f"reached {t.get('pickup_to') or 'the destination'}"}[stage]
-    await _notify_parents_helper(h, f"{h.get('name')} {label}", t.get("title"),
-                                 "🚗", f"/helper/{h['helper_id']}")
+    sub = t.get("title")
+    emoji = "🚗"
+    if stage == "reached" and body.proof_url:
+        sub = "Arrival photo attached 📸"
+        emoji = "📸"
+    await _notify_parents_helper(h, f"{h.get('name')} {label}", sub, emoji, f"/helper/{h['helper_id']}")
     return {"ok": True, "stage": stage}
 
 
@@ -7045,16 +7110,19 @@ async def helper_care_team(h: dict = Depends(require_helper_permission("chat")))
 @api.post("/helper/care-team")
 async def helper_care_team_send(body: CareTeamMsgIn, h: dict = Depends(require_helper_permission("chat"))):
     text = (body.text or "").strip()
-    if not text and not body.photo_url:
+    if not text and not body.photo_url and not body.audio_url:
         raise HTTPException(status_code=400, detail="Type a message")
     reader = f"h:{h['helper_id']}"
     role = ROLE_MAP.get(h.get("role"), ROLE_MAP["custom"])["label"]
     doc = {"message_id": new_id("ctm_"), "family_id": h["family_id"], "sender_type": "helper",
            "sender_id": h["helper_id"], "sender_name": h.get("name"), "sender_role": role,
-           "text": text or None, "photo_url": body.photo_url, "read_by": [reader], "created_at": now_iso()}
+           "text": text or None, "photo_url": body.photo_url,
+           "audio_url": body.audio_url, "audio_dur": body.audio_dur,
+           "read_by": [reader], "created_at": now_iso()}
     await db.care_team_messages.insert_one(doc)
+    preview = text or ("🎤 Voice message" if body.audio_url else "📷 Photo")
     await _notify_parents_helper(h, f"{h.get('name')} posted in the Care Team",
-                                 (text or "📷 Photo")[:90], "👥", "/care-team")
+                                 preview[:90], "👥", "/care-team")
     return {"message": care_msg_public(doc)}
 
 
@@ -7081,6 +7149,38 @@ async def helper_medical(h: dict = Depends(require_helper_permission("medical"))
             "emergency_contact": card.get("emergency_contact"),
         })
     return {"cards": cards}
+
+
+# --- Helper shift check-in / check-out -------------------------------------
+@api.post("/helper/checkin")
+async def helper_checkin(h: dict = Depends(get_current_helper)):
+    today = datetime.now(timezone.utc).date().isoformat()
+    existing = await db.helper_checkins.find_one(
+        {"helper_id": h["helper_id"], "date": today}, {"_id": 0})
+    at = now_iso()
+    if existing and existing.get("checked_in_at"):
+        return {"ok": True, "checked_in_at": existing["checked_in_at"],
+                "checked_out_at": existing.get("checked_out_at")}
+    await db.helper_checkins.update_one(
+        {"helper_id": h["helper_id"], "date": today},
+        {"$set": {"checked_in_at": at, "family_id": h["family_id"]},
+         "$setOnInsert": {"checkin_id": new_id("hci_")}}, upsert=True)
+    await _notify_parents_helper(h, f"{h.get('name')} checked in for the shift",
+                                 "On duty now", "🟢", f"/helper/{h['helper_id']}")
+    return {"ok": True, "checked_in_at": at, "checked_out_at": None}
+
+
+@api.post("/helper/checkout")
+async def helper_checkout(h: dict = Depends(get_current_helper)):
+    today = datetime.now(timezone.utc).date().isoformat()
+    at = now_iso()
+    r = await db.helper_checkins.update_one(
+        {"helper_id": h["helper_id"], "date": today}, {"$set": {"checked_out_at": at}})
+    if not r.matched_count:
+        raise HTTPException(status_code=400, detail="Check in first")
+    await _notify_parents_helper(h, f"{h.get('name')} checked out",
+                                 "Shift ended", "👋", f"/helper/{h['helper_id']}")
+    return {"ok": True, "checked_out_at": at}
 
 
 @api.post("/helper/upload")
@@ -7169,6 +7269,7 @@ async def startup():
         await db.helper_events.create_index([("family_id", 1), ("created_at", -1)])
         await db.care_team_messages.create_index([("family_id", 1), ("created_at", 1)])
         await db.helper_ratings.create_index([("helper_id", 1), ("date", 1)], unique=True)
+        await db.helper_checkins.create_index([("helper_id", 1), ("date", 1)], unique=True)
     except Exception as e:
         logger.warning(f"index setup: {e}")
     try:

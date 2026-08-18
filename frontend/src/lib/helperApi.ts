@@ -50,15 +50,17 @@ export async function helperApi<T = any>(path: string, opts: Options = {}): Prom
 }
 
 // Upload a proof photo as the helper (multipart, helper-scoped).
-export async function helperUpload(uri: string, kind: "image" = "image") {
+export async function helperUpload(uri: string, kind: "image" | "audio" = "image") {
   const { Platform } = require("react-native");
-  const name = uri.split("/").pop() || "proof.jpg";
+  const ext = kind === "audio" ? "m4a" : "jpg";
+  const type = kind === "audio" ? "audio/m4a" : "image/jpeg";
+  const name = uri.split("/").pop() || `upload.${ext}`;
   const form = new FormData();
   if (Platform.OS === "web") {
     const blob = await (await fetch(uri)).blob();
     form.append("file", blob, name);
   } else {
-    form.append("file", { uri, name, type: "image/jpeg" } as any);
+    form.append("file", { uri, name, type } as any);
   }
   form.append("kind", kind);
   const token = await getHelperToken();

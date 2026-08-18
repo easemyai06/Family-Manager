@@ -26,6 +26,16 @@ const TRIP_LABEL: Record<string, string> = {
   en_route: "🚗 On the way", picked_up: "🧒 Picked up", reached: "🏠 Reached home",
 };
 
+function shortTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, "0");
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+}
+
 export default function HelperDetail() {
   const { c } = useTheme();
   const router = useRouter();
@@ -208,6 +218,11 @@ export default function HelperDetail() {
             <View style={{ flex: 1 }}>
               <AppText family="display" weight="bold" size={18}>{helper.name}</AppText>
               <AppText size={13} color={c.onSurfaceSecondary}>{helper.role_label}</AppText>
+              {helper.checked_in_at && !helper.checked_out_at ? (
+                <AppText size={12} weight="semibold" color={c.success} style={{ marginTop: 2 }} testID="helper-onduty">
+                  🟢 On duty since {shortTime(helper.checked_in_at)}
+                </AppText>
+              ) : null}
             </View>
             <View style={[styles.statusPill, { backgroundColor: statusColor + "22" }]}>
               <View style={[styles.dot, { backgroundColor: statusColor }]} />
@@ -352,6 +367,14 @@ export default function HelperDetail() {
                       📍 Live · updated {timeAgo(tripByTask[t.task_id].loc_updated_at)} · tap to open in Maps
                     </AppText>
                   </Pressable>
+                ) : null}
+                {tripByTask[t.task_id]?.proof_url ? (
+                  <View style={{ marginTop: 8 }} testID={`arrival-proof-${t.task_id}`}>
+                    <SmartImage uri={tripByTask[t.task_id].proof_url} style={styles.tripMap} />
+                    <AppText size={11} color={c.onSurfaceTertiary} style={{ marginTop: 4 }}>
+                      📸 Arrival photo from the driver
+                    </AppText>
+                  </View>
                 ) : null}
               </View>
               <Pressable onPress={() => deleteTask(t.task_id)} hitSlop={8} testID={`del-task-${t.task_id}`}>

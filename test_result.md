@@ -2175,3 +2175,100 @@ frontend_batch33:
 agent_communication_batch33:
     -agent: "main"
     -message: "Batch #33 = TRUSTED HELPERS Phase 4. Builds on #30-#32 (all passed). CREDS: parent storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' — has a pickup task 'Pick up Aarav from school' with dest_lat/dest_lng SET (28.6,77.2) and working hours set ~40 min ahead so the shift reminder shows. TEST BOTH. BACKEND regression: (1) create_helper_task now persists pickup_from/pickup_to AND dest_lat/dest_lng (previously pickup fields were dropped on create!). (2) ETA: POST /api/helper/tasks/{id}/location returns eta_min; when task has dest coords + live point within 2000m during an active trip, fires EXACTLY ONE parent notification (emoji 📍) — a far point must NOT alert, a 2nd near point must NOT re-alert (trip.eta_alerted). Still 400 before Start Trip. (3) Shift: /helper/dashboard.shift has reminder true only when 0<=minutes_until<=60 before start_time (UTC). (4) Care Team photos: parent POST /api/care-team/chat {photo_url} and helper POST /helper/care-team {photo_url} store+return photo_url; still isolated from Family Chat. (5) SECURITY regression: helper WITHOUT chat perm still 403 on /helper/care-team; cross-token 401 still holds; medical still leak-free. FRONTEND (mobile 390x844): HELPER (sunita/1234): portal shows a shift reminder banner (portal-shift) + praise + Care Team button; open Care Team -> tap '+' (careteam-attach) -> see Take photo/Gallery options (careteam-camera/careteam-gallery); on web the picker/geolocation may be blocked — just confirm the sheet appears and no crash; pickup task -> Start Trip -> 'Share live location' (trip-live-*). PARENT (storytester): open Sunita -> each pickup task shows a drop-off button (dropoff-<task_id>) that says 'Arrival alerts on' (dest already set) — tapping re-captures location (web may deny, that's fine); Care Team Chat card on Family tab opens the group chat with a '+' attach button too. Do NOT run destructive cleanup — keep demo helper Sunita, her pickup task dest coords, working hours, ratings, care-team messages."
+
+# ============ Feature Batch #34 — TRUSTED HELPERS Phase 5 (Drop-off Photo / Shift Check-In / Care Team Voice Notes) ============
+backend_batch34:
+  - task: "Scoped helper media token (helpers can view care-team/1:1/own media only)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "NEW: make_helper_media_token (6h, account_type helper_media). Returned by helper login, /helper/me, /helper/dashboard. serve_file now branches: helper/helper_media tokens -> _serve_file_for_helper which allows ONLY files that are (a) the helper's own uploads (owner_id==helper_id), (b) referenced by a care_team_messages photo_url/audio_url in the helper's family, or (c) referenced by this helper's helper_messages. Everything else (Family Chat, Vault, other members' media) -> 404. Curl-verified: helper fetches own care-team audio via ?token=media_token -> 200; unrelated path -> 404."
+  - task: "Care Team voice notes + photos (audio_url/audio_dur passthrough)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "CareTeamMsgIn gained audio_url/audio_dur; care_msg_public returns them; both send endpoints accept audio (require text|photo|audio). Helper notification preview says '🎤 Voice message'. Still isolated from Family Chat."
+  - task: "Drop-off arrival photo on trip 'reached'"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "HelperTripIn gained proof_url; on stage=reached it stores trip.proof_url and the parent notification becomes 📸 'Arrival photo attached'. Curl-verified: proof_url shows in /helpers/{id}/activity trip; 📸 notif fires."
+  - task: "Shift check-in / check-out"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "NEW db.helper_checkins (unique helper_id+date). POST /helper/checkin (idempotent; first fires 🟢 parent notif), POST /helper/checkout (400 if not checked in; fires 👋). dashboard.checkin={checked_in_at,checked_out_at}. Parent list_helpers + get_helper now include checked_in_at/checked_out_at. Curl-verified incl. idempotency and parent visibility."
+
+frontend_batch34:
+  - task: "Helper media token wiring (photos/voice load on helper side)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/lib/api.ts, frontend/src/lib/helperApi.ts, frontend/app/helper-login.tsx, frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "helper-login + portal dashboard set the app mediaToken to the helper media_token. mediaImageSource native branch now falls back to ?token=mediaToken when no family authToken, so SmartImage + VoiceMessage load helper media on web AND native. helperUpload now takes kind ('image'|'audio')."
+  - task: "Care Team voice notes UI (record + playback)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/CareTeamChatView.tsx, frontend/app/care-team.tsx, frontend/app/helper-portal/care-team.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "CareTeamChatView: mic button (careteam-mic) when input empty -> recording bar (careteam-rec-cancel / careteam-rec-send) using expo-audio useAudioRecorder + mic permission flow; sends via onSendAudio (uploads m4a then POST audio_url+audio_dur). Voice bubbles render with existing VoiceMessage (ctvoice-*). Photo bubbles (ctphoto-*) also render now that helper media loads. Smoke-verified mic + attach present. NATIVE-ONLY: real mic recording needs a device build; web MediaRecorder may vary."
+  - task: "Shift check-in UI (helper) + on-duty badge (parent)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx, frontend/app/helper/[id].tsx, frontend/app/(tabs)/family.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Portal: big 'I've arrived — start my shift' button (portal-checkin) -> becomes '🟢 On duty since HH:MM · Check out' (portal-onduty/portal-checkout) -> '✅ Shift ended' (portal-checkedout). Parent: helper detail identity shows '🟢 On duty since HH:MM' (helper-onduty); Family tab helper card shows '🟢 On duty'. Smoke-verified on-duty state renders."
+  - task: "Drop-off photo prompt (helper) + arrival proof (parent)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx, frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Helper portal: tapping 'Reached Home' (trip-reached-*) now calls reachHome() which opens the camera (permission flow) to snap an arrival photo, uploads it, then POSTs stage=reached with proof_url (proceeds even if camera canceled). Parent helper/[id] pickup row shows the arrival photo thumbnail (arrival-proof-*). NATIVE-ONLY camera; web may block — confirm no crash."
+
+agent_communication_batch34:
+    -agent: "main"
+    -message: "Batch #34 = TRUSTED HELPERS Phase 5. Builds on #30-#33 (all passed). CREDS: parent storytester@fam.com / secret123 (family fam_c6ac3995c5a0430a, helper_id help_c77a0a30120545bb). Demo helper: username 'sunita' PIN '1234' (has chat+medical perms, a pickup task 'Pick up Aarav from school' with dest set, working hours set ~ so shift shows; may already be checked-in today). TEST BOTH. BACKEND regression + SECURITY (MOST IMPORTANT — new media access): (1) HELPER MEDIA SCOPING — helper login/dashboard return media_token. GET /api/files/{path}?token={media_token} must 200 for a file the helper uploaded OR a care_team/1:1 message references, and 404 for ANY other family file (e.g., a Family Chat photo path or a random path). A family (parent) media token must STILL work for family files and must NOT be broadenable by helpers. (2) VOICE/PHOTO — parent & helper POST /api/care-team & /helper/care-team with audio_url+audio_dur (and photo_url) store+return them; text|photo|audio all accepted; empty -> 400; still isolated from Family Chat. (3) DROP-OFF PROOF — POST /helper/tasks/{id}/trip stage=reached with proof_url stores trip.proof_url, marks done, fires 📸 parent notif; parent sees proof_url in /helpers/{id}/activity. (4) CHECK-IN — POST /helper/checkin idempotent (2nd call no new notif, same checked_in_at), fires 🟢; POST /helper/checkout 400 if not checked in else fires 👋; /helper/dashboard.checkin + parent /helpers & /helpers/{id} checked_in_at/checked_out_at. (5) prior security still holds: no-chat helper 403 on care-team, cross-token 401, medical leak-free, paused/removed blocked. FRONTEND (mobile 390x844): HELPER (sunita/1234): portal shows shift banner + check-in state (I've arrived OR On duty since) + Care Team; open Care Team -> when input empty a mic button (careteam-mic) shows; tapping records (careteam-rec-send/careteam-rec-cancel) — on web mic may be blocked, just confirm the recording bar appears/cancels and no crash; existing photo/voice bubbles render (ctphoto-*/ctvoice-*); pickup task Start Trip->Picked Up->Reached Home (trip-reached-*) opens camera (web may block — confirm it still marks reached and no crash). PARENT (storytester): Family tab helper card may show '🟢 On duty'; open Sunita -> identity shows on-duty; completed pickup shows an arrival photo thumbnail if present. Web can't record mic / open camera / move GPS — for those confirm the UI appears and the app doesn't crash; the network round-trips are the key checks. Do NOT run destructive cleanup; keep Sunita + her data."

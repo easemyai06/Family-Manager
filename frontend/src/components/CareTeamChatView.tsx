@@ -3,9 +3,17 @@ import { View, StyleSheet, Pressable, ScrollView, TextInput, Linking, Platform }
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  setAudioModeAsync,
+  getRecordingPermissionsAsync,
+  requestRecordingPermissionsAsync,
+} from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { SmartImage } from "@/src/components/ui/SmartImage";
+import { VoiceMessage } from "@/src/components/VoiceMessage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 
@@ -17,8 +25,15 @@ export type CareMsg = {
   sender_role?: string;
   text?: string | null;
   photo_url?: string | null;
+  audio_url?: string | null;
+  audio_dur?: number | null;
   created_at?: string;
 };
+
+function recFmt(ms: number) {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 function clock(iso?: string) {
   if (!iso) return "";
@@ -46,20 +61,29 @@ type Props = {
   onBack: () => void;
   onSend: (text: string) => Promise<void>;
   onSendPhoto?: (uri: string) => Promise<void>;
+  onSendAudio?: (uri: string, durationMs: number) => Promise<void>;
 };
 
-export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onSend, onSendPhoto }: Props) {
+export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onSend, onSendPhoto, onSendAudio }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recMs, setRecMs] = useState(0);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recStart = useRef(0);
+  const recTimer = useRef<any>(null);
+  const cancelRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
     return () => clearTimeout(t);
   }, [messages.length]);
+
+  useEffect(() => () => { if (recTimer.current) clearInterval(recTimer.current); }, []);
 
   const send = async () => {
     const t = text.trim();
@@ -71,6 +95,51 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onS
     } catch {
       setText(t);
     }
+    setSending(false);
+  };
+
+  const ensureMic = async () => {
+    let perm = await getRecordingPermissionsAsync();
+    if (perm.granted) return true;
+    if (perm.canAskAgain) {
+      perm = await requestRecordingPermissionsAsync();
+      if (perm.granted) return true;
+    }
+    if (Platform.OS !== "web" && !perm.canAskAgain) Linking.openSettings();
+    return false;
+  };
+
+  const startRec = async () => {
+    cancelRef.current = false;
+    setShowAttach(false);
+    if (!(await ensureMic())) return;
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      recStart.current = Date.now();
+      setRecMs(0);
+      setRecording(true);
+      recTimer.current = setInterval(() => setRecMs(Date.now() - recStart.current), 200);
+    } catch {
+      setRecording(false);
+    }
+  };
+
+  const stopRec = async (cancel: boolean) => {
+    if (!recording) return;
+    if (recTimer.current) clearInterval(recTimer.current);
+    const elapsed = Date.now() - recStart.current;
+    setRecording(false);
+    try {
+      await recorder.stop();
+    } catch {}
+    const uri = recorder.uri;
+    if (cancel || elapsed < 700 || !uri || !onSendAudio) return;
+    setSending(true);
+    try {
+      await onSendAudio(uri, elapsed);
+    } catch {}
     setSending(false);
   };
 
@@ -165,6 +234,11 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onS
                         <SmartImage uri={m.photo_url} style={[styles.photo, { marginBottom: m.text ? 6 : 2 }]} />
                       </Pressable>
                     ) : null}
+                    {m.audio_url ? (
+                      <View testID={`ctvoice-${m.message_id}`}>
+                        <VoiceMessage uri={m.audio_url} duration={(m.audio_dur || 0) * 1000} mine={isMine} />
+                      </View>
+                    ) : null}
                     {m.text ? <AppText size={15} color={isMine ? "#fff" : c.onSurface} style={{ lineHeight: 21 }}>{m.text}</AppText> : null}
                     <AppText size={10} color={isMine ? "#ffffffcc" : c.onSurfaceTertiary} style={{ marginTop: 3, alignSelf: "flex-end" }}>
                       {clock(m.created_at)}
@@ -190,26 +264,53 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onS
             </View>
           ) : null}
           <View style={styles.inputRow}>
-            {onSendPhoto ? (
-              <Pressable onPress={() => setShowAttach((s) => !s)} style={styles.attachBtn} hitSlop={8} testID="careteam-attach">
-                <Ionicons name={showAttach ? "close" : "add-circle"} size={28} color={c.brandPrimary} />
-              </Pressable>
-            ) : null}
-            <View style={[styles.inputWrap, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
-              <TextInput
-                value={text}
-                onChangeText={setText}
-                placeholder="Message the care team…"
-                placeholderTextColor={c.onSurfaceTertiary}
-                style={{ flex: 1, fontSize: 15, color: c.onSurface, paddingVertical: 8, maxHeight: 120 }}
-                multiline
-                onFocus={() => setShowAttach(false)}
-                testID="careteam-input"
-              />
-            </View>
-            <Pressable onPress={send} disabled={!text.trim() || sending} style={[styles.sendBtn, { backgroundColor: text.trim() ? c.brandPrimary : c.border }]} testID="careteam-send">
-              <Ionicons name="send" size={18} color="#fff" />
-            </Pressable>
+            {recording ? (
+              <View style={[styles.recBar, { backgroundColor: c.error + "14", borderColor: c.error + "40" }]}>
+                <Pressable onPress={() => stopRec(true)} hitSlop={8} testID="careteam-rec-cancel">
+                  <Ionicons name="trash-outline" size={20} color={c.error} />
+                </Pressable>
+                <View style={[styles.recDot, { backgroundColor: c.error }]} />
+                <AppText size={14} weight="semibold" color={c.onSurface} style={{ flex: 1 }}>
+                  Recording… {recFmt(recMs)}
+                </AppText>
+                <Pressable onPress={() => stopRec(false)} style={[styles.sendBtn, { backgroundColor: c.brandPrimary }]} testID="careteam-rec-send">
+                  <Ionicons name="send" size={18} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                {onSendPhoto ? (
+                  <Pressable onPress={() => setShowAttach((s) => !s)} style={styles.attachBtn} hitSlop={8} testID="careteam-attach">
+                    <Ionicons name={showAttach ? "close" : "add-circle"} size={28} color={c.brandPrimary} />
+                  </Pressable>
+                ) : null}
+                <View style={[styles.inputWrap, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+                  <TextInput
+                    value={text}
+                    onChangeText={setText}
+                    placeholder="Message the care team…"
+                    placeholderTextColor={c.onSurfaceTertiary}
+                    style={{ flex: 1, fontSize: 15, color: c.onSurface, paddingVertical: 8, maxHeight: 120 }}
+                    multiline
+                    onFocus={() => setShowAttach(false)}
+                    testID="careteam-input"
+                  />
+                </View>
+                {text.trim() ? (
+                  <Pressable onPress={send} disabled={sending} style={[styles.sendBtn, { backgroundColor: c.brandPrimary }]} testID="careteam-send">
+                    <Ionicons name="send" size={18} color="#fff" />
+                  </Pressable>
+                ) : onSendAudio ? (
+                  <Pressable onPress={startRec} style={[styles.sendBtn, { backgroundColor: c.brandPrimary }]} testID="careteam-mic">
+                    <Ionicons name="mic" size={20} color="#fff" />
+                  </Pressable>
+                ) : (
+                  <Pressable onPress={send} disabled style={[styles.sendBtn, { backgroundColor: c.border }]} testID="careteam-send">
+                    <Ionicons name="send" size={18} color="#fff" />
+                  </Pressable>
+                )}
+              </>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -231,6 +332,8 @@ const styles = StyleSheet.create({
   attachBtn: { paddingBottom: 8 },
   attachSheet: { flexDirection: "row", gap: spacing.md, borderRadius: radius.md, borderWidth: 1, padding: spacing.sm, marginBottom: spacing.sm },
   attachItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: spacing.sm },
+  recBar: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  recDot: { width: 10, height: 10, borderRadius: 5 },
   inputWrap: { flex: 1, flexDirection: "row", alignItems: "center", borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: spacing.md },
   sendBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", ...shadow(1) },
 });

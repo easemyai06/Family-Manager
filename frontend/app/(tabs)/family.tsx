@@ -271,6 +271,9 @@ export default function Family() {
                       {h.role_label}
                       {h.status === "active" && h.tasks_total ? ` · ${h.tasks_done}/${h.tasks_total} tasks today` : ""}
                     </AppText>
+                    {h.checked_in_at && !h.checked_out_at ? (
+                      <AppText size={11} weight="semibold" color={c.success} style={{ marginTop: 1 }}>🟢 On duty</AppText>
+                    ) : null}
                   </View>
                   {h.unread_chat ? (
                     <View style={[styles.helperUnread, { backgroundColor: c.error }]} testID={`helper-unread-${h.helper_id}`}>

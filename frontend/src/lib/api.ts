@@ -81,7 +81,12 @@ export function mediaImageSource(
       const sep = url.includes("?") ? "&" : "?";
       return { uri: `${full}${sep}token=${mediaToken || ""}` };
     }
-    return authToken ? { uri: full, headers: { Authorization: `Bearer ${authToken}` } } : { uri: full };
+    if (authToken) return { uri: full, headers: { Authorization: `Bearer ${authToken}` } };
+    if (mediaToken) {
+      const sep = url.includes("?") ? "&" : "?";
+      return { uri: `${full}${sep}token=${mediaToken}` };
+    }
+    return { uri: full };
   }
   return { uri: url };
 }

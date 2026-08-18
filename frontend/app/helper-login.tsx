@@ -10,6 +10,7 @@ import { TextField } from "@/src/components/ui/TextField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { helperApi, setHelperToken } from "@/src/lib/helperApi";
+import { setMediaToken } from "@/src/lib/api";
 
 export default function HelperLogin() {
   const { c } = useTheme();
@@ -42,6 +43,7 @@ export default function HelperLogin() {
           : { username: username.trim().toLowerCase(), pin: pin.trim() };
       const res = await helperApi(path, { method: "POST", body, auth: false });
       await setHelperToken(res.token);
+      if (res.media_token) setMediaToken(res.media_token);
       router.replace("/helper-portal");
     } catch (e: any) {
       setError(e?.message || "Something went wrong");

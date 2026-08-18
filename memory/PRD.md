@@ -621,3 +621,42 @@ live GPS only during an active pickup trip (device build needed to actually move
   validated by backend. Preview only — Publish to ship to production.
 - REMAINING backlog: overnight-shift handling, timezone-aware working hours (currently UTC), true
   background/push shift & ETA alerts (needs push setup), device-build validation for GPS/camera.
+
+
+## Batch #34 — TRUSTED HELPERS Phase 5 (Drop-off Photo / Shift Check-In / Care Team Voice Notes) (June 2026)
+User-requested follow-ups on the helper system, all backend-authorized (never UI-only):
+- Helper-scoped media token (NEW): make_helper_media_token (6h, account_type='helper_media'), returned
+  by /helper/login, /helper/me, /helper/dashboard. serve_file branches: helper/helper_media tokens ->
+  _serve_file_for_helper allows ONLY files that are (a) the helper's own uploads (owner_id==helper_id),
+  (b) referenced by a care_team_messages photo_url/audio_url in the helper's family, or (c) referenced by
+  this helper's helper_messages — everything else (Family Chat, Vault, other members' media, random
+  paths) -> 404. Normal family media tokens still serve family files and can't be broadened by helpers.
+- Care Team voice notes: CareTeamMsgIn gained audio_url/audio_dur (photo_url already existed);
+  care_msg_public returns them; both send endpoints (parent /api/care-team/chat + helper
+  /api/helper/care-team) accept text|photo|audio (empty -> 400). Frontend CareTeamChatView records via
+  expo-audio useAudioRecorder (mic button careteam-mic -> recording bar careteam-rec-send/-cancel + mic
+  permission flow) and plays back via VoiceMessage (ctvoice-*); photo bubbles ctphoto-*. Still fully
+  isolated from Family Chat AND the 1:1 helper chat.
+- Drop-off arrival photo: HelperTripIn gained proof_url; on stage=reached it stores trip.proof_url,
+  completes the task, and the parent notification becomes 📸 'Arrival photo attached' (🚗 fallback if
+  no photo). Helper portal 'Reached Home' (trip-reached-*) opens the camera (permission flow), uploads,
+  then POSTs stage=reached with proof_url (proceeds even if camera canceled). Parent helper/[id] pickup
+  row shows the arrival thumbnail (arrival-proof-*).
+- Shift check-in / check-out: NEW db.helper_checkins (unique helper_id+date). POST /helper/checkin
+  (idempotent; first fires 🟢 parent notif), POST /helper/checkout (400 if not checked in; fires 👋).
+  dashboard.checkin + parent list_helpers/get_helper carry checked_in_at/checked_out_at. Helper portal
+  'I've arrived — start my shift' (portal-checkin) -> 'On duty since HH:MM · Check out'
+  (portal-onduty/portal-checkout) -> 'Shift ended' (portal-checkedout). Parent sees '🟢 On duty since
+  HH:MM' on helper detail (helper-onduty) + Family tab helper card.
+- Verified: testing agent Batch #34 — BACKEND 33/33 pytest
+  (backend/tests/test_batch34_trusted_helpers_phase5.py) incl. the marquee media-token scoping (200 for
+  own/care-team/helper-msg files, 404 for Family Chat / Vault / other-member / random paths; parent
+  token no regression), care-team voice+photo accept/empty-400/isolation, drop-off proof persist+📸
+  notif+activity, check-in idempotency + checkout-400-before-checkin + 👋, and security regressions
+  (cross-token 401, no-chat 403, medical leak-free, paused blocked). FRONTEND (sunita/1234): shift banner,
+  Care Team mic->recording bar->cancel (no crash), ctphoto-*/ctvoice-* bubbles render; parent on-duty +
+  arrival-proof testIDs code-confirmed. No bugs found. Preview only — Publish to ship to production.
+- NATIVE-ONLY (needs a real device build via Publish, NOT verifiable in Expo Go / web): mic voice
+  recording, camera arrival-photo capture, real GPS movement for the live pickup map/ETA.
+- REMAINING backlog: overnight-shift handling, timezone-aware working hours (currently UTC), true
+  background/push shift & ETA alerts (needs push setup), device-build validation for GPS/camera/mic.

@@ -43,6 +43,12 @@ export default function HelperPortalCareTeam() {
     await load();
   };
 
+  const onSendAudio = async (uri: string, durMs: number) => {
+    const up = await helperUpload(uri, "audio");
+    await helperApi("/helper/care-team", { method: "POST", body: { audio_url: up.url, audio_dur: Math.round(durMs / 1000) } });
+    await load();
+  };
+
   return (
     <CareTeamChatView
       subtitle="Parents + helpers"
@@ -52,6 +58,7 @@ export default function HelperPortalCareTeam() {
       onBack={() => router.back()}
       onSend={onSend}
       onSendPhoto={onSendPhoto}
+      onSendAudio={onSendAudio}
     />
   );
 }

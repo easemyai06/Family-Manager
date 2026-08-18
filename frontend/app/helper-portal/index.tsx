@@ -12,6 +12,7 @@ import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { helperApi, helperUpload, setHelperToken } from "@/src/lib/helperApi";
+import { setMediaToken } from "@/src/lib/api";
 
 const CAT_ICON: Record<string, string> = {
   chore: "🧹", meal: "🍳", pickup: "🚗", care: "🧡", shopping: "🛒", other: "📌",
@@ -25,6 +26,16 @@ function greeting() {
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
+}
+
+function clockOf(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, "0");
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
 }
 
 export default function HelperPortal() {
@@ -53,7 +64,9 @@ export default function HelperPortal() {
 
   const load = useCallback(async () => {
     try {
-      setData(await helperApi("/helper/dashboard"));
+      const d = await helperApi("/helper/dashboard");
+      if (d?.media_token) setMediaToken(d.media_token);
+      setData(d);
     } catch (e: any) {
       if (e?.status === 401 || e?.status === 403) {
         await setHelperToken(null);
@@ -166,6 +179,52 @@ export default function HelperPortal() {
     }
   };
 
+  const reachHome = async (t: any) => {
+    // Ask the driver to snap a quick arrival photo (optional proof).
+    let proof_url: string | null = null;
+    try {
+      const perm = await ImagePicker.getCameraPermissionsAsync();
+      let status = perm.status;
+      if (status !== "granted" && perm.canAskAgain) status = (await ImagePicker.requestCameraPermissionsAsync()).status;
+      if (status === "granted") {
+        const res = await ImagePicker.launchCameraAsync({ quality: 0.6 });
+        if (!res.canceled && res.assets?.[0]) {
+          flash("Uploading arrival photo…");
+          const up = await helperUpload(res.assets[0].uri);
+          proof_url = up.url;
+        }
+      }
+    } catch {}
+    try {
+      await helperApi(`/helper/tasks/${t.task_id}/trip`, { method: "POST", body: { stage: "reached", proof_url } });
+      stopShare();
+      flash(proof_url ? "Reached — arrival photo sent 📸" : "Reached home ✅");
+      load();
+    } catch {
+      flash("Couldn't update");
+    }
+  };
+
+  const checkIn = async () => {
+    try {
+      await helperApi("/helper/checkin", { method: "POST" });
+      flash("You're on duty 🟢");
+      load();
+    } catch {
+      flash("Couldn't check in");
+    }
+  };
+
+  const checkOut = async () => {
+    try {
+      await helperApi("/helper/checkout", { method: "POST" });
+      flash("Checked out 👋");
+      load();
+    } catch {
+      flash("Couldn't check out");
+    }
+  };
+
   const ensureLocation = async () => {
     let perm = await Location.getForegroundPermissionsAsync();
     if (perm.granted) return true;
@@ -269,6 +328,30 @@ export default function HelperPortal() {
                 : `Next shift at ${data.shift.start_time}`}
             </AppText>
           </View>
+        ) : null}
+
+        {data ? (
+          !data.checkin?.checked_in_at ? (
+            <Pressable onPress={checkIn} style={[styles.checkinBtn, { backgroundColor: c.success }]} testID="portal-checkin">
+              <Ionicons name="log-in-outline" size={20} color="#fff" />
+              <AppText size={15} weight="bold" color="#fff">I've arrived — start my shift</AppText>
+            </Pressable>
+          ) : !data.checkin?.checked_out_at ? (
+            <View style={[styles.checkinRow, { backgroundColor: c.success + "18", borderColor: c.success + "40" }]} testID="portal-onduty">
+              <AppText size={13} weight="semibold" color={c.success} style={{ flex: 1 }}>
+                🟢 On duty since {clockOf(data.checkin.checked_in_at)}
+              </AppText>
+              <Pressable onPress={checkOut} style={[styles.checkoutBtn, { borderColor: c.border }]} testID="portal-checkout">
+                <AppText size={13} weight="bold" color={c.onSurface}>Check out</AppText>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={[styles.checkinRow, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]} testID="portal-checkedout">
+              <AppText size={13} weight="semibold" color={c.onSurfaceSecondary}>
+                ✅ Shift ended at {clockOf(data.checkin.checked_out_at)}
+              </AppText>
+            </View>
+          )
         ) : null}
 
         <View style={styles.navRow}>
@@ -407,7 +490,7 @@ export default function HelperPortal() {
                           <View style={[styles.tripChip, { backgroundColor: c.brandTertiary }]}>
                             <AppText size={12} weight="bold" color={c.onBrandTertiary}>🧒 Picked up</AppText>
                           </View>
-                          <Pressable onPress={() => advanceTrip(t, "reached")} style={[styles.actBtn, { backgroundColor: c.success }]} testID={`trip-reached-${t.task_id}`}>
+                          <Pressable onPress={() => reachHome(t)} style={[styles.actBtn, { backgroundColor: c.success }]} testID={`trip-reached-${t.task_id}`}>
                             <Ionicons name="home" size={15} color="#fff" />
                             <AppText size={13} weight="bold" color="#fff">Reached Home</AppText>
                           </Pressable>
@@ -563,6 +646,9 @@ const styles = StyleSheet.create({
   navBtn: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
   praise: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   shift: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  checkinBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: radius.lg, paddingVertical: spacing.md, marginBottom: spacing.md, ...shadow(1) },
+  checkinRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
+  checkoutBtn: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 7 },
   navBadge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   navDot: { width: 8, height: 8, borderRadius: 4 },
   tripChip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 9, justifyContent: "center" },
