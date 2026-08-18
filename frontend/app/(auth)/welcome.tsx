@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Button } from "@/src/components/ui/Button";
+import { AppleSignInButton } from "@/src/components/AppleSignInButton";
 import { spacing } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
 
@@ -46,6 +47,7 @@ export default function Welcome() {
 
           <View style={styles.actions}>
             <Button label="Get Started" onPress={() => router.push("/(auth)/register")} testID="get-started-btn" />
+            <AppleSignInButton variant="white" />
             <Button
               label="Continue with Google"
               variant="secondary"

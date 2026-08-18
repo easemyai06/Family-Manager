@@ -221,3 +221,12 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - Tooling: `scripts/capture_screens.py` + `scripts/capture_chat_fresh.py` (Playwright captures) and `scripts/compose.py` (PIL compositor).
 - No sensitive data exposed (fictional demo family only). Chat captured from a fresh seeded account to avoid TEST_SOS demo noise.
 
+
+
+## Sign in with Apple (App Store blocker fix) — June 2026
+- Added Sign in with Apple (iOS) alongside Google login to satisfy Apple guideline 5.1.1(v).
+- Backend: `POST /api/auth/apple` verifies the Apple identity token against Apple JWKS (RS256, issuer + audience + expiry), upserts a user keyed on `apple_sub`, and issues the app JWT (same as login). Audiences default to bundle id `com.emergent.ourstory.ff6oeh` + `host.exp.Exponent` (`APPLE_AUDIENCES` env). Email index made sparse-unique; `apple_sub` sparse-unique index added.
+- Token revocation on account deletion wired best-effort in `DELETE /api/auth/account` (`_apple_revoke_user`) — activates once Apple creds are provided as backend env: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (.p8 contents), `APPLE_CLIENT_ID`. Without creds it logs & skips (sign-in still works).
+- Frontend: `loginWithApple` in `AuthContext`; reusable `src/components/AppleSignInButton.tsx` (native Apple button, iOS + `isAvailableAsync` only) added to Welcome/Login/Register. `expo-apple-authentication` installed + added to `app.json` plugins; `ios.usesAppleSignIn: true`.
+- Export compliance: `ios.config.usesNonExemptEncryption: false` set in `app.json`.
+- CAVEAT: Apple button + full sign-in flow are iOS-native only — NOT testable in web preview / Expo Go web. Must be validated on a real iOS build. Backend verified: invalid token -> 401; existing register/login/me unaffected (no regression).

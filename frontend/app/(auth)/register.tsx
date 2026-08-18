@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
 import { Button } from "@/src/components/ui/Button";
+import { AppleSignInButton } from "@/src/components/AppleSignInButton";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing } from "@/src/theme/tokens";
 import { useAuth } from "@/src/auth/AuthContext";
@@ -105,6 +106,9 @@ export default function Register() {
           testID="register-google-btn"
           icon={<Ionicons name="logo-google" size={18} color={c.onSurface} />}
         />
+        <View style={{ marginTop: spacing.md }}>
+          <AppleSignInButton variant="black" onError={setError} />
+        </View>
 
         <Pressable onPress={() => router.replace("/(auth)/login")} style={styles.switch} testID="go-login-btn">
           <AppText size={14} color={c.onSurfaceSecondary}>

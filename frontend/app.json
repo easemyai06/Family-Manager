@@ -11,6 +11,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.ourstory.ff6oeh",
+      "usesAppleSignIn": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Share family photos in posts and profiles",
         "NSCameraUsageDescription": "Capture family moments to share",
@@ -45,6 +49,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       [
         "expo-image-picker",
         {

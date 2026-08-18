@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { Platform } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { storage } from "@/src/utils/storage";
 import { api, setAuthToken, setMediaToken, setUnauthorizedHandler } from "@/src/lib/api";
 
@@ -35,6 +36,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -138,6 +140,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [exchangeSessionId]);
 
+  const loginWithApple = useCallback(async () => {
+    try {
+      const cred = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      // Apple returns the name/email only on the FIRST sign-in — send them through.
+      const fullName = cred.fullName
+        ? [cred.fullName.givenName, cred.fullName.familyName].filter(Boolean).join(" ")
+        : null;
+      const data = await api<{ token: string }>("/auth/apple", {
+        method: "POST",
+        body: {
+          identity_token: cred.identityToken,
+          authorization_code: cred.authorizationCode,
+          name: fullName || null,
+          email: cred.email || null,
+        },
+      });
+      await persistToken(data.token);
+    } catch (e: any) {
+      if (e?.code === "ERR_REQUEST_CANCELED") return; // user cancelled — not an error
+      throw e;
+    }
+  }, [persistToken]);
+
   const logout = useCallback(async () => {
     setAuthToken(null);
     setMediaToken(null);
@@ -157,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, member, initializing, login, register, loginWithGoogle, logout, refresh: applyMe }}
+      value={{ user, member, initializing, login, register, loginWithGoogle, loginWithApple, logout, refresh: applyMe }}
     >
       {children}
     </AuthContext.Provider>

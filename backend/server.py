@@ -47,6 +47,19 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGO = "HS256"
 JWT_DAYS = 60
 
+# Sign in with Apple — verify identity tokens against Apple's public JWKS.
+# APPLE_AUDIENCES must include the iOS bundle id AND host.exp.Exponent (Expo Go).
+APPLE_ISSUER = "https://appleid.apple.com"
+APPLE_AUDIENCES = [a.strip() for a in os.environ.get(
+    "APPLE_AUDIENCES", "com.emergent.ourstory.ff6oeh,host.exp.Exponent").split(",") if a.strip()]
+_apple_jwks_client = jwt.PyJWKClient("https://appleid.apple.com/auth/keys")
+# Optional Apple credentials — only needed to revoke tokens on account deletion
+# (Apple guideline 5.1.1(v)). Supplied once the developer has an Apple account.
+APPLE_TEAM_ID = os.environ.get("APPLE_TEAM_ID")
+APPLE_KEY_ID = os.environ.get("APPLE_KEY_ID")
+APPLE_PRIVATE_KEY = os.environ.get("APPLE_PRIVATE_KEY")   # raw contents of the .p8 key
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "com.emergent.ourstory.ff6oeh")
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -372,6 +385,13 @@ class LoginIn(BaseModel):
 
 class SessionIn(BaseModel):
     session_id: str
+
+
+class AppleAuthIn(BaseModel):
+    identity_token: str
+    authorization_code: Optional[str] = None
+    name: Optional[str] = None       # only sent by the client on first sign-in
+    email: Optional[str] = None      # only sent by the client on first sign-in
 
 
 class FamilyIn(BaseModel):
@@ -743,7 +763,100 @@ async def google_session(body: SessionIn):
             "password_hash": None, "picture": data.get("picture"),
             "family_id": None, "provider": "google", "created_at": now_iso(),
         }
+    return {"token": make_token(u["user_id"]), "user": public_user(u)}
+
+
+# --- Sign in with Apple (iOS) ---------------------------------------------
+def _verify_apple_identity_token(identity_token: str) -> dict:
+    """Verify an Apple identity token against Apple's JWKS (RS256). Sync -> threadpool."""
+    signing_key = _apple_jwks_client.get_signing_key_from_jwt(identity_token)
+    return jwt.decode(
+        identity_token, signing_key.key, algorithms=["RS256"],
+        audience=APPLE_AUDIENCES, issuer=APPLE_ISSUER,
+    )
+
+
+def _apple_client_secret() -> Optional[str]:
+    """Signed client secret for Apple's token endpoints. None unless creds present."""
+    if not (APPLE_TEAM_ID and APPLE_KEY_ID and APPLE_PRIVATE_KEY):
+        return None
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {"iss": APPLE_TEAM_ID, "iat": now, "exp": now + timedelta(minutes=10),
+         "aud": APPLE_ISSUER, "sub": APPLE_CLIENT_ID},
+        APPLE_PRIVATE_KEY, algorithm="ES256", headers={"kid": APPLE_KEY_ID},
+    )
+
+
+async def _apple_exchange_refresh_token(code: str) -> Optional[str]:
+    """Exchange a native authorization code for a refresh token (needs Apple creds)."""
+    secret = _apple_client_secret()
+    if not (secret and code):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15) as cl:
+            r = await cl.post("https://appleid.apple.com/auth/token", data={
+                "client_id": APPLE_CLIENT_ID, "client_secret": secret,
+                "code": code, "grant_type": "authorization_code"})
+        if r.status_code == 200:
+            return r.json().get("refresh_token")
+        logger.warning(f"apple token exchange failed: {r.status_code} {r.text[:180]}")
+    except Exception as e:
+        logger.warning(f"apple token exchange error: {e}")
+    return None
+
+
+async def _apple_revoke_user(u: dict) -> None:
+    """Best-effort token revocation on account deletion (Apple 5.1.1(v))."""
+    secret = _apple_client_secret()
+    rt = u.get("apple_refresh_token")
+    if not (secret and rt):
+        return
+    try:
+        async with httpx.AsyncClient(timeout=15) as cl:
+            await cl.post("https://appleid.apple.com/auth/revoke", data={
+                "client_id": APPLE_CLIENT_ID, "client_secret": secret,
+                "token": rt, "token_type_hint": "refresh_token"})
+    except Exception as e:
+        logger.warning(f"apple revoke error: {e}")
+
+
+@api.post("/auth/apple")
+async def apple_auth(body: AppleAuthIn):
+    try:
+        claims = await run_in_threadpool(_verify_apple_identity_token, body.identity_token)
+    except Exception as e:
+        logger.warning(f"apple token verify failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+    apple_sub = claims.get("sub")
+    if not apple_sub:
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+    email = ((claims.get("email") or body.email or "").lower() or None)
+    # key on apple_sub; link an existing same-email account if there is one
+    u = await db.users.find_one({"apple_sub": apple_sub})
+    if not u and email:
+        u = await db.users.find_one({"email": email})
+    if not u:
+        uid = new_id("user_")
+        u = {
+            "user_id": uid,
+            "name": (body.name or "").strip() or (email.split("@")[0] if email else "Member"),
+            "email": email, "password_hash": None, "picture": None,
+            "family_id": None, "provider": "apple", "apple_sub": apple_sub,
+            "created_at": now_iso(),
+        }
         await db.users.insert_one(u)
+    else:
+        set_fields = {"apple_sub": apple_sub}
+        if body.name and not u.get("name"):
+            set_fields["name"] = body.name.strip()
+        await db.users.update_one({"user_id": u["user_id"]}, {"$set": set_fields})
+    # best-effort: capture a refresh token so we can revoke on delete (needs Apple creds)
+    if body.authorization_code:
+        rt = await _apple_exchange_refresh_token(body.authorization_code)
+        if rt:
+            await db.users.update_one({"user_id": u["user_id"]}, {"$set": {"apple_refresh_token": rt}})
+    u = await db.users.find_one({"user_id": u["user_id"]}, {"_id": 0})
     return {"token": make_token(u["user_id"]), "user": public_user(u)}
 
 
@@ -887,6 +1000,10 @@ async def delete_account(user: dict = Depends(get_current_user)):
     fid = user.get("family_id")
     mine = await member_for_user(user)
     is_admin = bool(mine and mine.get("role") == "admin")
+
+    # Sign in with Apple requires revoking the user's Apple token on deletion.
+    if user.get("provider") == "apple":
+        await _apple_revoke_user(user)
 
     if fid and is_admin:
         # gather every user linked to this family (for prefs cleanup) BEFORE purging
@@ -4978,8 +5095,13 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     try:
-        await db.users.create_index("email", unique=True)
+        try:
+            await db.users.drop_index("email_1")
+        except Exception:
+            pass
+        await db.users.create_index("email", unique=True, sparse=True)
         await db.users.create_index("user_id", unique=True)
+        await db.users.create_index("apple_sub", unique=True, sparse=True)
         await db.members.create_index("family_id")
         await db.posts.create_index("family_id")
         await db.events.create_index([("family_id", 1), ("date", 1)])
