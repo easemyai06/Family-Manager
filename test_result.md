@@ -1636,3 +1636,22 @@ batch26_sec:
 agent_communication_batch26_sec:
     -agent: "main"
     -message: "Batch #26 security remediation (BACKEND ONLY). Please REGRESSION-test that legitimate SAME-FAMILY flows still work AND cross-family access is blocked. Use testdad@fam.com/secret123 (family A) and a fresh registered user who runs POST /api/seed/demo (family B). VERIFY: (1) Shopping: A creates /api/shopping/lists then an item; A can GET items, toggle (200), delete (200). B CANNOT toggle A's item (404) and B deleting A's item does NOT remove it (item still togglable by A afterward). (2) Todos: same pattern with /api/todos/lists + items — same-family toggle/delete OK, cross-family toggle 404 and no cross-family deletion. (3) Invite/join still works: GET /api/families/invite (200), GET /api/families/preview?code=CODE (200, children have photo_url null), and preview returns 429 after ~20 rapid calls in 10 min. (4) POST /api/families/join with claim_member_id still links a pending profile (no duplicate). (5) Auth sanity: login 200, wrong password 401. Do NOT retest unrelated features or frontend."
+
+# ============ Batch #27 — Responsive layout & alignment pass ============
+batch27_responsive:
+  - task: "Fixed-width/absolute anti-patterns removed; important titles wrap"
+    implemented: true
+    working: true
+    file: "frontend/src/components/VaultGate.tsx, frontend/src/components/PostCard.tsx, frontend/app/post/[id].tsx, frontend/src/components/AffectionAnimation.tsx, frontend/app/vault/index.tsx, frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/calendar.tsx"
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "VaultGate PIN keypad was fixed width 300 (overflowed 320px) -> now width 100% / maxWidth 340 with 30% keys. PostCard & post/[id] & AffectionAnimation switched from module-level Dimensions.get to useWindowDimensions (resize-safe images/particles). Wrapped important titles to 2 lines (Home needs-attention + Today event, Vault folder/expiry names, Calendar 'waiting on'). Verified: Home has NO horizontal overflow at 320 and 430 (scrollWidth==clientWidth), reflows cleanly."
+        -working: true
+        -agent: "testing"
+        -comment: "iteration_26: FULL multi-width responsive audit PASS. 3 widths (320x640, 390x844, 430x932) x ~18 screens = 54+ measurements, ALL pass (0 horizontal document overflow, 0 ellipsis-clipped important text). Vault PIN keypad fits fully at 320 (3-col grid + backspace). Family Members / Home Quick Actions / Emergency shortcuts / Vault folders grids all fit at 320. Extra Large text (1.45x) audit at 320/390 on Home/Calendar/Family/More: 0 doc overflow, title wraps as expected (acceptable), header icons stay on-row, bottom-tab labels single-line. Informational-only (NOT bugs): home-chat unread badge overshoots its 36px icon by 3px (intended notification badge, inside viewport); Add Event end-time-input DOM reports right=387 but ancestor overflow:hidden clips it and docSW stays 320 (RNW measurement artifact — the field is a flex:1 half-row column, correctly constrained). No fixes required."
+agent_communication_batch27_responsive:
+    -agent: "main"
+    -message: "Batch #27 RESPONSIVE QA (FRONTEND ONLY). Please do a MULTI-WIDTH visual responsive audit. Login testdad@fam.com/secret123. For EACH width in [320x640, 360x740, 390x844, 430x932], visit these screens and report CONCRETE issues: horizontal overflow (document scrollWidth > clientWidth + 2), clipped/overlapping text, important text truncated to '...', buttons with clipped/off-center text, cards extending beyond the viewport, tiny unreadable controls, or big inconsistent blank space. SCREENS: Login, Home (normal), Calendar (tab), an Event card (open one), Add Event (/event/create), Family (tab), a Member profile (tap a member), Chores (/chores), Shopping (/shopping), Wishlist (/wishlist), Chat conversation (open family chat), Send Love (/affection/send), Vault (/vault — note PIN keypad must fit at 320), Emergency (/emergency), Accessibility (/settings/accessibility). ALSO: set Accessibility Text Size = Extra Large and re-check Home, Family, Calendar for overlap/clipping (wrapping is expected/OK). ALSO spot-check the member status strip and any 2-column grids don't cram at 320. Report a per-screen/per-width pass/fail with the specific element. Do NOT change product functionality; this is layout/alignment only. Do NOT test backend."

@@ -444,7 +444,7 @@ function AttentionSection({ items, go, c, compact }: any) {
                   <Ionicons name={it.icon} size={20} color={color} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <AppText size={14} weight="bold" numberOfLines={1}>{it.title}</AppText>
+                  <AppText size={14} weight="bold" numberOfLines={2}>{it.title}</AppText>
                   {it.subtitle ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{it.subtitle}</AppText> : null}
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
@@ -468,7 +468,7 @@ function TodaySection({ events, go, c, compact }: any) {
               <Pressable key={e.event_id} style={styles.eventRow} onPress={() => go("/(tabs)/calendar")}>
                 <View style={[styles.eventBar, { backgroundColor: e.color || c.brand }]} />
                 <View style={{ flex: 1 }}>
-                  <AppText size={14} weight="semibold" numberOfLines={1}>{e.title}</AppText>
+                  <AppText size={14} weight="semibold" numberOfLines={2}>{e.title}</AppText>
                   {e.location ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{e.location}</AppText> : null}
                 </View>
                 <AppText size={12} weight="semibold" color={c.onSurfaceSecondary}>{e.all_day ? "All day" : e.start_time || ""}</AppText>

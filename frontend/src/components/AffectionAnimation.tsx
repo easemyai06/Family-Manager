@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet, Dimensions, Pressable, Platform } from "react-native";
+import { View, StyleSheet, Pressable, Platform, useWindowDimensions } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,11 +19,10 @@ import { AFFECTION_MAP } from "@/src/lib/constants";
 import { spacing } from "@/src/theme/tokens";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-const { width: W, height: H } = Dimensions.get("window");
-
 const CONFETTI_TYPES = ["proud", "celebrate", "birthday_love", "congrats"];
 
 function Particle({ emoji, index, isConfetti }: { emoji: string; index: number; isConfetti: boolean }) {
+  const { width: W, height: H } = useWindowDimensions();
   const progress = useSharedValue(0);
   const startX = Math.random() * W;
   const drift = (Math.random() - 0.5) * 80;

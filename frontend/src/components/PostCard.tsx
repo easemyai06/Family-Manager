@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, Pressable, ScrollView, Dimensions, Platform } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Platform, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -10,8 +10,6 @@ import { Avatar } from "./ui/Avatar";
 import { SmartImage } from "./ui/SmartImage";
 import { REACTIONS, REACTION_MAP } from "@/src/lib/constants";
 import { timeAgo } from "@/src/lib/time";
-
-const { width } = Dimensions.get("window");
 
 export type Post = {
   post_id: string;
@@ -35,6 +33,7 @@ interface Props {
 
 export function PostCard({ post, onReact, onOpen }: Props) {
   const { c } = useTheme();
+  const { width } = useWindowDimensions();
   const media = post.media?.[0];
   const topReactions = Object.entries(post.reaction_summary || {})
     .sort((a, b) => b[1] - a[1])
@@ -71,7 +70,7 @@ export function PostCard({ post, onReact, onOpen }: Props) {
       {/* media */}
       {media ? (
         <Pressable onPress={onOpen} testID={`post-media-${post.post_id}`}>
-          <SmartImage uri={media.url} style={styles.media} />
+          <SmartImage uri={media.url} style={[styles.media, { height: width * 0.7 }]} />
           {post.location ? (
             <LinearGradient
               colors={["transparent", "rgba(44,44,40,0.7)"]}
@@ -160,7 +159,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   badge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
-  media: { width: "100%", height: width * 0.9, backgroundColor: "#EAE4D9" },
+  media: { width: "100%", backgroundColor: "#EAE4D9" },
   scrim: {
     position: "absolute",
     bottom: 0,

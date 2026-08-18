@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, TextInput, Dimensions } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, TextInput, useWindowDimensions } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,10 +14,9 @@ import { api } from "@/src/lib/api";
 import { REACTIONS, REACTION_MAP } from "@/src/lib/constants";
 import { timeAgo } from "@/src/lib/time";
 
-const { width } = Dimensions.get("window");
-
 export default function PostDetail() {
   const { c } = useTheme();
+  const { width } = useWindowDimensions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -105,7 +104,7 @@ export default function PostDetail() {
 
         {media ? (
           <View>
-            <SmartImage uri={media.url} style={styles.media} />
+            <SmartImage uri={media.url} style={[styles.media, { width, height: width }]} />
             {post.location ? (
               <LinearGradient colors={["transparent", "rgba(44,44,40,0.7)"]} style={styles.scrim}>
                 <Ionicons name="location" size={13} color="#fff" />
@@ -196,7 +195,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   authorRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   badge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
-  media: { width, height: width, backgroundColor: "#EAE4D9" },
+  media: { backgroundColor: "#EAE4D9" },
   scrim: { position: "absolute", bottom: 0, left: 0, right: 0, height: 56, flexDirection: "row", alignItems: "flex-end", gap: 4, padding: spacing.md },
   reactionRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   reactionChip: { width: 42, height: 42, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", borderWidth: 1.5, flexShrink: 0 },

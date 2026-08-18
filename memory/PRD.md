@@ -343,3 +343,17 @@ after Publish). New invite/member/role lifecycle passed the audit. Fixes applied
 - Verified: testing agent iteration_25 — 7/7 (BOLA shopping+todo blocked, same-family CRUD OK, invite
   preview child-photo hidden + 429 throttle, join+claim intact, auth 200/401). New pytest suite:
   backend/tests/test_bola_shopping_todo_invite.py. Preview only — Publish to ship to production.
+
+
+## Responsive layout & alignment pass (Batch #27) — June 2026
+Mandate: full responsive-layout / font-alignment / text-wrapping / mobile-UI audit across the app for
+small/standard/large Android + iPhones (layout-only; no functionality changes; Dynamic Type preserved).
+- Anti-patterns fixed: VaultGate PIN keypad (was fixed width 300 -> overflowed 320px) now width 100% /
+  maxWidth 340 with 30% keys; PostCard, post/[id].tsx and AffectionAnimation switched from module-level
+  Dimensions.get to useWindowDimensions (resize-safe images/particles); important titles now wrap to 2
+  lines (Home needs-attention + Today event, Vault folder/expiry names, Calendar "waiting on").
+- Verified: testing agent iteration_26 — FULL multi-width audit PASS. 3 widths (320/390/430) x ~18
+  screens = 54+ measurements, ALL pass (0 horizontal document overflow, 0 ellipsis-clipped important
+  text). Vault PIN fits at 320. Family/Quick Actions/Emergency/Vault grids fit at 320. Extra Large text
+  (1.45x) on Home/Calendar/Family/More at 320/390: 0 overflow, text wraps as expected, header icons stay
+  on-row, tab labels single-line. No fixes required. Frontend-only; preview — Publish to ship.

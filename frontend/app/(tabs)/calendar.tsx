@@ -258,7 +258,7 @@ export default function Calendar() {
                   const awaitingOthers = (e.awaiting || []).filter((m: any) => m.member_id !== myId);
                   return isHost && awaitingOthers.length > 0 ? (
                     <View style={styles.awaitRow}>
-                      <AppText size={11} color={c.onSurfaceSecondary} style={{ flex: 1 }} numberOfLines={1}>
+                      <AppText size={11} color={c.onSurfaceSecondary} style={{ flex: 1 }} numberOfLines={2}>
                         ⏳ Waiting on {awaitingOthers.map((m: any) => m.name).join(", ")}
                       </AppText>
                       <Pressable

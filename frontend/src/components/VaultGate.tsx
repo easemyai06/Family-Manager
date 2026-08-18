@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
   lockCircle: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
   dots: { flexDirection: "row", gap: spacing.lg, marginTop: spacing.xl, marginBottom: spacing.lg },
   dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2 },
-  keypad: { flexDirection: "row", flexWrap: "wrap", width: 300, justifyContent: "space-between", rowGap: spacing.md },
-  key: { width: 88, height: 72, borderRadius: radius.lg, alignItems: "center", justifyContent: "center" },
+  keypad: { flexDirection: "row", flexWrap: "wrap", width: "100%", maxWidth: 340, justifyContent: "space-between", rowGap: spacing.md },
+  key: { width: "30%", maxWidth: 96, height: 72, borderRadius: radius.lg, alignItems: "center", justifyContent: "center" },
   bioBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xl, paddingVertical: spacing.md },
 });

@@ -95,7 +95,7 @@ export default function VaultHome() {
                   testID={`expiry-${e.item_id}`}
                 >
                   <View style={{ flex: 1 }}>
-                    <AppText family="display" weight="bold" size={15} numberOfLines={1}>
+                    <AppText family="display" weight="bold" size={15} numberOfLines={2}>
                       {e.title}
                     </AppText>
                     <AppText size={12} color={c.onSurfaceTertiary}>
@@ -127,7 +127,7 @@ export default function VaultHome() {
               <View style={[styles.folderIcon, { backgroundColor: c.brandTertiary }]}>
                 <Ionicons name={(f.icon || "folder") as any} size={22} color={c.brand} />
               </View>
-              <AppText family="display" weight="bold" size={15} numberOfLines={1}>
+              <AppText family="display" weight="bold" size={15} numberOfLines={2}>
                 {f.name}
               </AppText>
               <AppText size={12} color={c.onSurfaceTertiary}>
