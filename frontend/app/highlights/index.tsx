@@ -107,7 +107,7 @@ export default function Highlights() {
                     {m.title}
                   </AppText>
                   <AppText size={12} color={c.onSurfaceTertiary}>
-                    {dayjs(m.date).format("D MMM YYYY")}
+                    {dayjs(m.date).format("DD-MM-YYYY")}
                   </AppText>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />

@@ -7,6 +7,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { formatDMY } from "@/src/lib/time";
 import { vaultSession } from "@/src/lib/vaultSession";
 import { VaultGate } from "@/src/components/VaultGate";
 
@@ -99,7 +100,7 @@ export default function VaultHome() {
                       {e.title}
                     </AppText>
                     <AppText size={12} color={c.onSurfaceTertiary}>
-                      Expires {e.expiry_date}
+                      Expires {formatDMY(e.expiry_date)}
                     </AppText>
                   </View>
                   <View style={[styles.dayPill, { backgroundColor: col + "22" }]}>

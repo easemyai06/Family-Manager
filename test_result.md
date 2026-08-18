@@ -1767,3 +1767,100 @@ agent_communication_batch28:
     -message: "Batch #28. Test BOTH backend + frontend. Admin login: protectdemo@fam.com / secret123 (Sharma demo). BACKEND: (1) POST /auth/forgot-password {email} always 200; POST /auth/reset-password {email,code,new_password} with a valid code sets password + returns token (note: real code only arrives by email; for logic test you can verify invalid code -> 400). (2) POST /auth/pin {pin} (authed) sets PIN; /auth/me returns pin_set + family_chat_id; DELETE /auth/pin clears; POST /auth/pin-login {user_id,pin} and {member_id,pin} -> token (wrong PIN 401, throttled). (3) POST /auth/login accepts username too. (4) POST /families/members/{id}/credentials (admin/parent) sets username+password+PIN for a NON-admin member (creates provider=child user first time); reject role=admin target 403; then login with that username/password and pin-login with member_id+PIN. (5) GET /notifications, POST /notifications/read, GET /notifications/unread. FRONTEND: Forgot-password screen from Login; Account > QUICK SIGN-IN set a 4-digit PIN then sign out and unlock via 'Family member? Sign in with a PIN'; Family tab > tap a child member > 'Set up login & PIN' modal; Chat TAB opens the single Family Chat directly (no conversation list, no new-chat button); Home bell opens Notifications Center and shows recent family activity. Do NOT change product functionality beyond what's described."
     -agent: "testing"
     -message: "Batch #28 RESULT: PASS. Backend 14/14 pytest (backend/tests/test_batch28_forgot_pin_child_notif.py; iteration_27): forgot-password always-200 + 400 wrong-code/short-pw; PIN set -> /auth/me pin_set + non-null family_chat_id, pin-login by user_id, wrong/short PIN 401 (not 500), DELETE clears; child creds username-login + member-PIN-login + /families/me has_login/has_pin/username; role guards (add-member admin 400, set-creds admin target 403, non-parent 403); notifications items + unread drops to 0 after read. Frontend 5/5 flows PASS at 390x844 (forgot inline error, PIN setup toast + fh_remembered, child creds save, Chat tab opens single Family Chat with composer & no + button, Home bell -> Activity). FIXED HIGH bug: POST /families/members/{id}/credentials 500 DuplicateKeyError on 2nd child user (email:null vs sparse unique index) -> now omits email field on child-user insert. Main agent re-verified 2x child creds -> 200/200."
+
+# ============ Feature Batch #29 (Chat retention / file share / live location / Storage cleanup / Date pickers + dd-mm-yyyy) ============
+backend_batch29:
+  - task: "Family chat retention (disappearing messages) — PATCH /chats/{id}/retention + purge on read/send"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "PATCH /api/chats/{id}/retention {days} accepts 1|7|30|90 (else off/null); parents/admin only (403 otherwise). _purge_expired_messages runs on GET /messages and POST /messages, deleting messages (and their media) older than the window + their reactions. Agent smoke-tested; demo retention reset to off."
+  - task: "Live/one-time location messages — send + PATCH location + stop-live"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "MessageIn supports type=location|live_location with lat/lng/live_until. PATCH /api/chats/{id}/messages/{mid}/location (sender-only 403 else) updates coords. POST /api/chats/{id}/messages/{mid}/stop-live (sender-only) sets live_until=now. Preview text '📍 Live location' / '📍 Location'."
+  - task: "Secure chat file attachments (PDF/PPT/DOC/XLS/etc) via managed storage"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "MessageIn type=file carries media[] + file_name/file_size/file_mime. Files uploaded via /api/upload (kind=document) to Emergent Object Storage, served token-gated by /api/files (family-scoped). No Base64."
+  - task: "Storage usage + cleanup — GET /storage/usage, POST /storage/cleanup"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "GET /api/storage/usage -> {messages, media_messages, media_files} (family-scoped). POST /api/storage/cleanup {scope:'chat_media'|'chat_history', older_than_days} parents/admin only (403 else); chat_media strips media (+deletes objects) keeping messages; chat_history deletes messages+media+reactions. older_than_days=0 = everything."
+
+frontend_batch29:
+  - task: "Chat attach sheet (Photo / File / Location) + file & location message bubbles"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx, frontend/src/lib/fileMeta.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Input bar '＋' (chat-attach-btn) opens a sheet: Photo (attach-photo), File (attach-file, expo-document-picker -> uploadDocument -> type=file), Send current location (attach-location), Share live location 15 min (attach-live). File bubbles (file-<id>) show icon/name/size, tap opens via media token URL. Location bubbles (loc-<id>) show a static map + 'Open in Maps'; own active live share shows 'Stop sharing' (stop-live-<id>). Location permission flow: check -> request -> Open Settings if blocked. NATIVE-ONLY: real geolocation + document picker + external file open can't be exercised on web preview — verify the sheet, permission handling, and that non-crashing fallbacks render."
+  - task: "Chat settings sheet — Disappearing messages (Off/24h/7d/30d/90d), parents-only"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Header '⋮' (chat-options-btn) opens settings sheet with retention chips (retention-opt-0/1/7/30/90). Parents/admin can change (PATCH retention); non-parents see chips disabled + note. When on, a 'Messages disappear after …' banner (retention-bar) shows under the header. Groups also get a 'Manage group' row (settings-manage-group)."
+  - task: "Storage & Cleanup screen (device cache clear + family cloud cleanup)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/settings/storage.tsx, frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "More > Preferences > Storage & Cleanup. Shows family usage stats (from /storage/usage). Option A 'Free up space on this phone' (storage-clear-cache) clears expo-file-system cache/document dirs — device-only, everyone (web shows unavailable note). Option B 'Clear family chat data' parents-only: chips cleanup-media-<days> and cleanup-history-<days> (90/30/7/0) -> confirm modal (cleanup-confirm/cleanup-cancel) -> POST /storage/cleanup. Non-parents see a lock note."
+  - task: "Date pickers (event + birthday) + dd-mm-yyyy display across app"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/ui/DateTimeField.tsx, frontend/app/event/create.tsx, frontend/app/member/edit.tsx, frontend/src/lib/time.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New DateField + TimeField (tap-to-pick calendar / time). Event create uses DateField (event-date, repeat-until) + TimeField (start-time-input/end-time-input). Edit Profile birthday now uses DateField (edit-birthday, maxToday). All display DD-MM-YYYY. Date displays converted to dd-mm-yyyy via formatDMY across vault expiries, timeline, member birthday, highlights, capsules, search, timeline/create. Relative labels (Today/2h ago) and month/week range headers kept."
+
+agent_communication_batch29:
+    -agent: "main"
+    -message: "Batch #29 = chat auto-delete + file share + live location + storage cleanup + date pickers + dd-mm-yyyy. Admin account: storytester@fam.com / secret123 (Sharma demo, family chat has messages). TEST BOTH backend + frontend. BACKEND: (1) PATCH /api/chats/{fid}/retention {days:7} as admin -> 200 {retention_days:7}; setting days:1/30/90 ok; invalid stays off; a non-parent member -> 403 (note: only admin logs in in demo, so verify admin path + that setting persists on GET /chats/{id}). Verify sending a message then a retention purge doesn't error. (2) Send a location message: POST /chats/{id}/messages {type:'location', lat, lng} -> 200; live_location with live_until; PATCH /chats/{id}/messages/{mid}/location {lat,lng} sender-only (403 for a different member); POST .../stop-live sender-only. (3) Send a file message: upload a doc via /api/upload (kind=document) then POST message {type:'file', media, file_name, file_size, file_mime} -> renders. (4) GET /api/storage/usage -> counts; POST /api/storage/cleanup {scope:'chat_media', older_than_days:90} parents-only (non-parent 403); {scope:'chat_history', older_than_days:0} deletes messages. IMPORTANT: do NOT run a destructive older_than_days:0 chat_history cleanup on the shared demo family — test cleanup on a FRESH registered account/family so demo chat isn't wiped. FRONTEND (in-app nav, 390x844): Open Chat (single Family Chat). (a) Tap '＋' (chat-attach-btn) -> sheet shows Photo/File/Location/Live options; tap File opens document picker (web may not complete -> OK); tap Send location -> permission prompt (web geolocation may be blocked -> verify graceful toast, no crash). (b) Tap '⋮' (chat-options-btn) -> settings sheet; as admin tap retention-opt-7 -> banner 'Messages disappear after 7 days' appears; tap retention-opt-0 to turn off. (c) More > Preferences > Storage & Cleanup: usage stats render; 'Clear downloaded files' present (web shows 'works in mobile app'); as admin the family cleanup chips + confirm modal render (DO NOT confirm a destructive Everything cleanup on demo). (d) Event create (Calendar + FAB): Date field opens a calendar picker, Start/End open time pickers, values show DD-MM-YYYY; save an event. (e) Edit Profile (More profile pencil): Birthday opens the calendar picker (no future dates), saves, shows dd-mm-yyyy on member profile. (f) Confirm dates read dd-mm-yyyy in Vault expiries, Our Family Story memory dates, member Birthday. Voice/push/biometric + real geolocation/document-open remain native-only — do NOT fail on web for those; verify UI + permission handling only."

@@ -126,7 +126,7 @@ export default function Search() {
                         {m.title}
                       </AppText>
                       <AppText size={12} color={c.onSurfaceTertiary}>
-                        {dayjs(m.date).format("D MMM YYYY")}
+                        {dayjs(m.date).format("DD-MM-YYYY")}
                         {m.location ? ` · ${m.location}` : ""}
                       </AppText>
                     </View>

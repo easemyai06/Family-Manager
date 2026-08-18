@@ -10,7 +10,7 @@ import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
-import { formatDate } from "@/src/lib/time";
+import { formatDMY } from "@/src/lib/time";
 
 export default function Yearbook() {
   const { c } = useTheme();
@@ -110,7 +110,7 @@ export default function Yearbook() {
             <View style={{ padding: spacing.lg }}>
               <View style={styles.pageTop}>
                 <AppText size={12} weight="bold" color={c.brand}>
-                  {formatDate(e.date, "D MMMM YYYY")}
+                  {formatDMY(e.date)}
                 </AppText>
                 <AppText size={11} color={c.onSurfaceTertiary}>
                   {e.category}

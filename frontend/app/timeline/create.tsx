@@ -156,7 +156,7 @@ export default function CreateMemory() {
             <Ionicons name="chevron-back" size={22} color={c.onSurface} />
           </Pressable>
           <AppText family="display" weight="bold" size={15}>
-            {dayjs(dateStr).format("D MMM YYYY")}
+            {dayjs(dateStr).format("DD-MM-YYYY")}
           </AppText>
           <Pressable onPress={() => setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="date-next">
             <Ionicons name="chevron-forward" size={22} color={c.onSurface} />

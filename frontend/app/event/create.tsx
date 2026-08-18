@@ -9,6 +9,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
 import { Button } from "@/src/components/ui/Button";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { DateField, TimeField } from "@/src/components/ui/DateTimeField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -98,20 +99,9 @@ export default function CreateEvent() {
       <KeyboardAwareScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} bottomOffset={20} showsVerticalScrollIndicator={false}>
         <TextField label="Title" icon="create-outline" placeholder="e.g. Football Practice" value={title} onChangeText={setTitle} testID="event-title-input" />
 
-        {/* date stepper */}
-        <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginTop: spacing.lg, marginBottom: 6 }}>
-          Date
-        </AppText>
-        <View style={[styles.dateRow, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
-          <Pressable onPress={() => setDate(dayjs(date).subtract(1, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="date-prev">
-            <Ionicons name="chevron-back" size={22} color={c.onSurface} />
-          </Pressable>
-          <AppText family="display" weight="bold" size={15}>
-            {dayjs(date).format("ddd, D MMM YYYY")}
-          </AppText>
-          <Pressable onPress={() => setDate(dayjs(date).add(1, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="date-next">
-            <Ionicons name="chevron-forward" size={22} color={c.onSurface} />
-          </Pressable>
+        {/* date */}
+        <View style={{ marginTop: spacing.lg }}>
+          <DateField label="Date" value={date} onChange={setDate} minYear={dayjs().year() - 1} maxYear={dayjs().year() + 5} testID="event-date" />
         </View>
 
         {/* all day */}
@@ -125,10 +115,10 @@ export default function CreateEvent() {
         {!allDay ? (
           <View style={styles.timeRow}>
             <View style={{ flex: 1 }}>
-              <TextField label="Start" icon="time-outline" placeholder="10:00" value={startTime} onChangeText={setStartTime} testID="start-time-input" />
+              <TimeField label="Start" value={startTime} onChange={setStartTime} testID="start-time-input" />
             </View>
             <View style={{ flex: 1 }}>
-              <TextField label="End" icon="time-outline" placeholder="11:00" value={endTime} onChangeText={setEndTime} testID="end-time-input" />
+              <TimeField label="End" value={endTime} onChange={setEndTime} testID="end-time-input" />
             </View>
           </View>
         ) : null}
@@ -190,14 +180,8 @@ export default function CreateEvent() {
                 </Pressable>
               </View>
             ) : (
-              <View style={[styles.dateRow, { backgroundColor: c.surface, borderColor: c.border, marginTop: spacing.md }]}>
-                <Pressable onPress={() => setRepeatUntil((d) => dayjs(d).subtract(repeat === "weekly" ? 7 : 30, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="repeat-until-prev">
-                  <Ionicons name="chevron-back" size={22} color={c.onSurface} />
-                </Pressable>
-                <AppText family="display" weight="bold" size={14}>Until {dayjs(repeatUntil).format("D MMM YYYY")}</AppText>
-                <Pressable onPress={() => setRepeatUntil((d) => dayjs(d).add(repeat === "weekly" ? 7 : 30, "day").format("YYYY-MM-DD"))} hitSlop={8} testID="repeat-until-next">
-                  <Ionicons name="chevron-forward" size={22} color={c.onSurface} />
-                </Pressable>
+              <View style={{ marginTop: spacing.md }}>
+                <DateField value={repeatUntil} onChange={setRepeatUntil} minYear={dayjs().year()} maxYear={dayjs().year() + 5} testID="repeat-until" />
               </View>
             )}
           </View>

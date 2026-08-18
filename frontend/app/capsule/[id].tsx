@@ -105,7 +105,7 @@ export default function CapsuleDetail() {
                 Opens in {cap.days_until} {cap.days_until === 1 ? "day" : "days"}
               </AppText>
               <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 4 }}>
-                The message is kept a secret until {dayjs(cap.unlock_date).format("D MMM YYYY")}. Good things are worth the wait ✨
+                The message is kept a secret until {dayjs(cap.unlock_date).format("DD-MM-YYYY")}. Good things are worth the wait ✨
               </AppText>
             </View>
           ) : (

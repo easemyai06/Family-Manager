@@ -428,3 +428,37 @@ the Batch #28 auth additions. Verdict: one HIGH fixed; everything else PASS.
   for a Bearer app.
 - Verified via curl: child login create+reset 200/200; self-owned adult manage_login=false and admin reset
   -> 403. Preview only — Publish to ship to production.
+
+## Feature Batch #29 — Chat retention / file & location sharing / Storage cleanup / Date pickers (June 2026)
+User asks (all delivered): (1) family-wide chat auto-deletion with Off/24h/7d/30d/90d; (2) share files
+(PDF/PPT/Word/Excel/docs) + share live location in chat; (3) two clearly-labelled cleanup options
+(free phone space + clear family chat data); (4) tap-to-pick date/time for events; (5) birthday picker;
+(6) show dates as dd-mm-yyyy across the app.
+- Disappearing messages: PATCH /api/chats/{id}/retention {days:1|7|30|90|null}, parents/admin only (403
+  else); _purge_expired_messages runs on GET/POST /messages (deletes old messages + their media +
+  reactions). Chat header "⋮" (chat-options-btn) -> settings sheet with retention chips
+  (retention-opt-0/1/7/30/90); a "Messages disappear after …" banner (retention-bar) shows when on;
+  non-parents see chips disabled.
+- Chat sharing: input "＋" (chat-attach-btn) sheet = Photo / File / Send location / Share live (15 min).
+  Files via expo-document-picker -> uploadDocument -> POST message {type:'file', file_name/size/mime};
+  file bubbles (file-<id>) show icon+size, tap opens token-gated /api/files URL. Location via
+  expo-location (contextual permission -> request -> Open Settings if blocked); one-time type=location
+  + live type=live_location (live_until=+15min) with foreground watchPositionAsync -> PATCH
+  /chats/{id}/messages/{mid}/location; own active share shows "Stop sharing" (POST .../stop-live).
+  Location bubbles (loc-<id>) show a static OSM map + "Open in Maps". NATIVE-ONLY: real geolocation +
+  document open.
+- Storage & Cleanup (More > Preferences > /settings/storage): GET /api/storage/usage stats; Option A
+  "Clear downloaded files" clears expo-file-system cache/document dirs (device-only, everyone; web note);
+  Option B "Clear family chat data" parents-only -> chips (90/30/7/all) for chat_media (strip
+  attachments) or chat_history (delete messages) -> confirm modal -> POST /api/storage/cleanup.
+- Date pickers: new src/components/ui/DateTimeField.tsx (DateField calendar + TimeField). Event create
+  uses them (event-date/start-time-input/end-time-input/repeat-until); Edit Profile birthday uses
+  DateField (edit-birthday, maxToday). All show DD-MM-YYYY. formatDMY applied across vault expiries,
+  timeline, member birthday, highlights, capsules, search; relative labels + week/month range headers
+  kept as-is.
+- Verified: testing agent iteration_28 — backend 11/11 pytest
+  (backend/tests/test_batch29_chat_retention_location_files_storage.py); frontend live-verified (attach
+  sheet, retention banner on/off, location/file/live bubbles render). Fixed a crash: settings/storage.tsx
+  used shadow(4) (helper only supports 1|2|3) -> shadow(3). Main agent re-smoked Storage screen (stats +
+  both cleanup sections render) and Event date/time pickers (calendar opens, dd-mm-yyyy). Preview only —
+  Publish to ship.

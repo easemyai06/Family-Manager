@@ -9,6 +9,7 @@ import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
 import { Button } from "@/src/components/ui/Button";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { DateField } from "@/src/components/ui/DateTimeField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius } from "@/src/theme/tokens";
 import { api, uploadMedia } from "@/src/lib/api";
@@ -118,7 +119,7 @@ export default function EditProfile() {
         <View style={{ gap: spacing.md, marginTop: spacing.lg }}>
           <TextField label="Name" icon="person-outline" value={name} onChangeText={setName} placeholder="Your name" testID="edit-name" />
           <TextField label="Phone" icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Phone number" keyboardType="phone-pad" testID="edit-phone" />
-          <TextField label="Birthday" icon="gift-outline" value={birthday} onChangeText={setBirthday} placeholder="YYYY-MM-DD" testID="edit-birthday" />
+          <DateField label="Birthday" value={birthday || null} onChange={setBirthday} placeholder="Select your birthday" maxToday testID="edit-birthday" />
 
           <View>
             <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginBottom: 6 }}>Email</AppText>

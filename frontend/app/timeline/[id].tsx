@@ -12,7 +12,7 @@ import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow, fonts } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
-import { formatDate, timeAgo } from "@/src/lib/time";
+import { formatDMY, timeAgo } from "@/src/lib/time";
 
 export default function MemoryDetail() {
   const { c } = useTheme();
@@ -123,7 +123,7 @@ export default function MemoryDetail() {
           <View style={styles.metaRow}>
             <Ionicons name="calendar-outline" size={15} color={c.onSurfaceTertiary} />
             <AppText size={14} color={c.onSurfaceSecondary}>
-              {formatDate(m.date, "dddd, D MMMM YYYY")}
+              {formatDMY(m.date)}
             </AppText>
           </View>
           {m.location ? (

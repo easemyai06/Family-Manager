@@ -160,7 +160,7 @@ export default function CreateCapsule() {
             <Ionicons name="chevron-back" size={22} color={c.onSurface} />
           </Pressable>
           <AppText family="display" weight="bold" size={15}>
-            {unlock.format("D MMM YYYY")}
+            {unlock.format("DD-MM-YYYY")}
           </AppText>
           <Pressable onPress={() => setDate(unlock.add(1, "month"))} hitSlop={8} testID="capsule-month-next">
             <Ionicons name="chevron-forward" size={22} color={c.onSurface} />

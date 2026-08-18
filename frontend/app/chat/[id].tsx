@@ -4,7 +4,10 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
+import dayjs from "dayjs";
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -19,10 +22,20 @@ import { SmartImage } from "@/src/components/ui/SmartImage";
 import { VoiceMessage } from "@/src/components/VoiceMessage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, fonts, shadow } from "@/src/theme/tokens";
-import { api, uploadMedia } from "@/src/lib/api";
+import { api, uploadMedia, uploadDocument, mediaUrl } from "@/src/lib/api";
 import { useAuth } from "@/src/auth/AuthContext";
 import { AFFECTIONS, AFFECTION_MAP, MSG_REACTIONS } from "@/src/lib/constants";
 import { timeAgo } from "@/src/lib/time";
+import { fileIcon, formatFileSize, mapsUrl, staticMapUrl } from "@/src/lib/fileMeta";
+
+const RETENTION_OPTS = [
+  { days: 0, label: "Off" },
+  { days: 1, label: "24 hours" },
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
+];
+const LIVE_MINUTES = 15;
 
 export default function Conversation() {
   const { c } = useTheme();
@@ -41,11 +54,18 @@ export default function Conversation() {
   const [recording, setRecording] = useState(false);
   const [recMs, setRecMs] = useState(0);
   const [toast, setToast] = useState("");
+  const [showAttach, setShowAttach] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [locBusy, setLocBusy] = useState(false);
   const typingRef = useRef(0);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recTimer = useRef<any>(null);
   const recStart = useRef(0);
   const cancelRef = useRef(false);
+  const liveWatch = useRef<any>(null);
+  const liveMsgId = useRef<string | null>(null);
+
+  const isParent = me?.role === "admin" || me?.role === "parent";
 
   const loadChat = useCallback(async () => {
     try {
@@ -74,6 +94,7 @@ export default function Conversation() {
       return () => {
         active = false;
         clearInterval(iv);
+        stopLiveWatch();
       };
     }, [loadChat, loadMsgs])
   );
@@ -108,6 +129,7 @@ export default function Conversation() {
   };
 
   const sendImage = async () => {
+    setShowAttach(false);
     const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
     let status = perm.status;
     if (status !== "granted" && perm.canAskAgain) {
@@ -124,6 +146,127 @@ export default function Conversation() {
       const msg = await api(`/chats/${id}/messages`, { method: "POST", body: { type: "image", media: [{ url: up.url, type: "image" }] } });
       setMessages((prev) => [...prev, msg]);
     } catch {}
+  };
+
+  const sendDocument = async () => {
+    setShowAttach(false);
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: false });
+      if (res.canceled || !res.assets?.[0]) return;
+      const a = res.assets[0];
+      flash("Sending file…");
+      const up = await uploadDocument(a.uri, a.name || "document", a.mimeType || "application/octet-stream");
+      const msg = await api(`/chats/${id}/messages`, {
+        method: "POST",
+        body: {
+          type: "file",
+          media: [{ url: up.url, type: "document" }],
+          file_name: a.name || "document",
+          file_size: a.size ?? null,
+          file_mime: a.mimeType || null,
+        },
+      });
+      setMessages((prev) => [...prev, msg]);
+      setToast("");
+    } catch {
+      flash("Couldn't send that file");
+    }
+  };
+
+  // ---- location sharing ----
+  const ensureLocation = async () => {
+    let perm = await Location.getForegroundPermissionsAsync();
+    if (perm.granted) return true;
+    if (perm.canAskAgain) {
+      perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.granted) return true;
+    }
+    if (!perm.canAskAgain) {
+      flash("Enable location in Settings to share where you are");
+      if (Platform.OS !== "web") Linking.openSettings();
+    } else {
+      flash("Location access is needed to share your location");
+    }
+    return false;
+  };
+
+  const stopLiveWatch = () => {
+    if (liveWatch.current) {
+      try {
+        liveWatch.current.remove();
+      } catch {}
+      liveWatch.current = null;
+    }
+    liveMsgId.current = null;
+  };
+
+  const startLiveWatch = async (mid: string, liveUntil: string) => {
+    stopLiveWatch();
+    liveMsgId.current = mid;
+    if (Platform.OS === "web") return; // web can't keep a background watcher
+    try {
+      liveWatch.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 },
+        (pos) => {
+          if (dayjs().isAfter(dayjs(liveUntil)) || liveMsgId.current !== mid) {
+            stopLiveWatch();
+            return;
+          }
+          api(`/chats/${id}/messages/${mid}/location`, {
+            method: "PATCH",
+            body: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          }).catch(() => {});
+        }
+      );
+    } catch {}
+  };
+
+  const shareLocation = async (live: boolean) => {
+    setShowAttach(false);
+    if (!(await ensureLocation())) return;
+    setLocBusy(true);
+    try {
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = pos.coords;
+      if (live) {
+        const liveUntil = dayjs().add(LIVE_MINUTES, "minute").toISOString();
+        const msg = await api(`/chats/${id}/messages`, {
+          method: "POST",
+          body: { type: "live_location", lat: latitude, lng: longitude, live_until: liveUntil },
+        });
+        setMessages((prev) => [...prev, msg]);
+        startLiveWatch(msg.message_id, liveUntil);
+      } else {
+        const msg = await api(`/chats/${id}/messages`, {
+          method: "POST",
+          body: { type: "location", lat: latitude, lng: longitude },
+        });
+        setMessages((prev) => [...prev, msg]);
+      }
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      flash("Couldn't get your location");
+    }
+    setLocBusy(false);
+  };
+
+  const stopSharing = async (msg: any) => {
+    stopLiveWatch();
+    try {
+      await api(`/chats/${id}/messages/${msg.message_id}/stop-live`, { method: "POST" });
+      loadMsgs();
+    } catch {}
+  };
+
+  const setRetention = async (days: number) => {
+    try {
+      await api(`/chats/${id}/retention`, { method: "PATCH", body: { days: days || null } });
+      setChat((prev: any) => (prev ? { ...prev, retention_days: days || null } : prev));
+      loadMsgs();
+      flash(days ? `Messages now disappear after ${RETENTION_OPTS.find((o) => o.days === days)?.label}` : "Disappearing messages turned off");
+    } catch {
+      flash("Couldn't update this setting");
+    }
   };
 
   const sendAffection = async (key: string) => {
@@ -217,7 +360,19 @@ export default function Conversation() {
 
   const msgPreview = (m: any) =>
     m?.text ||
-    (m?.type === "affection" ? AFFECTION_MAP[m.affection_key]?.label : m?.type === "voice" ? "🎤 Voice message" : "📷 Photo");
+    (m?.type === "affection"
+      ? AFFECTION_MAP[m.affection_key]?.label
+      : m?.type === "voice"
+        ? "🎤 Voice message"
+        : m?.type === "file"
+          ? `📄 ${m.file_name || "File"}`
+          : m?.type === "live_location"
+            ? "📍 Live location"
+            : m?.type === "location"
+              ? "📍 Location"
+              : "📷 Photo");
+
+  const isLiveActive = (m: any) => m?.type === "live_location" && m?.live_until && dayjs().isBefore(dayjs(m.live_until));
 
   const actionPinned = !!actionMsg && chat?.pinned_message?.message_id === actionMsg?.message_id;
 
@@ -235,6 +390,10 @@ export default function Conversation() {
     const mine = item.sender_member_id === me?.member_id;
     const isAffection = item.type === "affection";
     const isVoice = item.type === "voice";
+    const isFile = item.type === "file";
+    const isLocation = item.type === "location" || item.type === "live_location";
+    const hasCoords = item.lat != null && item.lng != null;
+    const fi = fileIcon(item.file_name, item.file_mime);
     const reactionEntries = Object.entries(item.reactions || {});
     return (
       <View style={{ marginBottom: reactionEntries.length ? spacing.lg : spacing.md }}>
@@ -272,6 +431,52 @@ export default function Conversation() {
                 </View>
               ) : isVoice && item.media?.[0] ? (
                 <VoiceMessage uri={item.media[0].url} duration={item.duration} mine={mine} />
+              ) : isLocation ? (
+                <Pressable
+                  onPress={() => hasCoords && Linking.openURL(mapsUrl(item.lat, item.lng))}
+                  style={{ width: 220 }}
+                  testID={`loc-${item.message_id}`}
+                >
+                  {hasCoords ? <SmartImage uri={staticMapUrl(item.lat, item.lng)} style={styles.locMap} /> : null}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: hasCoords ? 6 : 0 }}>
+                    <Ionicons name="location" size={16} color={mine ? "#fff" : c.brand} />
+                    <AppText size={13} weight="bold" color={mine ? "#fff" : c.onSurface}>
+                      {item.type === "live_location" ? (isLiveActive(item) ? "Live location" : "Live location ended") : "Location"}
+                    </AppText>
+                  </View>
+                  <AppText size={11} color={mine ? "rgba(255,255,255,0.85)" : c.onSurfaceSecondary}>
+                    {isLiveActive(item) ? `Sharing until ${dayjs(item.live_until).format("h:mm A")}` : "Tap to open in Maps"}
+                  </AppText>
+                  {mine && isLiveActive(item) ? (
+                    <Pressable onPress={() => stopSharing(item)} style={[styles.stopBtn, { borderColor: mine ? "rgba(255,255,255,0.6)" : c.error }]} testID={`stop-live-${item.message_id}`}>
+                      <AppText size={12} weight="bold" color={mine ? "#fff" : c.error}>
+                        Stop sharing
+                      </AppText>
+                    </Pressable>
+                  ) : null}
+                </Pressable>
+              ) : isFile ? (
+                <Pressable
+                  onPress={() => {
+                    const u = mediaUrl(item.media?.[0]?.url);
+                    if (u) Linking.openURL(u);
+                  }}
+                  style={styles.fileCard}
+                  testID={`file-${item.message_id}`}
+                >
+                  <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.2)" : fi.color + "22" }]}>
+                    <Ionicons name={fi.icon as any} size={22} color={mine ? "#fff" : fi.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <AppText size={14} weight="semibold" color={mine ? "#fff" : c.onSurface} numberOfLines={2}>
+                      {item.file_name || "Document"}
+                    </AppText>
+                    <AppText size={11} color={mine ? "rgba(255,255,255,0.85)" : c.onSurfaceTertiary}>
+                      {formatFileSize(item.file_size) || "Tap to open"}
+                    </AppText>
+                  </View>
+                  <Ionicons name="download-outline" size={18} color={mine ? "#fff" : c.onSurfaceTertiary} />
+                </Pressable>
               ) : item.media?.length ? (
                 <View>
                   <SmartImage uri={item.media[0].url} style={styles.msgImage} />
@@ -347,6 +552,9 @@ export default function Conversation() {
             <Ionicons name="settings-outline" size={22} color={c.onSurface} />
           </Pressable>
         ) : null}
+        <Pressable onPress={() => setShowSettings(true)} hitSlop={10} testID="chat-options-btn" accessibilityRole="button" accessibilityLabel="Chat settings">
+          <Ionicons name="ellipsis-vertical" size={22} color={c.onSurface} />
+        </Pressable>
       </View>
 
       {chat?.pinned_message ? (
@@ -362,6 +570,15 @@ export default function Conversation() {
           </View>
           <Ionicons name="close" size={16} color={c.brand} />
         </Pressable>
+      ) : null}
+
+      {chat?.retention_days ? (
+        <View style={[styles.retentionBar, { backgroundColor: c.surfaceSecondary, borderBottomColor: c.border }]} testID="retention-bar">
+          <Ionicons name="timer-outline" size={14} color={c.onSurfaceTertiary} />
+          <AppText size={11} color={c.onSurfaceTertiary}>
+            Messages disappear after {RETENTION_OPTS.find((o) => o.days === chat.retention_days)?.label || `${chat.retention_days} days`}
+          </AppText>
+        </View>
       ) : null}
 
       <KeyboardAvoidingView behavior="translate-with-padding" keyboardVerticalOffset={0} style={{ flex: 1 }}>
@@ -423,8 +640,8 @@ export default function Conversation() {
             <Pressable onPress={() => setShowAff((s) => !s)} hitSlop={8} testID="toggle-affection">
               <Ionicons name="heart" size={26} color={showAff ? c.brand : c.onSurfaceTertiary} />
             </Pressable>
-            <Pressable onPress={sendImage} hitSlop={8} testID="chat-image-btn" accessibilityRole="button" accessibilityLabel="Attach a photo">
-              <Ionicons name="image-outline" size={24} color={c.onSurfaceTertiary} />
+            <Pressable onPress={() => setShowAttach(true)} hitSlop={8} testID="chat-attach-btn" accessibilityRole="button" accessibilityLabel="Attach a photo, file or location">
+              <Ionicons name="add-circle-outline" size={26} color={locBusy ? c.brand : c.onSurfaceTertiary} />
             </Pressable>
             <TextInput
               value={text}
@@ -494,6 +711,82 @@ export default function Conversation() {
         </Pressable>
       </Modal>
 
+      {/* attachment sheet */}
+      <Modal visible={showAttach} transparent animationType="fade" onRequestClose={() => setShowAttach(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowAttach(false)} testID="attach-backdrop">
+          <View style={[styles.actionSheet, { backgroundColor: c.surface, paddingBottom: insets.bottom + spacing.lg }, shadow(3)]}>
+            <AppText family="display" weight="bold" size={16} center style={{ marginBottom: spacing.sm }}>
+              Share with the family
+            </AppText>
+            <AttachRow icon="image" color="#D98E5A" label="Photo" onPress={sendImage} c={c} testID="attach-photo" />
+            <AttachRow icon="document-attach" color="#3A7BD5" label="File (PDF, Word, Excel…)" onPress={sendDocument} c={c} testID="attach-file" />
+            <AttachRow icon="navigate" color="#2E9E6B" label="Send current location" onPress={() => shareLocation(false)} c={c} testID="attach-location" />
+            <AttachRow icon="pulse" color="#E86A6A" label={`Share live location (${LIVE_MINUTES} min)`} onPress={() => shareLocation(true)} c={c} testID="attach-live" />
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* chat settings sheet */}
+      <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowSettings(false)} testID="settings-backdrop">
+          <Pressable style={[styles.actionSheet, { backgroundColor: c.surface, paddingBottom: insets.bottom + spacing.lg, gap: spacing.sm }, shadow(3)]} onPress={() => {}}>
+            <AppText family="display" weight="bold" size={17} center>
+              Chat settings
+            </AppText>
+
+            <View style={styles.settingHead}>
+              <Ionicons name="timer-outline" size={18} color={c.onSurface} />
+              <View style={{ flex: 1 }}>
+                <AppText size={15} weight="semibold">
+                  Disappearing messages
+                </AppText>
+                <AppText size={12} color={c.onSurfaceTertiary}>
+                  {isParent ? "Auto-delete old messages for everyone" : "Only a parent can change this"}
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.retentionChips}>
+              {RETENTION_OPTS.map((o) => {
+                const sel = (chat?.retention_days || 0) === o.days;
+                return (
+                  <Pressable
+                    key={o.days}
+                    disabled={!isParent}
+                    onPress={() => setRetention(o.days)}
+                    style={[
+                      styles.retChip,
+                      { borderColor: sel ? c.brand : c.border, backgroundColor: sel ? c.brandTertiary : c.surfaceSecondary, opacity: !isParent && !sel ? 0.5 : 1 },
+                    ]}
+                    testID={`retention-opt-${o.days}`}
+                  >
+                    <AppText size={13} weight={sel ? "bold" : "medium"} color={sel ? c.onBrandTertiary : c.onSurfaceSecondary}>
+                      {o.label}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {chat?.type === "group" ? (
+              <Pressable
+                onPress={() => {
+                  setShowSettings(false);
+                  router.push(`/chat/manage?id=${id}`);
+                }}
+                style={[styles.actionBtn, { backgroundColor: c.surfaceSecondary, marginTop: spacing.sm }]}
+                testID="settings-manage-group"
+              >
+                <Ionicons name="people" size={18} color={c.onSurface} />
+                <AppText size={15} weight="semibold">
+                  Manage group
+                </AppText>
+              </Pressable>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {toast ? (
         <View style={[styles.toast, { backgroundColor: c.surfaceInverse, bottom: insets.bottom + 90 }, shadow(3)]} testID="chat-toast">
           <AppText size={13} weight="semibold" color={c.onSurfaceInverse}>
@@ -509,11 +802,16 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   pinBar: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1 },
+  retentionBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6, borderBottomWidth: 1 },
   groupAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   bubble: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 60 },
   replyPreview: { borderLeftWidth: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 },
   msgImage: { width: 210, height: 210, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },
+  locMap: { width: 220, height: 120, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },
+  stopBtn: { alignSelf: "flex-start", marginTop: 8, borderWidth: 1.5, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
+  fileCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minWidth: 210, paddingVertical: 2 },
+  fileIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   reactionChips: { position: "absolute", bottom: -14, gap: 4 },
   reactionChip: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2 },
   metaRow: { flexDirection: "row", gap: 4, marginTop: 3, paddingHorizontal: 4 },
@@ -531,5 +829,23 @@ const styles = StyleSheet.create({
   reactionPicker: { flexDirection: "row", justifyContent: "space-around", paddingVertical: spacing.sm },
   pickerEmoji: { padding: 4 },
   actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderRadius: radius.md, paddingVertical: spacing.md },
+  attachRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm },
+  attachIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  settingHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  retentionChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.xs },
+  retChip: { borderRadius: radius.pill, borderWidth: 1.5, paddingHorizontal: spacing.md, paddingVertical: 9 },
   toast: { position: "absolute", alignSelf: "center", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
 });
+
+function AttachRow({ icon, color, label, onPress, c, testID }: { icon: string; color: string; label: string; onPress: () => void; c: any; testID?: string }) {
+  return (
+    <Pressable onPress={onPress} style={styles.attachRow} testID={testID} accessibilityRole="button" accessibilityLabel={label}>
+      <View style={[styles.attachIcon, { backgroundColor: color + "22" }]}>
+        <Ionicons name={icon as any} size={22} color={color} />
+      </View>
+      <AppText size={15} weight="semibold" color={c.onSurface}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}

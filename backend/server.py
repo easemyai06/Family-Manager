@@ -384,6 +384,26 @@ def _get_object(path: str):
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
+def _delete_object(path: str):
+    key = _init_storage()
+    try:
+        requests.delete(f"{STORAGE_URL}/objects/{path}",
+                        headers={"X-Storage-Key": key}, timeout=60)
+    except Exception:
+        pass
+
+
+async def _delete_media_file(path: str):
+    """Best-effort remove an uploaded object + its media record (frees storage)."""
+    if not path:
+        return
+    try:
+        await run_in_threadpool(_delete_object, path)
+    except Exception:
+        pass
+    await db.media.delete_one({"storage_path": path})
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -3234,9 +3254,15 @@ class MessageIn(BaseModel):
     text: Optional[str] = None
     media: List[MediaItem] = []
     reply_to: Optional[str] = None
-    type: str = "text"             # text | image | affection | voice
+    type: str = "text"             # text | image | affection | voice | location | live_location | file
     affection_key: Optional[str] = None
     duration: Optional[int] = None  # ms, for voice notes
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    live_until: Optional[str] = None   # iso; only for live_location
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+    file_mime: Optional[str] = None
 
 
 class MsgReactIn(BaseModel):
@@ -3252,6 +3278,20 @@ class ChatPatch(BaseModel):
     photo_url: Optional[str] = None
     add_member_ids: List[str] = []
     remove_member_ids: List[str] = []
+
+
+class RetentionIn(BaseModel):
+    days: Optional[int] = None  # None/0 = off; 1, 7, 30, 90
+
+
+class LocationUpdateIn(BaseModel):
+    lat: float
+    lng: float
+
+
+class CleanupIn(BaseModel):
+    scope: str                 # "chat_history" | "chat_media"
+    older_than_days: int = 0   # 0 = everything
 
 
 async def get_last_read(chat_id: str, member_id: str) -> Optional[str]:
@@ -3375,11 +3415,77 @@ async def get_chat(chat_id: str, user: dict = Depends(get_current_user)):
     return await hydrate_chat(chat, mine)
 
 
+async def _purge_expired_messages(chat: dict):
+    """Disappearing messages: delete anything older than the chat's retention window,
+    including attached media (frees storage)."""
+    days = chat.get("retention_days")
+    if not days:
+        return
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+    old = await db.messages.find(
+        {"chat_id": chat["chat_id"], "created_at": {"$lt": cutoff}},
+        {"media": 1, "message_id": 1, "_id": 0}).to_list(5000)
+    if not old:
+        return
+    for m in old:
+        for mi in (m.get("media") or []):
+            await _delete_media_file((mi.get("url") or "").replace("/api/files/", ""))
+    ids = [m["message_id"] for m in old]
+    await db.messages.delete_many({"message_id": {"$in": ids}})
+    await db.msg_reactions.delete_many({"message_id": {"$in": ids}})
+
+
+@api.patch("/chats/{chat_id}/retention")
+async def set_retention(chat_id: str, body: RetentionIn, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    chat = await _require_chat(chat_id, fid, mine)
+    if mine.get("role") not in ("admin", "parent"):
+        raise HTTPException(status_code=403, detail="Only parents can change disappearing messages")
+    days = body.days if body.days in (1, 7, 30, 90) else None
+    await db.chats.update_one({"chat_id": chat_id}, {"$set": {"retention_days": days}})
+    if days:
+        chat["retention_days"] = days
+        await _purge_expired_messages(chat)
+    return {"ok": True, "retention_days": days}
+
+
+@api.patch("/chats/{chat_id}/messages/{message_id}/location")
+async def update_live_location(chat_id: str, message_id: str, body: LocationUpdateIn,
+                               user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    msg = await db.messages.find_one({"message_id": message_id, "chat_id": chat_id}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if msg.get("sender_member_id") != mine["member_id"]:
+        raise HTTPException(status_code=403, detail="Only the sender can update this location")
+    await db.messages.update_one({"message_id": message_id},
+                                 {"$set": {"lat": body.lat, "lng": body.lng, "location_updated_at": now_iso()}})
+    return {"ok": True}
+
+
+@api.post("/chats/{chat_id}/messages/{message_id}/stop-live")
+async def stop_live_location(chat_id: str, message_id: str, user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    await _require_chat(chat_id, fid, mine)
+    msg = await db.messages.find_one({"message_id": message_id, "chat_id": chat_id}, {"_id": 0})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if msg.get("sender_member_id") != mine["member_id"]:
+        raise HTTPException(status_code=403, detail="Only the sender can stop sharing")
+    await db.messages.update_one({"message_id": message_id}, {"$set": {"live_until": now_iso()}})
+    return {"ok": True}
+
+
 @api.get("/chats/{chat_id}/messages")
 async def get_messages(chat_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
-    await _require_chat(chat_id, fid, mine)
+    chat = await _require_chat(chat_id, fid, mine)
+    await _purge_expired_messages(chat)
     msgs = await db.messages.find({"chat_id": chat_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
     ids = [m["message_id"] for m in msgs]
     rx: dict = {}
@@ -3413,6 +3519,7 @@ async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_c
     fid = require_family(user)
     mine = await member_for_user(user)
     chat = await _require_chat(chat_id, fid, mine)
+    await _purge_expired_messages(chat)
 
     reply_preview = None
     if body.reply_to:
@@ -3426,7 +3533,11 @@ async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_c
         "message_id": new_id("msg_"), "chat_id": chat_id, "family_id": fid,
         "sender_member_id": mine["member_id"], "text": body.text, "media": [m.dict() for m in body.media],
         "type": body.type, "affection_key": body.affection_key, "reply_to": body.reply_to,
-        "reply_preview": reply_preview, "duration": body.duration, "created_at": now_iso(),
+        "reply_preview": reply_preview, "duration": body.duration,
+        "lat": body.lat, "lng": body.lng, "live_until": body.live_until,
+        "location_updated_at": now_iso() if body.type in ("location", "live_location") else None,
+        "file_name": body.file_name, "file_size": body.file_size, "file_mime": body.file_mime,
+        "created_at": now_iso(),
     }
     await db.messages.insert_one(msg)
 
@@ -3434,6 +3545,10 @@ async def send_message(chat_id: str, body: MessageIn, user: dict = Depends(get_c
         preview = AFFECTION_LABELS.get(body.affection_key, "❤️")
     elif body.type == "voice":
         preview = "🎤 Voice message"
+    elif body.type in ("location", "live_location"):
+        preview = "📍 Live location" if body.type == "live_location" else "📍 Location"
+    elif body.type == "file":
+        preview = f"📄 {body.file_name or 'File'}"
     elif body.media:
         preview = body.text or "📷 Photo"
     else:
@@ -4954,6 +5069,51 @@ async def upload(file: UploadFile = File(...), kind: str = Form("image"), user: 
         "storage_path": result["path"], "content_type": ct, "kind": kind, "created_at": now_iso(),
     })
     return {"path": result["path"], "url": f"/api/files/{result['path']}", "type": kind}
+
+
+@api.get("/storage/usage")
+async def storage_usage(user: dict = Depends(get_current_user)):
+    fid = require_family(user)
+    msg_total = await db.messages.count_documents({"family_id": fid})
+    media_msgs = await db.messages.count_documents({"family_id": fid, "media.0": {"$exists": True}})
+    media_files = await db.media.count_documents({"family_id": fid})
+    return {"messages": msg_total, "media_messages": media_msgs, "media_files": media_files}
+
+
+@api.post("/storage/cleanup")
+async def storage_cleanup(body: CleanupIn, user: dict = Depends(get_current_user)):
+    """Permanently remove old chat data to free space. Parents/admin only."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not (mine and mine.get("role") in ("admin", "parent")):
+        raise HTTPException(status_code=403, detail="Only parents can clear family data")
+    days = max(0, int(body.older_than_days or 0))
+    q: dict = {"family_id": fid}
+    if days > 0:
+        q["created_at"] = {"$lt": (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()}
+    if body.scope == "chat_media":
+        msgs = await db.messages.find({**q, "media.0": {"$exists": True}},
+                                      {"media": 1, "message_id": 1, "_id": 0}).to_list(10000)
+        removed = 0
+        for m in msgs:
+            for mi in (m.get("media") or []):
+                await _delete_media_file((mi.get("url") or "").replace("/api/files/", ""))
+                removed += 1
+            await db.messages.update_one(
+                {"message_id": m["message_id"]},
+                {"$set": {"media": [], "type": "text"},
+                 "$unset": {"file_name": "", "file_size": "", "file_mime": ""}})
+        return {"ok": True, "media_removed": removed}
+    # default: delete whole messages
+    msgs = await db.messages.find(q, {"media": 1, "message_id": 1, "_id": 0}).to_list(20000)
+    for m in msgs:
+        for mi in (m.get("media") or []):
+            await _delete_media_file((mi.get("url") or "").replace("/api/files/", ""))
+    ids = [m["message_id"] for m in msgs]
+    if ids:
+        await db.messages.delete_many({"message_id": {"$in": ids}})
+        await db.msg_reactions.delete_many({"message_id": {"$in": ids}})
+    return {"ok": True, "messages_removed": len(ids)}
 
 
 @api.get("/files/{path:path}")

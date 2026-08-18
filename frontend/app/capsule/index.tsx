@@ -82,7 +82,7 @@ export default function Capsules() {
               </AppText>
               {cap.is_locked ? (
                 <AppText size={13} color={c.brand} weight="semibold" style={{ marginTop: 2 }}>
-                  Opens in {cap.days_until} {cap.days_until === 1 ? "day" : "days"} · {dayjs(cap.unlock_date).format("D MMM YYYY")}
+                  Opens in {cap.days_until} {cap.days_until === 1 ? "day" : "days"} · {dayjs(cap.unlock_date).format("DD-MM-YYYY")}
                 </AppText>
               ) : (
                 <AppText size={13} color={c.onSurfaceSecondary} numberOfLines={2} style={{ marginTop: 2 }}>

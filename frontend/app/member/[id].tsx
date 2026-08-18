@@ -12,7 +12,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useAuth } from "@/src/auth/AuthContext";
-import { ageFrom, formatDate } from "@/src/lib/time";
+import { ageFrom, formatDMY } from "@/src/lib/time";
 
 export default function MemberProfile() {
   const { c } = useTheme();
@@ -42,7 +42,7 @@ export default function MemberProfile() {
   if (!member) return <View style={{ flex: 1, backgroundColor: c.surface }} />;
 
   const details = [
-    member.birthday ? { icon: "gift-outline", label: "Birthday", value: `${formatDate(member.birthday, "D MMM YYYY")} · ${ageFrom(member.birthday)} yrs` } : null,
+    member.birthday ? { icon: "gift-outline", label: "Birthday", value: `${formatDMY(member.birthday)} · ${ageFrom(member.birthday)} yrs` } : null,
     member.phone ? { icon: "call-outline", label: "Phone", value: member.phone } : null,
     member.favorite_food ? { icon: "fast-food-outline", label: "Favourite Food", value: member.favorite_food } : null,
     member.favorite_color ? { icon: "color-palette-outline", label: "Favourite Colour", value: member.favorite_color } : null,

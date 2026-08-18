@@ -10,7 +10,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow, fonts } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { TIMELINE_CATEGORIES } from "@/src/lib/constants";
-import { formatDate } from "@/src/lib/time";
+import { formatDMY } from "@/src/lib/time";
 
 export default function Timeline() {
   const { c } = useTheme();
@@ -160,7 +160,7 @@ export default function Timeline() {
                 <View style={styles.cardBody}>
                   <View style={styles.cardTop}>
                     <AppText size={12} color={c.onSurfaceTertiary}>
-                      {formatDate(e.date, "D MMM YYYY")}
+                      {formatDMY(e.date)}
                     </AppText>
                     {e.importance ? (
                       <View style={[styles.impBadge, { backgroundColor: c.warning }]}>

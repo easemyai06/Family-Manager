@@ -9,6 +9,7 @@ import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api, mediaUrl } from "@/src/lib/api";
+import { formatDMY } from "@/src/lib/time";
 import { vaultSession } from "@/src/lib/vaultSession";
 
 export default function VaultItem() {
@@ -103,7 +104,7 @@ export default function VaultItem() {
           <View style={[styles.expiryBanner, { backgroundColor: days <= 30 ? "#E8A33D22" : "#8AB07D22" }]}>
             <Ionicons name="alarm-outline" size={18} color={days <= 30 ? "#C57F1E" : "#6B8E5A"} />
             <AppText size={13} weight="bold" color={days <= 30 ? "#C57F1E" : "#6B8E5A"}>
-              {days < 0 ? `Expired on ${it.expiry_date}` : `Expires in ${days} day${days === 1 ? "" : "s"} · ${it.expiry_date}`}
+              {days < 0 ? `Expired on ${formatDMY(it.expiry_date)}` : `Expires in ${days} day${days === 1 ? "" : "s"} · ${formatDMY(it.expiry_date)}`}
             </AppText>
           </View>
         ) : null}
