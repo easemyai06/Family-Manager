@@ -4,11 +4,13 @@ Polished, marketing-style screenshots generated from the **real app** (Sharma de
 clean/non-sensitive data) with a device frame, on-brand warm gradient, and a benefit-led caption.
 
 ## Folders
-- `apple/`  — Apple App Store, **1290 × 2796 px** (iPhone 6.7"/6.9", portrait). 8 images.
+- `apple/`  — Apple App Store (iPhone), **1290 × 2796 px** (iPhone 6.7"/6.9", portrait). 8 images.
+- `ipad13/` — Apple App Store (iPad), **2048 × 2732 px** (13-inch iPad Display, portrait). 8 images.
 - `google/` — Google Play, **1080 × 1920 px** (phone, 9:16, portrait). 8 images.
-- `raw/`    — Raw un-framed app captures (source material), 1290 × 2796 px.
+- `raw/`    — Raw un-framed iPhone captures (source material), 1290 × 2796 px.
+- `raw_ipad/` — Raw un-framed iPad captures (source material), 2048 × 2732 px.
 
-Both sizes are accepted by the respective stores. Upload the 8 PNGs from the matching folder.
+Upload the iPhone set (`apple/`) to the 6.7"/6.9" slot and the iPad set (`ipad13/`) to the 13-inch iPad slot in App Store Connect. Google Play uses the `google/` set.
 
 ## The 8 screenshots (same order in both folders)
 | # | Screen | Caption |
@@ -29,3 +31,5 @@ Both sizes are accepted by the respective stores. Upload the 8 PNGs from the mat
   Home dashboard and Calendar, which best communicate the core value.
 - To regenerate: `python /app/scripts/capture_screens.py` (raw captures) then
   `python /app/scripts/compose.py` (framed marketing images).
+- iPad set: `python /app/scripts/capture_ipad.py` (+ `capture_ipad_chat.py` for a fuller chat) then
+  `python /app/scripts/compose_ipad.py`.

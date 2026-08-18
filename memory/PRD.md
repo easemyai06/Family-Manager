@@ -246,3 +246,9 @@ emotional, premium, warm, family-friendly, usable by grandparents and exciting f
 - P3 FIXED — `/auth/session` (Google) now persists newly-created users (`insert_one`) so first-time Google sign-in works.
 - P3 ACCEPTED (not changed, low risk, bearer-token app): CORS `allow_origins=["*"]` + `allow_credentials=True`; login throttle keyed on left-most X-Forwarded-For (spoofable) — bcrypt cost still limits guessing.
 - Verified: apple bad-token+victim-email -> 401 (no takeover); login/`auth/me` 200; self member edit 200. Audit ran against codebase/preview (no production access — user must Publish to deploy fixes).
+
+
+## 13-inch iPad store screenshots — June 2026
+- Generated 8 polished marketing screenshots for the App Store 13-inch iPad slot at 2048×2732: Home, Calendar/RSVP, Family, Chores, Family Chat, Emergency/SOS, Rewards, Timeline.
+- Captured the app at iPad viewport (1024×1366 @2x) — layout adapts cleanly (4-col members, full-width cards). Chat re-captured from a fresh seeded account with a fuller family thread to avoid empty whitespace on the tall screen.
+- Output: `/app/store_assets/ipad13/` (framed) and `/app/store_assets/raw_ipad/` (raw). Tooling: `scripts/capture_ipad.py`, `scripts/capture_ipad_chat.py`, `scripts/compose_ipad.py`. README updated.
