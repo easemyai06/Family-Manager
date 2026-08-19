@@ -28,8 +28,8 @@ export default function Recipes() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="recipes-back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -49,7 +49,7 @@ export default function Recipes() {
               No recipes yet
             </AppText>
             <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 4 }}>
-              Save your family's favourite dishes and plan the week
+              Save your family’s favourite dishes and plan the week
             </AppText>
             <Pressable onPress={() => router.push("/recipes/create")} style={[styles.emptyBtn, { backgroundColor: c.brand }]} testID="empty-add-recipe">
               <AppText size={14} weight="bold" color="#fff">
@@ -118,7 +118,7 @@ export default function Recipes() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   card: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginBottom: spacing.md },
   thumb: { width: 60, height: 60, borderRadius: radius.md },
   metaRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },

@@ -87,8 +87,8 @@ export default function EmergencyHome() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="emergency-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -275,7 +275,7 @@ export default function EmergencyHome() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   activeAlert: { backgroundColor: "#C74B4B", borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg },
   resolveBtn: { backgroundColor: "#fff", borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   sos: { borderRadius: radius.lg, alignItems: "center", paddingVertical: spacing["3xl"] },

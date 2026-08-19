@@ -2610,3 +2610,21 @@ frontend_batch40:
 agent_communication_batch40:
     -agent: "main"
     -message: "UX Batch #40 = pure visual/layout polish on 3 screens (no API/logic changes). CREDS: protectdemo@fam.com/secret123 (has active SOS + expiring vault -> populated Needs Attention), storytester@fam.com/secret123 (seeded family chat). TEST FRONTEND ONLY: (a) Home renders; 'Needs your attention' section sits near the top with a red count badge and tone-colored left-accent rows; active SOS card floats above it; tapping an attention row still routes correctly; customize/reorder still works; child/grandparent personas still render. (b) Family tab: member grid + Joined/Pending pills, Trusted Helpers cards, invite card, Care Team CTA all render cleanly with no text overflow at 320/390; Manage member actions modal (role/remove/credentials) still works. (c) Family Chat (Chat tab): other-person message bubbles have a subtle border and are readable; own bubbles coral; sending a text message still works; Care Team chat view unchanged. NOTE: storytester family chat contains stale TEST_* marker messages from earlier test runs (harmless). Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ UX Polish Batch #41 — Unified header bars (Vault/Emergency/Shopping/Recipes/Meals) ============
+frontend_batch41:
+  - task: "Consistent surface header bar + divider across utilitarian screens"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/vault/index.tsx, frontend/app/emergency/index.tsx, frontend/app/shopping/index.tsx, frontend/app/recipes/index.tsx, frontend/app/meals/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "These 5 screens had a bare header floating on surfaceSecondary (no bg/divider), inconsistent with the memories screens (timeline/albums/tree/places) which use an elevated surface header bar. Unified them: moved paddingTop:insets off the container and onto the header; header now has backgroundColor c.surface + borderBottomWidth 1 + borderBottomColor c.border + paddingTop insets.top+6 + paddingBottom md. Meals weekBar got paddingTop md so it doesn't touch the divider. Fixed a pre-existing unescaped-apostrophe lint error in recipes empty state. All 5 lint clean. Screenshot-verified Emergency renders with the new clean header bar (SOS card, Medical at a Glance, shortcut grid intact)."
+
+agent_communication_batch41:
+    -agent: "main"
+    -message: "UX Batch #41 = header-bar consistency only (visual/layout; no API/logic changes) on Vault, Emergency, Shopping, Recipes, Meal Planner. CREDS: storytester@fam.com/secret123; protectdemo@fam.com/secret123 (has active SOS + expiring vault). Vault PIN: set any 4 digits (use 1234) on first open in a fresh session. TEST FRONTEND ONLY: reach each screen via More tab (more-emergency, more-shopping, more-meals, more-recipes, more-vault). Verify: (a) each header renders as a white bar with a subtle bottom divider and title, back button works; no content clipped under the status bar; (b) Emergency: SOS confirm modal opens (sos-button -> sos-confirm/sos-cancel), Quick Call rows + Medical at a Glance + shortcut grid navigate; (c) Vault: unlock with PIN 1234, folders grid + Upcoming Expiries render, Add to Vault FAB works; (d) Shopping: create/delete list still works, progress bars render; (e) Recipes: list renders, add-recipe + Meal Planner button work; (f) Meals: week switcher, day cards, recipe picker sheet, Add-to-Shopping all work. No text overflow at 390px. Do NOT run destructive cleanup; keep Sunita + demo data."

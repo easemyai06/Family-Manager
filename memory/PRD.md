@@ -777,3 +777,20 @@ iteration_39 — all frontend checks PASS on the 3 touched screens; no blocking 
 - REMAINING app-wide polish backlog: Shopping/Meals/Recipes/Wishlist, Memories/Timeline/Tree,
   Vault/Insurance, Emergency/Medical, Notifications/Settings, Helper portal + detail, Auth/onboarding;
   optional shared primitives (EmptyState/SectionHeader/Chip/Badge). Preview only — Publish to ship.
+
+## UX Polish Batch #41 — Unified header bars — June 2026
+Continued the app-wide polish pass (pure visual/layout; no API/logic changes). Verified: testing agent
+iteration_40 — all 6 items PASS; no blocking issues.
+- Vault, Emergency, Shopping, Recipes and Meal Planner had a bare header floating on surfaceSecondary
+  (no background, no divider), inconsistent with the Memories screens (timeline/albums/tree/places) which
+  use an elevated surface header bar. Unified all 5: paddingTop:insets moved off the container onto the
+  header; header now has c.surface bg + 1px bottom divider (c.border) + paddingTop insets.top+6. Meals
+  weekBar got paddingTop so it doesn't touch the divider. Fixed a pre-existing unescaped-apostrophe lint
+  error in the recipes empty state. All screens across Memories + Vault/Emergency/Shopping/Recipes/Meals now
+  share one consistent header treatment.
+- Housekeeping: swept stray TEST_* recipes left by earlier test runs.
+- Optional/deferred (noted by testing agent, NOT done to avoid refactor risk): extract a shared
+  <ScreenHeader> primitive so header styling can never drift again.
+- REMAINING app-wide polish backlog: Notifications/Settings, Helper portal + detail screens,
+  Auth/onboarding; detail/create sub-screens; optional shared primitives (ScreenHeader/EmptyState/Chip).
+  Preview only — Publish to ship.
