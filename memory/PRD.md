@@ -794,3 +794,21 @@ iteration_40 — all 6 items PASS; no blocking issues.
 - REMAINING app-wide polish backlog: Notifications/Settings, Helper portal + detail screens,
   Auth/onboarding; detail/create sub-screens; optional shared primitives (ScreenHeader/EmptyState/Chip).
   Preview only — Publish to ship.
+
+## UX Polish Batch #42 — Settings headers / Chat day dividers / Helper portal / Vault reminders — June 2026
+Verified: testing agent iteration_41 — backend 7/7 pytest + all frontend PASS; no blocking issues.
+- Settings + Activity: applied the Batch #41 unified surface header bar (divider) to Accessibility & Display,
+  Notifications, Storage & Cleanup, and the Activity feed. Now ALL non-tab screens share one header style.
+- Chat day dividers: gentle centered pills (Today / Yesterday / 'ddd, D MMM' / 'D MMM YYYY') above the first
+  message of each day, in both Family Chat (inverted FlatList) and Care Team chat (ScrollView).
+- Helper Portal: 'Today's Work' card now has a visual progress bar (done/total), green + '🎉 All done' when
+  complete — matching the family app's list progress bars.
+- NEW FEATURE — Vault expiry reminders: /api/notifications now surfaces a 'vault_expiry' item for vault docs
+  expiring within [-14,+14] days, RESPECTING per-item visibility via _can_view_secure (security-tested:
+  child members do NOT receive parents-only vault reminders). created_at anchored to start-of-today (gentle
+  daily nudge); route /vault/item/{id}. _gather_notifications now takes secure_viewer; both notification
+  endpoints pass _secure_viewer(user).
+- Fixed several pre-existing unescaped-apostrophe lint errors; removed an unused import. Housekeeping: pruned
+  stray test messages.
+- REMAINING app-wide polish backlog (optional): auth/onboarding screens, detail/create sub-screens, shared
+  <ScreenHeader> primitive extraction. Preview only — Publish to ship.

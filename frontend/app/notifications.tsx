@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
-import { spacing, radius } from "@/src/theme/tokens";
+import { spacing } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { timeAgo } from "@/src/lib/time";
 
@@ -79,8 +79,8 @@ export default function Notifications() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surface, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surface }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="notif-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -114,7 +114,7 @@ export default function Notifications() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1 },
   iconWrap: { width: 42, height: 42 },
   emojiCircle: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },

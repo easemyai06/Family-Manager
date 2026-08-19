@@ -53,6 +53,25 @@ function nameColor(name?: string) {
   return COLORS[s % COLORS.length];
 }
 
+function sameDayIso(a?: string, b?: string) {
+  if (!a || !b) return false;
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
+function careDayLabel(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const today = new Date();
+  const yest = new Date();
+  yest.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yest.toDateString()) return "Yesterday";
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === today.getFullYear()
+      ? { weekday: "short", day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" };
+  return d.toLocaleDateString(undefined, opts);
+}
+
 type Props = {
   subtitle?: string;
   messages: CareMsg[];
@@ -218,7 +237,7 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, highlightId
           <View style={[styles.privacy, { backgroundColor: c.brandTertiary }]}>
             <Ionicons name="people" size={13} color={c.onBrandTertiary} />
             <AppText size={12} color={c.onBrandTertiary} style={{ flex: 1 }}>
-              Shared with parents and your active helpers. The family chat can't see this.
+              Shared with parents and your active helpers. The family chat can’t see this.
             </AppText>
           </View>
 
@@ -230,19 +249,29 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, highlightId
               </AppText>
             </View>
           ) : (
-            messages.map((m) => {
+            messages.map((m, idx) => {
               const isMine = m.sender_type === myType && m.sender_id === myId;
+              const showDay = idx === 0 || !sameDayIso(m.created_at, messages[idx - 1].created_at);
               return (
-                <View
-                  key={m.message_id}
-                  onLayout={(e) => { msgY.current[m.message_id] = e.nativeEvent.layout.y; }}
-                  style={[
-                    styles.row,
-                    { justifyContent: isMine ? "flex-end" : "flex-start" },
-                    m.message_id === flashId && { backgroundColor: c.warning + "2E", borderRadius: radius.md, paddingVertical: 4 },
-                  ]}
-                  testID={`ctmsg-${m.message_id}`}
-                >
+                <React.Fragment key={m.message_id}>
+                  {showDay ? (
+                    <View style={styles.dayDivider}>
+                      <View style={[styles.dayPill, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+                        <AppText size={11} weight="bold" color={c.onSurfaceSecondary}>
+                          {careDayLabel(m.created_at)}
+                        </AppText>
+                      </View>
+                    </View>
+                  ) : null}
+                  <View
+                    onLayout={(e) => { msgY.current[m.message_id] = e.nativeEvent.layout.y; }}
+                    style={[
+                      styles.row,
+                      { justifyContent: isMine ? "flex-end" : "flex-start" },
+                      m.message_id === flashId && { backgroundColor: c.warning + "2E", borderRadius: radius.md, paddingVertical: 4 },
+                    ]}
+                    testID={`ctmsg-${m.message_id}`}
+                  >
                   <View
                     style={[
                       styles.bubble,
@@ -272,6 +301,7 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, highlightId
                     </AppText>
                   </View>
                 </View>
+                </React.Fragment>
               );
             })
           )}
@@ -351,6 +381,8 @@ const styles = StyleSheet.create({
   teamIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   privacy: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.sm },
   row: { flexDirection: "row" },
+  dayDivider: { alignItems: "center", marginVertical: spacing.xs },
+  dayPill: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4 },
   bubble: { maxWidth: "82%", borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   photo: { width: 210, height: 210, borderRadius: radius.md },
   empty: { alignItems: "center", paddingVertical: spacing["3xl"] },

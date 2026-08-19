@@ -132,8 +132,8 @@ export default function StorageSettings() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="storage-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -358,7 +358,7 @@ function Stat({ n, label, c }: { n: number; label: string; c: any }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
   statsRow: { flexDirection: "row", justifyContent: "space-around" },
   stat: { alignItems: "center", flex: 1 },

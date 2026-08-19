@@ -2628,3 +2628,56 @@ frontend_batch41:
 agent_communication_batch41:
     -agent: "main"
     -message: "UX Batch #41 = header-bar consistency only (visual/layout; no API/logic changes) on Vault, Emergency, Shopping, Recipes, Meal Planner. CREDS: storytester@fam.com/secret123; protectdemo@fam.com/secret123 (has active SOS + expiring vault). Vault PIN: set any 4 digits (use 1234) on first open in a fresh session. TEST FRONTEND ONLY: reach each screen via More tab (more-emergency, more-shopping, more-meals, more-recipes, more-vault). Verify: (a) each header renders as a white bar with a subtle bottom divider and title, back button works; no content clipped under the status bar; (b) Emergency: SOS confirm modal opens (sos-button -> sos-confirm/sos-cancel), Quick Call rows + Medical at a Glance + shortcut grid navigate; (c) Vault: unlock with PIN 1234, folders grid + Upcoming Expiries render, Add to Vault FAB works; (d) Shopping: create/delete list still works, progress bars render; (e) Recipes: list renders, add-recipe + Meal Planner button work; (f) Meals: week switcher, day cards, recipe picker sheet, Add-to-Shopping all work. No text overflow at 390px. Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ UX Polish Batch #42 — Settings headers / Chat day dividers / Helper portal / Vault reminders ============
+backend_batch42:
+  - task: "Vault expiry reminders in Activity feed (/api/notifications)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "_gather_notifications now accepts secure_viewer and adds a 'vault_expiry' notification for vault_items expiring within [-14, +14] days, RESPECTING per-item visibility via _can_view_secure(item, secure_viewer). Title varies (expires in N days / tomorrow / today / expired N days ago), emoji ⏰ (upcoming) or ⚠️ (overdue), route /vault/item/{id}, created_at anchored to start-of-today so it surfaces as a gentle daily reminder. Both /notifications and /notifications/unread now pass secure_viewer=_secure_viewer(user). Curl-verified with protectdemo@fam.com: returns 'Car Insurance — Honda City expires in 12 days'. Must NOT leak vault titles to members without item visibility."
+
+frontend_batch42:
+  - task: "Settings + Activity unified header bars"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/settings/notifications.tsx, frontend/app/settings/accessibility.tsx, frontend/app/settings/storage.tsx, frontend/app/notifications.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Applied the Batch #41 unified surface header bar + bottom divider to Notifications settings, Accessibility & Display, Storage & Cleanup, and the Activity feed. Fixed pre-existing unescaped-apostrophe lint errors + removed an unused radius import. All lint clean."
+  - task: "Chat day dividers (Family Chat + Care Team)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx, frontend/src/components/CareTeamChatView.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Gentle centered day-divider pills (Today / Yesterday / 'ddd, D MMM' / 'D MMM YYYY') inserted above the first message of each day. Family Chat: inverted FlatList, compares item vs ordered[index+1] (older). Care Team: non-inverted ScrollView, compares vs messages[idx-1]. Screenshot-verified 'Yesterday' pill in Family Chat."
+  - task: "Helper Portal — Today's Work progress bar"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/helper-portal/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Today's Work card now has a visual progress bar (done/total) that turns green + shows '🎉 All done' when complete, matching the family app's list progress bars. Fixed 3 pre-existing unescaped-apostrophe lint errors. Screenshot-verified with helper sunita/1234 (0 of 3 done, empty track visible)."
+
+agent_communication_batch42:
+    -agent: "main"
+    -message: "UX Batch #42. CREDS: protectdemo@fam.com/secret123 (expiring insurance -> vault reminder), storytester@fam.com/secret123 (family chat), helper sunita / PIN 1234 (family storytester). TEST BACKEND: GET /api/notifications as protectdemo returns a type=='vault_expiry' item ('... expires in N days') with route /vault/item/<id>; GET /api/notifications/unread reflects it; SECURITY: a child/non-authorized member must NOT receive vault_expiry items for vault docs they can't see (per-item visibility). TEST FRONTEND: (a) Settings screens (More -> Accessibility / Notifications / Storage) + Activity feed show a clean header bar w/ divider, no clipping; (b) Family Chat (tab-chat) shows centered Today/Yesterday day-divider pills above the first message of each day; Care Team chat (care-team) same; (c) Helper Portal (helper-login sunita/1234) 'Today's Work' card shows a progress bar. Do NOT run destructive cleanup; keep Sunita + demo data."

@@ -57,8 +57,8 @@ export default function NotificationsSettings() {
   const web = status === "unsupported";
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="notif-back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -157,7 +157,7 @@ export default function NotificationsSettings() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
   statusRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   statusIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },

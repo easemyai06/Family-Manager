@@ -78,8 +78,8 @@ export default function AccessibilitySettings() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="a11y-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -187,7 +187,7 @@ export default function AccessibilitySettings() {
         </View>
 
         <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: spacing.xl, lineHeight: 19 }}>
-          FamilyHome also follows your phone's own text size and motion settings{Platform.OS === "web" ? "" : " automatically"}.
+          FamilyHome also follows your phone’s own text size and motion settings{Platform.OS === "web" ? "" : " automatically"}.
         </AppText>
       </ScrollView>
     </View>
@@ -196,7 +196,7 @@ export default function AccessibilitySettings() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   sectionLabel: { letterSpacing: 1, marginTop: spacing.lg, marginBottom: spacing.sm },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
   segment: { flexDirection: "row", gap: spacing.sm },

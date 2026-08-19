@@ -1108,7 +1108,8 @@ def _bday_in_days(bday: Optional[str], today: date) -> Optional[int]:
 
 
 async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: int = 60,
-                                viewer_role: Optional[str] = None):
+                                viewer_role: Optional[str] = None,
+                                secure_viewer: Optional[dict] = None):
     since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     members = await db.members.find({"family_id": fid}, {"_id": 0}).to_list(200)
     mmap = {m["member_id"]: m for m in members}
@@ -1204,6 +1205,33 @@ async def _gather_notifications(fid: str, my_member_id: Optional[str], limit: in
                           "title": ev.get("title"), "subtitle": ev.get("subtitle"),
                           "actor": None, "created_at": ev.get("created_at"),
                           "route": ev.get("route") or "/(tabs)/family"})
+    # Vault expiry reminders — warn a few days early (respects per-item visibility).
+    if secure_viewer:
+        today_anchor = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        for d in await db.vault_items.find(
+                {"family_id": fid, "expiry_date": {"$ne": None}}, {"_id": 0}).to_list(2000):
+            du = _days_until(d.get("expiry_date"))
+            if du is None or du > 14 or du < -14:
+                continue
+            if not _can_view_secure(d, secure_viewer):
+                continue
+            title = d.get("title") or "A document"
+            if du > 1:
+                when = f"expires in {du} days"
+            elif du == 1:
+                when = "expires tomorrow"
+            elif du == 0:
+                when = "expires today"
+            elif du == -1:
+                when = "expired yesterday"
+            else:
+                when = f"expired {abs(du)} days ago"
+            items.append({"id": f"vaultexp_{d['item_id']}", "type": "vault_expiry",
+                          "emoji": "⏰" if du >= 0 else "⚠️",
+                          "title": f"{title} {when}",
+                          "subtitle": "Tap to review it in the Family Vault",
+                          "actor": None, "created_at": today_anchor,
+                          "route": f"/vault/item/{d['item_id']}"})
     items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     activity = items[:limit]
 
@@ -1225,7 +1253,8 @@ async def list_notifications(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
     myid = mine["member_id"] if mine else None
-    bdays, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"))
+    viewer = await _secure_viewer(user)
+    bdays, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"), secure_viewer=viewer)
     last_read = user.get("notifications_last_read") or ""
     unread = sum(1 for i in activity if (i.get("created_at") or "") > last_read)
     return {"items": bdays + activity, "unread_count": unread, "last_read": last_read}
@@ -1244,7 +1273,8 @@ async def notifications_unread(user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
     myid = mine["member_id"] if mine else None
-    _, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"))
+    viewer = await _secure_viewer(user)
+    _, activity = await _gather_notifications(fid, myid, viewer_role=(mine or {}).get("role"), secure_viewer=viewer)
     last_read = user.get("notifications_last_read") or ""
     return {"count": sum(1 for i in activity if (i.get("created_at") or "") > last_read)}
 

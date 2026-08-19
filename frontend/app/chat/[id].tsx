@@ -37,6 +37,16 @@ const RETENTION_OPTS = [
 ];
 const LIVE_MINUTES = 15;
 
+// Friendly day label for chat date dividers.
+function chatDayLabel(d: string) {
+  const day = dayjs(d);
+  const today = dayjs();
+  if (day.isSame(today, "day")) return "Today";
+  if (day.isSame(today.subtract(1, "day"), "day")) return "Yesterday";
+  if (day.isSame(today, "year")) return day.format("ddd, D MMM");
+  return day.format("D MMM YYYY");
+}
+
 export default function Conversation() {
   const { c } = useTheme();
   const router = useRouter();
@@ -386,8 +396,12 @@ export default function Conversation() {
     return `Seen by ${seenBy.length}`;
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const ordered = [...messages].reverse();
+
+  const renderItem = ({ item, index }: { item: any; index: number }) => {
     const mine = item.sender_member_id === me?.member_id;
+    const older = ordered[index + 1];
+    const showDay = !older || !dayjs(item.created_at).isSame(older.created_at, "day");
     const isAffection = item.type === "affection";
     const isVoice = item.type === "voice";
     const isFile = item.type === "file";
@@ -397,6 +411,15 @@ export default function Conversation() {
     const reactionEntries = Object.entries(item.reactions || {});
     return (
       <View style={{ marginBottom: reactionEntries.length ? spacing.lg : spacing.md }}>
+        {showDay ? (
+          <View style={styles.dayDivider}>
+            <View style={[styles.dayPill, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+              <AppText size={11} weight="bold" color={c.onSurfaceSecondary}>
+                {chatDayLabel(item.created_at)}
+              </AppText>
+            </View>
+          </View>
+        ) : null}
         <Pressable onLongPress={() => { setActionMsg(item); if (Platform.OS !== "web") Haptics.selectionAsync(); }} delayLongPress={250} style={[styles.msgRow, { justifyContent: mine ? "flex-end" : "flex-start" }]} testID={`msg-${item.message_id}`}>
           {!mine ? <Avatar uri={item.sender?.photo_url} name={item.sender?.name} size={28} color={item.sender?.color} /> : null}
           <View style={{ maxWidth: "78%", alignItems: mine ? "flex-end" : "flex-start" }}>
@@ -599,7 +622,7 @@ export default function Conversation() {
 
       <KeyboardAvoidingView behavior="translate-with-padding" keyboardVerticalOffset={0} style={{ flex: 1 }}>
         <FlatList
-          data={[...messages].reverse()}
+          data={ordered}
           keyExtractor={(m) => m.message_id}
           renderItem={renderItem}
           inverted
@@ -835,6 +858,8 @@ const styles = StyleSheet.create({
   retentionBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6, borderBottomWidth: 1 },
   groupAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
+  dayDivider: { alignItems: "center", marginTop: spacing.xs, marginBottom: spacing.md },
+  dayPill: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4 },
   bubble: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 60 },
   replyPreview: { borderLeftWidth: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 },
   msgImage: { width: 210, height: 210, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },

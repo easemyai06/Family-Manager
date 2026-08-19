@@ -300,12 +300,26 @@ export default function HelperPortal() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.brandPrimary} />}
       >
         <View style={[styles.progress, { backgroundColor: c.brandTertiary }]}>
-          <AppText family="display" weight="bold" size={16} color={c.onBrandTertiary}>
-            Today's Work
-          </AppText>
-          <AppText size={13} color={c.onBrandTertiary}>
-            {data ? `${data.done} of ${data.total} done` : "…"}
-          </AppText>
+          <View style={styles.progressHead}>
+            <AppText family="display" weight="bold" size={16} color={c.onBrandTertiary}>
+              Today’s Work
+            </AppText>
+            <AppText size={13} weight="semibold" color={c.onBrandTertiary}>
+              {data ? (data.total === 0 ? "Nothing due" : `${data.done} of ${data.total} done`) : "…"}
+            </AppText>
+          </View>
+          {data && data.total > 0 ? (
+            <>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.round((data.done / data.total) * 100)}%`, backgroundColor: data.done >= data.total ? c.success : c.brandPrimary }]} />
+              </View>
+              {data.done >= data.total ? (
+                <AppText size={12} weight="semibold" color={c.onBrandTertiary} style={{ marginTop: 6 }}>
+                  🎉 All done — wonderful work!
+                </AppText>
+              ) : null}
+            </>
+          ) : null}
         </View>
 
         {data?.rated_up_today ? (
@@ -342,7 +356,7 @@ export default function HelperPortal() {
           !data.checkin?.checked_in_at ? (
             <Pressable onPress={checkIn} style={[styles.checkinBtn, { backgroundColor: c.success }]} testID="portal-checkin">
               <Ionicons name="log-in-outline" size={20} color="#fff" />
-              <AppText size={15} weight="bold" color="#fff">I've arrived — start my shift</AppText>
+              <AppText size={15} weight="bold" color="#fff">I’ve arrived — start my shift</AppText>
             </Pressable>
           ) : !data.checkin?.checked_out_at ? (
             <View style={[styles.checkinRow, { backgroundColor: c.success + "18", borderColor: c.success + "40" }]} testID="portal-onduty">
@@ -606,7 +620,7 @@ export default function HelperPortal() {
               Need help?
             </AppText>
             <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginBottom: spacing.md }}>
-              Tell the family what's happening
+              Tell the family what’s happening
             </AppText>
             <View style={styles.reasonWrap}>
               {ISSUE_REASONS.map((r) => {
@@ -650,7 +664,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", ...shadow(1) },
   headerBadge: { position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1.5, borderColor: "#fff" },
-  progress: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  progress: { borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  progressHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  progressTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.5)", marginTop: spacing.sm, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 4 },
   navRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
   navBtn: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingVertical: spacing.md },
   praise: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
