@@ -1,0 +1,30 @@
+{
+  "summary": "Calendar Month-view grid fix verified END-TO-END on the deployed web preview (storytester@fam.com). Grid now renders as 6 explicit rows x exactly 7 flex:1 cells (42 cells total, equal 48.6px widths at 390px viewport). Every weekday-to-column mapping the reviewer asked for is correct: Aug 2026 -> 1/8/15/22/29 Aug are in col 6 (Sat), 2/9/16/23/30 Aug in col 0 (Sun), 19 Aug in col 3 (Wed), 30/31 Aug in col 0/1, leading Jul 26-31 fill Sun..Fri. Tapping day-2026-08-19 updates the agenda to 'Wednesday, 19 August' with the seeded Swimming Class event; tapping one cell from each of the 7 weekday columns produced the matching agenda label. Today (Aug 19) shows an outlined coral circle (border 1px rgb(255,107,107), transparent bg) while the selected date (Aug 15) shows a filled coral pill (bg rgb(255,107,107)) — visually distinct as required. Event pills are contained inside their cells (ellipsized, no overflow beyond parent) and '+N more' logic is intact. NO horizontal scroll and Saturday column stays inside the card at all 7 viewport widths (320/360/375/390/393/412/430). Month navigation is correct across a Sunday-start (Feb 2026, 28 days, no 29), a Monday-start (Jun 2026), a Wednesday-start (Jul 2026), a Saturday-start (Aug 2026), a 30-day (Nov 2026 -> 30 Nov = Mon), Dec 2026 -> Jan 2027 transition (31 Dec = Thu, 1 Jan 2027 = Fri, same row), and leap Feb 2028 (29 days, 1 & 29 Feb both Tue). Regression clean: Week (7 rows), Day, Tasks view, family-member filter chips (5, toggle works) and the Add Event FAB all continue to work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/cal_month.png",
+    "/tmp/cal_aug19.png",
+    "/tmp/today_vs_selected.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Grid rewrite in calendar.tsx is correct: 6 explicit week rows (Array.from({length:6})) x 7 cells (grid.slice(w*7, w*7+7)) with styles.cell using flex:1 + minWidth:0 removes the earlier percentage-width + flex-wrap rounding that dropped/pushed the Saturday column onto the next line.",
+    "isToday=outline (borderWidth 1.5, borderColor c.brandPrimary, transparent bg) vs isSel=filled (backgroundColor c.brandPrimary) is applied in the correct order; when isSel is true it visually overrides isToday, which is fine because the selected state is the strongest intent.",
+    "Event pill container styles.pillWrap has width:'100%' and each eventPill uses overflow:'hidden' with numberOfLines={1} — pills cannot escape their cell, confirmed via bounding-box check (0 overflow issues across all 42 cells).",
+    "Minor nit (not blocking): weekLabel and cell both use flex:1 but WEEKDAYS has 7 items while the grid explicitly slices 7 — good, they match. Consider extracting the 42-day grid into a util for reuse (also used by heatmap-style views).",
+    "Very minor nit: `WEEKDAYS = ['S','M','T','W','T','F','S']` — 'T' repeats for Tue/Thu (fine for compact width, but consider a subtle color/tooltip for a11y). Not part of this bug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only task)", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing storytester@fam.com Sharma demo data (Swimming Class on 19 Aug 2026 verified visible).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Calendar month grid is now a 6x7 flexbox (calendar.tsx lines 306-355, styles gridRow/cell lines 693-694). Cell testIDs remain day-YYYY-MM-DD. Today outline vs selected fill is decided in the inner .dayNum View at lines 323-327. Env 'today' at time of test was 2026-08-19. All 8 review scenarios (7-column integrity, Aug 2026 mapping, tap->agenda, today-vs-selected, event-pill containment, 7 viewport widths 320..430, cross-month navigation incl. leap Feb 2028, and regression of Week/Day/Task/FAB/member-filter) passed.",
+  "rca_of_issue": "Original bug: month grid used cells with percentage widths inside a flex-wrap container, which — at some viewport widths — rounded 7 x 14.28% > 100% and forced the 7th (Saturday) cell to wrap onto the next line, so 7 dates would fit in 6 columns and every subsequent date appeared under the wrong weekday. Fix (already applied by main agent): render 6 explicit week rows each containing exactly 7 flex:1 cells with minWidth:0, dropping any reliance on wrap/rounding. Verified by (a) reading the calendar.tsx source, (b) grouping all 42 day-testIDs by their on-screen Y and asserting each row has exactly 7 cells with equal widths, (c) asserting known Aug 2026 weekday-column indices, (d) tapping across all 7 weekday columns and confirming the agenda's weekday label matches, and (e) sweeping viewports 320..430 with no horizontal scroll and Saturday still inside the card."
+}

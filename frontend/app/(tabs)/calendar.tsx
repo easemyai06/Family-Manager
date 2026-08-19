@@ -304,54 +304,54 @@ export default function Calendar() {
             ))}
           </View>
           <View style={styles.gridWrap}>
-            {grid.map((day) => {
-              const ds = day.format("YYYY-MM-DD");
-              const inMonth = day.month() === month.month();
-              const isSel = ds === selected;
-              const isToday = ds === dayjs().format("YYYY-MM-DD");
-              const dayEvents = byDate[ds] || [];
-              const isWeekend = day.day() === 0 || day.day() === 6;
-              return (
-                <Pressable
-                  key={ds}
-                  style={[
-                    styles.cell,
-                    { borderColor: c.divider },
-                    isSel && { backgroundColor: c.brandPrimary + "12" },
-                  ]}
-                  onPress={() => setSelected(ds)}
-                  testID={`day-${ds}`}
-                >
-                  <View style={[
-                    styles.dayNum,
-                    isToday && { backgroundColor: c.brandPrimary },
-                    isSel && !isToday && { backgroundColor: c.brandPrimary + "26" },
-                  ]}>
-                    <AppText
-                      size={13}
-                      weight={isToday || isSel ? "bold" : "regular"}
-                      color={isToday ? "#fff" : !inMonth ? c.onSurfaceTertiary + "80" : isWeekend ? c.brandPrimary : c.onSurface}
+            {Array.from({ length: 6 }, (_, w) => (
+              <View key={w} style={styles.gridRow}>
+                {grid.slice(w * 7, w * 7 + 7).map((day) => {
+                  const ds = day.format("YYYY-MM-DD");
+                  const inMonth = day.month() === month.month();
+                  const isSel = ds === selected;
+                  const isToday = ds === dayjs().format("YYYY-MM-DD");
+                  const dayEvents = byDate[ds] || [];
+                  const isWeekend = day.day() === 0 || day.day() === 6;
+                  return (
+                    <Pressable
+                      key={ds}
+                      style={[styles.cell, { borderColor: c.divider }, isSel && { backgroundColor: c.brandPrimary + "0F" }]}
+                      onPress={() => setSelected(ds)}
+                      testID={`day-${ds}`}
                     >
-                      {day.date()}
-                    </AppText>
-                  </View>
-                  <View style={styles.pillWrap}>
-                    {dayEvents.slice(0, 2).map((e, i) => (
-                      <View key={i} style={[styles.eventPill, { backgroundColor: (e.color || c.brandPrimary) + "26", borderLeftColor: e.color || c.brandPrimary }]}>
-                        <AppText size={9} weight="bold" color={inMonth ? c.onSurface : c.onSurfaceTertiary} numberOfLines={1}>
-                          {e.title}
+                      <View style={[
+                        styles.dayNum,
+                        isToday && !isSel && { borderWidth: 1.5, borderColor: c.brandPrimary },
+                        isSel && { backgroundColor: c.brandPrimary },
+                      ]}>
+                        <AppText
+                          size={13}
+                          weight={isToday || isSel ? "bold" : "regular"}
+                          color={isSel ? "#fff" : isToday ? c.brandPrimary : !inMonth ? c.onSurfaceTertiary + "80" : isWeekend ? c.brandPrimary : c.onSurface}
+                        >
+                          {day.date()}
                         </AppText>
                       </View>
-                    ))}
-                    {dayEvents.length > 2 ? (
-                      <AppText size={9} weight="bold" color={c.onSurfaceTertiary} style={{ paddingLeft: 3 }}>
-                        +{dayEvents.length - 2} more
-                      </AppText>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
+                      <View style={styles.pillWrap}>
+                        {dayEvents.slice(0, 2).map((e, i) => (
+                          <View key={i} style={[styles.eventPill, { backgroundColor: (e.color || c.brandPrimary) + "22", borderLeftColor: e.color || c.brandPrimary }]}>
+                            <AppText size={9} weight="bold" color={inMonth ? c.onSurface : c.onSurfaceTertiary} numberOfLines={1}>
+                              {e.title}
+                            </AppText>
+                          </View>
+                        ))}
+                        {dayEvents.length > 2 ? (
+                          <AppText size={9} weight="bold" color={c.onSurfaceTertiary} numberOfLines={1} style={{ paddingLeft: 2 }}>
+                            +{dayEvents.length - 2} more
+                          </AppText>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
           </View>
         </View>
         ) : null}
@@ -687,14 +687,15 @@ const styles = StyleSheet.create({
   memberChip: { alignItems: "center", gap: 4, width: 56 },
   memberCheck: { position: "absolute", bottom: 0, right: 2, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#fff" },
   calCard: { margin: spacing.lg, borderRadius: radius.lg, padding: spacing.sm, borderWidth: 1 },
-  weekRow: { flexDirection: "row", marginBottom: spacing.xs, paddingHorizontal: 2 },
+  weekRow: { flexDirection: "row", marginBottom: spacing.xs },
   weekLabel: { flex: 1, textAlign: "center" },
-  gridWrap: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: `${100 / 7}%`, minHeight: 62, paddingTop: 3, paddingBottom: 4, paddingHorizontal: 1, borderTopWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderRadius: 6 },
-  dayNum: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", alignSelf: "flex-start", marginLeft: 2 },
+  gridWrap: {},
+  gridRow: { flexDirection: "row" },
+  cell: { flex: 1, minWidth: 0, minHeight: 52, paddingTop: 3, paddingBottom: 4, paddingHorizontal: 2, borderTopWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderRadius: 6, overflow: "hidden" },
+  dayNum: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 3, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   pillWrap: { marginTop: 2, gap: 2, width: "100%" },
-  eventPill: { borderRadius: 4, borderLeftWidth: 3, paddingHorizontal: 3, paddingVertical: 1.5 },
-  agendaHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  eventPill: { borderRadius: 4, borderLeftWidth: 3, paddingHorizontal: 3, paddingVertical: 1.5, overflow: "hidden" },
+  agendaHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
   weekList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
   weekDayRow: { flexDirection: "row", gap: spacing.md, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, alignItems: "flex-start" },
   weekDayLeft: { alignItems: "center", width: 40, gap: 2 },

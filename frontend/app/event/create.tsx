@@ -22,7 +22,9 @@ export default function CreateEvent() {
   const params = useLocalSearchParams<{ date?: string }>();
   const [members, setMembers] = useState<any[]>([]);
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(params.date || dayjs().format("YYYY-MM-DD"));
+  const [date, setDate] = useState(
+    params.date && dayjs(params.date).isBefore(dayjs(), "day") ? dayjs().format("YYYY-MM-DD") : (params.date || dayjs().format("YYYY-MM-DD"))
+  );
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("11:00");
   const [allDay, setAllDay] = useState(false);
@@ -55,6 +57,10 @@ export default function CreateEvent() {
     setError("");
     if (!title.trim()) {
       setError("Please enter an event title");
+      return;
+    }
+    if (dayjs(date).isBefore(dayjs(), "day")) {
+      setError("You can't add an event in the past — please pick today or a future date.");
       return;
     }
     setSaving(true);
@@ -101,7 +107,7 @@ export default function CreateEvent() {
 
         {/* date */}
         <View style={{ marginTop: spacing.lg }}>
-          <DateField label="Date" value={date} onChange={setDate} minYear={dayjs().year() - 1} maxYear={dayjs().year() + 5} testID="event-date" />
+          <DateField label="Date" value={date} onChange={setDate} minToday minYear={dayjs().year()} maxYear={dayjs().year() + 5} testID="event-date" />
         </View>
 
         {/* all day */}
@@ -181,7 +187,7 @@ export default function CreateEvent() {
               </View>
             ) : (
               <View style={{ marginTop: spacing.md }}>
-                <DateField value={repeatUntil} onChange={setRepeatUntil} minYear={dayjs().year()} maxYear={dayjs().year() + 5} testID="repeat-until" />
+                <DateField value={repeatUntil} onChange={setRepeatUntil} minToday minYear={dayjs().year()} maxYear={dayjs().year() + 5} testID="repeat-until" />
               </View>
             )}
           </View>
@@ -207,7 +213,7 @@ export default function CreateEvent() {
 
         {/* participants */}
         <AppText size={13} weight="semibold" color={c.onSurfaceSecondary} style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
-          Who's involved?
+          Who’s involved?
         </AppText>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md, paddingBottom: 4 }}>
           {members.map((m) => {

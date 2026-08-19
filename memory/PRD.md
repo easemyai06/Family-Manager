@@ -849,3 +849,14 @@ DOCUMENTED (P3 hardening, NOT changed to avoid launch-time regression on delicat
 - Wildcard CORS allow_origins=["*"] (credentials disabled, bearer auth) — scope origins for defense-in-depth.
 - /families/join lets an invite-code holder claim a pending parent-role profile (intended flow).
 Note: audit is source-level (source==deployed). Object-storage backend + runtime token-leakage not runtime-verified.
+
+## Batch #46 — Block back-dated events & tasks — June 2026
+Reported bug: app allowed creating events/tasks with a past date. Verified: testing agent iteration_46
+(backend 11/11 + frontend 7/7 PASS). Fix = 3 defensive layers:
+- Backend is_past_date() helper; create_event 400s on past date; update_event 400s when a non-series event's
+  date is CHANGED to the past (editing already-past events' other fields still allowed); add_todo_item 400s on
+  past due_date. (To-do UI has no date picker; guard protects the API/seed path.)
+- DateField gained minToday (disables past days, symmetric to maxToday) — used on Event create Date +
+  Repeat-until, and Vault renew date.
+- Event create defaults Date to today if the calendar passed a past ?date=, and save() re-validates with an
+  inline error. Today & future creation unaffected. Preview only — Publish to ship.

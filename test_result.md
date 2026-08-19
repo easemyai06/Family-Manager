@@ -2792,3 +2792,51 @@ agent_communication_batch44:
 # ---- Batch #44 follow-up: family-scope the cascade deletes ----
     -agent: "main"
     -message: "Testing agent flagged delete_post/delete_timeline cascade delete_many ran by post_id/timeline_id WITHOUT family_id — a family B user calling DELETE on family A's id would destroy family A's comments/reactions even though the scoped delete_one no-ops. FIXED: cascade delete_many now includes family_id. TEST BACKEND: as family B (protectdemo) DELETE /api/posts/{A_post_id} and /api/timeline/{A_timeline_id} (family A = storytester) must NOT delete family A's comments/reactions (A can still list them afterward). REGRESSION: family A deleting its OWN post/timeline still removes it + its comments/reactions. Clean up created data."
+
+# ============ Batch #45 — Calendar Month View 7-column grid fix ============
+frontend_batch45:
+  - task: "Calendar Month View — fix 7th (Saturday) column wrap + alignment + compact polish"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "ROOT CAUSE: month grid used gridWrap {flexDirection:row, flexWrap:wrap} with cells width:100/7% (~14.2857%). Pixel rounding of 7 percentage cells overflowed 100%, wrapping the 7th cell to the next line => dates rendered as a 6-column layout (1 Aug appeared under Sunday instead of Saturday). Date math was correct (dayjs startOf('week')=Sunday). FIX: chunk the 42-day grid into 6 explicit week rows; each row is flexDirection:row with 7 cells flex:1 minWidth:0 (equiv grid-template-columns repeat(7,minmax(0,1fr))). No wrap possible; always 7 columns. Also: centered the day number (alignSelf center) so it aligns with the centered S M T W T F S header (removed weekRow paddingHorizontal for exact alignment); cell overflow:hidden + eventPill overflow:hidden + numberOfLines=1 keep event text inside cells; reduced minHeight 62->52 for compactness; Today now = outline circle (border), Selected = filled coral circle (was reversed); +N more numberOfLines=1; agenda header more top breathing room. Screenshot-verified Aug 2026: 1=Sat, 8=Sat, 15=Sat, 19=Wed(selected, matches agenda), 22=Sat, 29=Sat, 30=Sun, 31=Mon; Saturday column visible; pills clipped inside cells; no horizontal overflow at 390px."
+
+agent_communication_batch45:
+    -agent: "main"
+    -message: "Batch #45 fixes the reported Calendar Month View bug (missing/wrapped 7th column). CREDS: storytester@fam.com/secret123. Calendar tab defaults to Month view of the current month (August 2026 in this env). TEST FRONTEND ONLY: (1) Month grid shows exactly 7 columns S M T W T F S; Saturday column is present and populated. (2) Aug 2026 mapping: day-2026-08-01 sits in the Saturday (7th) column; day-2026-08-19 sits in the Wednesday (4th) column; 8/15/22/29 Aug are Saturdays, 2/9/16/23/30 are Sundays, 30=Sun & 31=Mon. (3) Tapping day-2026-08-19 (and one date in every weekday column) updates the agenda header below to the matching 'Wednesday, 19 August' etc. (4) Today = outline circle, Selected = filled coral circle — visibly distinct. (5) Event pills (Football.../School.../Doctor...) stay INSIDE their date cell, ellipsized, never widening a column or crossing into neighbours; '+N more' shows when >2 events. (6) Navigate months via cal-prev/cal-next and verify weekday mapping for a Sunday-start month, a Monday-start month, a Wednesday-start month, a Saturday-start month, February 2026 (28 days), leap Feb 2028 (29 days), a 30-day month, and the Dec 2026 -> Jan 2027 transition — every date must map to the correct weekday column and the Saturday column must always be present. (7) Responsive: verify no horizontal scroll and Saturday column visible at widths 320/360/375/390/393/412/430. (8) Regression: Week / Day / Tasks views + member filter + Add Event FAB still work. Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ Batch #46 — Block back-dated events & tasks ============
+backend_batch46:
+  - task: "Reject past-dated event/task creation (+ event reschedule to past)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Added is_past_date(date_str) helper (date < date.today()). create_event (POST /events) now 400s if body.date is in the past. update_event (PATCH /events/{id}) 400s if a non-series event's date is CHANGED to a past date (editing other fields of an already-past event still allowed). add_todo_item (POST /todos/lists/{id}/items) 400s if body.due_date is in the past. Curl-verified: past event=400, today event=200."
+frontend_batch46:
+  - task: "Prevent picking/submitting past dates for events (DateField minToday)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/ui/DateTimeField.tsx, frontend/app/event/create.tsx, frontend/app/vault/item/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "DateField gained a minToday prop (disables past days in the picker; symmetric to maxToday). Event Create: Date + Repeat-until fields use minToday; if the calendar passed a past date via ?date=, the create screen now defaults to today; save() also validates (shows 'You can't add an event in the past'). Backend 400 message surfaces via existing setError. Vault renew date also uses minToday. NOTE: the to-do list UI has no due-date picker, so tasks get due dates only via API/seed — backend guard covers that path."
+
+agent_communication_batch46:
+    -agent: "main"
+    -message: "Batch #46 blocks back-dated events & tasks (reported bug: app was allowing past events/tasks). CREDS storytester@fam.com/secret123. Env 'today' ~ 19 Aug 2026. TEST BACKEND: (1) POST /api/events {title,date:'2020-01-01',all_day:true} -> 400 with a friendly message; date=today -> 201/200 ok; date=future -> ok. (2) PATCH /api/events/{id} changing a non-series event's date to a past date -> 400; editing an already-past event's title (date unchanged) -> ok. (3) POST /api/todos/lists/{list_id}/items {title,due_date:'2020-01-01'} -> 400; due_date today/future or omitted -> ok. Clean up any events/items you create. TEST FRONTEND: Calendar -> tap + (Add Event). On the create screen the Date picker must NOT allow selecting a day before today (past days disabled/greyed). If you navigate the calendar to a PAST day then tap +, the create screen should default the Date to today (not the past day). Trying to save with a past date shows an inline error and does not create. Regression: creating a normal today/future event still works and appears on the calendar. Do NOT run destructive cleanup; keep Sunita + demo data."

@@ -227,7 +227,7 @@ export default function VaultItem() {
             <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 4, marginBottom: spacing.lg }}>
               Set the new expiry date. The reminder clears once it’s in the future.
             </AppText>
-            <DateField label="New expiry date" value={newExpiry} onChange={setNewExpiry} placeholder="Select new expiry date" testID="vault-renew-date" />
+            <DateField label="New expiry date" value={newExpiry} onChange={setNewExpiry} minToday placeholder="Select new expiry date" testID="vault-renew-date" />
             <Button
               label={renewBusy ? "Saving…" : "Save new expiry"}
               onPress={confirmRenew}

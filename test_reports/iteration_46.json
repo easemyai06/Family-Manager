@@ -1,0 +1,33 @@
+{
+  "summary": "Back-dated event/task blocking VERIFIED end-to-end (backend + frontend web preview) on storytester@fam.com. Backend: 11/11 pytest cases passed in /app/backend/tests/test_batch46_past_date_block.py — POST /api/events with 2020-01-01 and yesterday both return 400 with the friendly 'past' message; today and future succeed; PATCH /api/events/{id} that MOVES a non-recurring event's date to 2020-01-01 returns 400 and the stored date is unchanged; PATCH that keeps the same date and only edits the title still returns 200; POST /api/todos/lists/{list_id}/items rejects 2020-01-01 and yesterday (400), and accepts today, +7 days, and due_date omitted (null). Frontend: from Calendar tap FAB (fab-create-event) → New Event screen loads with Date pre-filled to today (19-08-2026). Opening the event-date picker shows August 2026 with days 1..18 rendered at opacity 0.4 and aria-disabled='true'; clicking cal-day-18 (yesterday) does NOT change the field and the picker stays open. Clicking cal-day-19 (today) selects and closes. Verified default-to-today normalization: on the Calendar screen I paged back to July 2026, tapped day-2026-06-28 (a past day) so the agenda re-anchored there, then tapped fab-create-event — the create screen's Date read '19-08-2026' (today), NOT the past day, confirming the params.date past-date guard in event/create.tsx L25-27. All 7 review scenarios PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_batch46_past_date_block.py",
+    "/app/test_reports/pytest/pytest_batch46_results.xml",
+    "/tmp/picker.png",
+    "/tmp/past_default.png",
+    "/tmp/calendar.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is_past_date (L209) uses date.fromisoformat(str(x)[:10]) with a broad try/except → blank/None/invalid returns False. This is the right behaviour: it never blocks a legitimate save because of a parser hiccup; only well-formed YYYY-MM-DD strings strictly before today are rejected. Good.",
+    "update_event correctly gates on (not series_id) AND (body.date != stored.date) AND is_past_date(body.date) — so editing title on an ALREADY-past one-off event is still allowed, and recurring series editing (which strips the date field anyway at L2374-2375) is never blocked by this check. Behaviour matches the review request exactly.",
+    "DateTimeField.tsx `disabled(d)` at L51 covers both maxToday and minToday. Consumers correctly pass minToday for event-date and repeat-until, and maxToday for birthdays. Verified via DOM opacity=0.4 and aria-disabled=true on past cells.",
+    "event/create.tsx L25-27 normalises params.date to today when the incoming route param is a past ISO. Verified via UI: past-day selection on Calendar screen + FAB → default 19-08-2026.",
+    "Defense-in-depth: create.tsx save() (L62-64) re-checks dayjs(date).isBefore(today,'day') so even if the picker were bypassed the client shows the same friendly error before the backend 400 comes back. Nice.",
+    "Nit (not blocking): the picker's 'Today' button (L113) already guards with disabled(today) — perfect. The disabled visual is only opacity change; a future improvement could also skip the ripple/focus outline on web, but React Native Pressable disabled prop already suppresses the onPress so functionally it's a no-op."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (7/7 review scenarios)"},
+  "seed_data_creation": "None — used seeded storytester@fam.com family. Test events created during pytest were cleaned up via DELETE /api/events/{id}; test todo items via DELETE /api/todos/items/{id} in the module-scoped teardown fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Environment 'today' at test time was 2026-08-19. Backend past-date guard lives in server.py is_past_date (L209) and is used by create_event (L2294), update_event (L2368, only when date is changing on a non-recurring event) and add_todo_item (L2789). Friendly detail strings all contain the substring 'past' so tests can assert that. Frontend picker (DateTimeField.tsx) exposes cal-day-N testIDs inside the modal (bare day number, not ISO), while the Calendar SCREEN grid uses day-YYYY-MM-DD testIDs — don't confuse them. When you land on the Welcome screen tap 'I already have an account' first (there is no login-email-input testID; use `page.query_selector_all('input')` fallback). Log In button label is 'Log In' (two words). Regression clean.",
+  "rca_of_issue": "Original bug: FamilyHome had NO server-side or picker-level guard against past dates, so users could accidentally create events / to-do items dated in the past. Fix (already applied by main agent) is 3-layered: (1) backend is_past_date helper + 400s in POST /api/events, PATCH /api/events (only when date changes on a non-recurring event), and POST /api/todos/.../items; (2) DateTimeField's minToday prop disables past cells in the picker; (3) event/create.tsx normalises a past route-param date to today and re-validates on save. Verified all 3 layers behave correctly and the regression path (creating a normal today/future event, editing title without changing date on an already-past event, and adding a todo with today/future/no due_date) still works."
+}

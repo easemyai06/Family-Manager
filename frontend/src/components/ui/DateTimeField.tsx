@@ -11,7 +11,7 @@ const WEEK = ["M", "T", "W", "T", "F", "S", "S"];
 /* ------------------------------ Date field ------------------------------ */
 export function DateField({
   label, value, onChange, placeholder = "Select date", testID,
-  minYear, maxYear, maxToday = false,
+  minYear, maxYear, maxToday = false, minToday = false,
 }: {
   label?: string;
   value?: string | null;            // "YYYY-MM-DD"
@@ -21,6 +21,7 @@ export function DateField({
   minYear?: number;
   maxYear?: number;
   maxToday?: boolean;               // disallow future dates (birthdays)
+  minToday?: boolean;               // disallow past dates (events / tasks)
 }) {
   const { c } = useTheme();
   const [open, setOpen] = useState(false);
@@ -29,9 +30,8 @@ export function DateField({
   const selected = value ? dayjs(value) : null;
   const [view, setView] = useState(() => (selected && selected.isValid() ? selected : today).startOf("month"));
 
-  const loYear = minYear ?? today.year() - 100;
+  const loYear = minYear ?? (minToday ? today.year() : today.year() - 100);
   const hiYear = maxYear ?? today.year() + 5;
-
   const grid = useMemo(() => {
     const start = view.startOf("month");
     const firstCol = (start.day() + 6) % 7; // Monday-first index
@@ -48,7 +48,7 @@ export function DateField({
     setOpen(false);
   };
 
-  const disabled = (d: dayjs.Dayjs) => maxToday && d.isAfter(today, "day");
+  const disabled = (d: dayjs.Dayjs) => (maxToday && d.isAfter(today, "day")) || (minToday && d.isBefore(today, "day"));
 
   return (
     <View>

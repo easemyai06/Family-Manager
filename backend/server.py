@@ -206,6 +206,16 @@ def new_id(prefix: str = "") -> str:
     return f"{prefix}{uuid.uuid4().hex[:16]}"
 
 
+def is_past_date(date_str: Optional[str]) -> bool:
+    """True if the given YYYY-MM-DD date is before today (server date). Blank/invalid -> False."""
+    if not date_str:
+        return False
+    try:
+        return date.fromisoformat(str(date_str)[:10]) < date.today()
+    except Exception:
+        return False
+
+
 def make_token(user_id: str) -> str:
     payload = {"user_id": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=JWT_DAYS)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
@@ -2281,6 +2291,8 @@ async def nudge_event(event_id: str, user: dict = Depends(get_current_user)):
 @api.post("/events")
 async def create_event(body: EventIn, request: Request, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    if is_past_date(body.date):
+        raise HTTPException(status_code=400, detail="You can't add an event in the past — please pick today or a future date.")
     viewer = await member_for_user(user)
     color = body.color
     if not color and body.owner_member_id:
@@ -2352,6 +2364,9 @@ async def update_event(event_id: str, body: EventIn, user: dict = Depends(get_cu
     e = await db.events.find_one({"event_id": event_id, "family_id": fid}, {"_id": 0})
     if not e:
         raise HTTPException(status_code=404, detail="Event not found")
+    # Block moving an event to a new past date (but allow editing an already-past event's other fields).
+    if not e.get("series_id") and body.date != e.get("date") and is_past_date(body.date):
+        raise HTTPException(status_code=400, detail="You can't move an event to a past date — please pick today or a future date.")
     updates = body.dict()
     if e.get("series_id"):
         # editing a recurring event applies to the whole series, but each
@@ -2771,6 +2786,8 @@ async def todo_items(list_id: str, user: dict = Depends(get_current_user)):
 @api.post("/todos/lists/{list_id}/items")
 async def add_todo_item(list_id: str, body: TodoItemIn, user: dict = Depends(get_current_user)):
     fid = require_family(user)
+    if is_past_date(body.due_date):
+        raise HTTPException(status_code=400, detail="You can't set a due date in the past — please pick today or a future date.")
     item = {
         "item_id": new_id("tdi_"), "list_id": list_id, "family_id": fid, "title": body.title,
         "assignee_member_id": body.assignee_member_id, "due_date": body.due_date,
