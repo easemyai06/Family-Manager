@@ -2539,3 +2539,34 @@ frontend_batch38:
 agent_communication_batch38:
     -agent: "main"
     -message: "Batch #38 = medical revamp + login redesign + reset-email note. CREDS parent storytester@fam.com/secret123 (parent member mem_e8380cf812624082 now has demo medical: O+, allergies Peanuts/Dust/Kiwi, Dr. Mehta +91 90000 11111, Health+Vehicle insurance). Helper sunita/1234. LOGIN NOTE: fresh web browser has NO saved profiles so the gate opens /(auth)/welcome; 'I already have an account' -> login.tsx; login-pin-btn -> pin picker. On a device with saved PINs the app opens the PIN picker first. TEST BACKEND: PUT /emergency/medical/{member_id} accepts doctor_phone + insurance[]; GET returns them for admin; a viewer WITHOUT medical-detail permission must NOT see doctor_phone/insurance/medication/conditions (blood_group+allergies OK); helper Care-Team medical view still only exposes allergies/blood_group/doctor/emergency_contact (no doctor_phone/insurance leak). TEST FRONTEND: (a) Medical editor (open a member -> Medical info -> edit): blood-group chips, allergy pills + custom Other, doctor name+phone, 4 insurance type cards; Save persists; view mode shows tap-to-call doctor + insurance list. (b) Login: welcome shows a clear 'I'm a trusted helper' button; login page simplified with a 'Family member? Sign in with a PIN' link -> PIN picker which shows 'Sign in with email & password' + 'I'm a trusted helper' buttons. (c) forgot password verify step shows a Spam/Junk hint. Do NOT run destructive cleanup; keep Sunita + demo data. Native camera/mic remain device-only."
+
+# ============ UX Polish Batch #39 — Calendar Task view + polish ============
+backend_batch39:
+  - task: "GET /api/tasks/upcoming — powers Calendar Task view"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New family-scoped endpoint returns all OPEN to-dos across every list sorted by due_date (nulls last) with assignee member-card, priority, days_until_due, overdue flag, scope (mine/kids/family), and can_manage. Reuses _member_card + _days_until. Curl-verified with storytester@fam.com (returns Family Tasks + Vacation Packing items)."
+
+frontend_batch39:
+  - task: "Calendar Task view (4th view) + month-cell readability"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Added a 4th segment 'Tasks' (cal-view-task) to the Month/Week/Day switch. Task view fetches /tasks/upcoming and groups open to-dos into Overdue / Due today / This week / Later / No date with a colored group header + count. Each row (cal-task-<id>) shows a toggle circle (cal-task-check-<id> -> POST /todos/items/{id}/toggle, optimistic remove), title, High-priority flag tag, due date (red if overdue), list name, and assignee avatar. Member filter row filters tasks by assignee. Empty state 'All caught up!'. FAB routes to /todos in Task view. Hero shows 'Tasks' + open count, hides prev/next arrows. Month-cell event pill font bumped 8->9 for readability. Screenshot-verified Task view renders (grouped, priority tags, avatars, toggles)."
+
+agent_communication_batch39:
+    -agent: "main"
+    -message: "UX Batch #39 (start of app-wide polish pass) = added the missing Calendar Task view. CREDS parent storytester@fam.com/secret123. TEST BACKEND: GET /api/tasks/upcoming (auth required; 401 without token) returns {tasks:[...], can_manage:bool}; each task has item_id/title/priority/due_date/days_until_due/overdue/assignee/scope/list_name; family-scoped (no cross-family leak). Toggling via POST /todos/items/{id}/toggle marks done. TEST FRONTEND: Calendar tab -> tap 'Tasks' segment (cal-view-task) -> grouped open to-dos render; tapping a task's circle (cal-task-check-<id>) removes it (marked done); member filter row filters by assignee; switching back to Month/Week/Day still works (no regression). Do NOT run destructive cleanup; keep Sunita + demo data."

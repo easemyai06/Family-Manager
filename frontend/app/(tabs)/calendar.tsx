@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Modal } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Modal, Platform } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import dayjs from "dayjs";
@@ -32,9 +33,10 @@ export default function Calendar() {
   const [events, setEvents] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [memberFilter, setMemberFilter] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<"month" | "week" | "day">("month");
+  const [view, setView] = useState<"month" | "week" | "day" | "task">("month");
   const [pendingDelete, setPendingDelete] = useState<any>(null);
   const [toast, setToast] = useState("");
+  const [tasks, setTasks] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     const start = month.startOf("month").startOf("week").format("YYYY-MM-DD");
@@ -49,11 +51,29 @@ export default function Calendar() {
     } catch {}
   }, [month]);
 
+  const loadTasks = useCallback(async () => {
+    try {
+      const r = await api<{ tasks: any[]; can_manage: boolean }>("/tasks/upcoming");
+      setTasks(r.tasks || []);
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      loadTasks();
+    }, [load, loadTasks])
   );
+
+  const toggleTask = async (item: any) => {
+    setTasks((prev) => prev.filter((t) => t.item_id !== item.item_id));
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await api(`/todos/items/${item.item_id}/toggle`, { method: "POST" });
+    } catch {
+      loadTasks();
+    }
+  };
 
   const grid = useMemo(() => {
     const start = month.startOf("month").startOf("week");
@@ -123,6 +143,7 @@ export default function Calendar() {
   };
 
   const heroLabel = () => {
+    if (view === "task") return "Tasks";
     if (view === "month") return month.format("MMMM");
     if (view === "week") {
       const s = dayjs(selected).startOf("week");
@@ -133,6 +154,7 @@ export default function Calendar() {
   };
 
   const heroSub = () => {
+    if (view === "task") return tasks.length ? `${tasks.length} open to-do${tasks.length > 1 ? "s" : ""}` : "All caught up";
     if (view === "day") return dayjs(selected).format("MMMM YYYY");
     return (view === "week" ? dayjs(selected) : month).format("YYYY");
   };
@@ -206,29 +228,37 @@ export default function Calendar() {
             </AppText>
           </View>
           <View style={styles.headerBtns}>
-            <Pressable onPress={goPrev} hitSlop={8} style={styles.heroNav} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous">
-              <Ionicons name="chevron-back" size={20} color="#fff" />
-            </Pressable>
-            <Pressable onPress={goToday} style={styles.heroToday} testID="cal-today">
-              <AppText size={12} weight="bold" color="#fff">Today</AppText>
-            </Pressable>
-            <Pressable onPress={goNext} hitSlop={8} style={styles.heroNav} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next">
-              <Ionicons name="chevron-forward" size={20} color="#fff" />
-            </Pressable>
+            {view === "task" ? (
+              <View style={styles.heroTaskIcon}>
+                <Ionicons name="checkbox-outline" size={20} color="#fff" />
+              </View>
+            ) : (
+              <>
+                <Pressable onPress={goPrev} hitSlop={8} style={styles.heroNav} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous">
+                  <Ionicons name="chevron-back" size={20} color="#fff" />
+                </Pressable>
+                <Pressable onPress={goToday} style={styles.heroToday} testID="cal-today">
+                  <AppText size={12} weight="bold" color="#fff">Today</AppText>
+                </Pressable>
+                <Pressable onPress={goNext} hitSlop={8} style={styles.heroNav} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next">
+                  <Ionicons name="chevron-forward" size={20} color="#fff" />
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
 
         {/* view switch */}
         <View style={styles.viewSwitch}>
-          {(["month", "week", "day"] as const).map((v) => (
+          {(["month", "week", "day", "task"] as const).map((v) => (
             <Pressable
               key={v}
               onPress={() => setView(v)}
               style={[styles.viewSeg, view === v && { backgroundColor: "#fff" }]}
               testID={`cal-view-${v}`}
             >
-              <AppText size={12} weight="bold" color={view === v ? c.brandPrimary : "#fff"}>
-                {v === "month" ? "Month" : v === "week" ? "Week" : "Day"}
+              <AppText size={12} weight="bold" color={view === v ? c.brandPrimary : "#fff"} numberOfLines={1}>
+                {v === "month" ? "Month" : v === "week" ? "Week" : v === "day" ? "Day" : "Tasks"}
               </AppText>
             </Pressable>
           ))}
@@ -308,13 +338,13 @@ export default function Calendar() {
                   <View style={styles.pillWrap}>
                     {dayEvents.slice(0, 2).map((e, i) => (
                       <View key={i} style={[styles.eventPill, { backgroundColor: (e.color || c.brandPrimary) + "26", borderLeftColor: e.color || c.brandPrimary }]}>
-                        <AppText size={8} weight="bold" color={inMonth ? c.onSurface : c.onSurfaceTertiary} numberOfLines={1}>
+                        <AppText size={9} weight="bold" color={inMonth ? c.onSurface : c.onSurfaceTertiary} numberOfLines={1}>
                           {e.title}
                         </AppText>
                       </View>
                     ))}
                     {dayEvents.length > 2 ? (
-                      <AppText size={8} weight="bold" color={c.onSurfaceTertiary} style={{ paddingLeft: 3 }}>
+                      <AppText size={9} weight="bold" color={c.onSurfaceTertiary} style={{ paddingLeft: 3 }}>
                         +{dayEvents.length - 2} more
                       </AppText>
                     ) : null}
@@ -380,7 +410,106 @@ export default function Calendar() {
           </View>
         ) : null}
 
-        {view !== "week" ? (
+        {/* task view */}
+        {view === "task" ? (() => {
+          const filtered = tasks.filter((t) => memberFilter.size === 0 || (t.assignee && memberFilter.has(t.assignee.member_id)));
+          const groups: { key: string; label: string; tone: string; items: any[] }[] = [
+            { key: "overdue", label: "Overdue", tone: c.error, items: [] },
+            { key: "today", label: "Due today", tone: c.brandPrimary, items: [] },
+            { key: "week", label: "This week", tone: c.onSurface, items: [] },
+            { key: "later", label: "Later", tone: c.onSurfaceSecondary, items: [] },
+            { key: "none", label: "No date", tone: c.onSurfaceTertiary, items: [] },
+          ];
+          const today = dayjs().format("YYYY-MM-DD");
+          const weekEnd = dayjs().add(7, "day").format("YYYY-MM-DD");
+          for (const t of filtered) {
+            if (!t.due_date) groups[4].items.push(t);
+            else if (t.due_date < today) groups[0].items.push(t);
+            else if (t.due_date === today) groups[1].items.push(t);
+            else if (t.due_date <= weekEnd) groups[2].items.push(t);
+            else groups[3].items.push(t);
+          }
+          const shown = groups.filter((g) => g.items.length);
+          if (!filtered.length) {
+            return (
+              <View style={styles.emptyDay}>
+                <AppText size={32}>✅</AppText>
+                <AppText size={15} weight="bold" color={c.onSurface} center style={{ marginTop: spacing.sm }}>
+                  All caught up!
+                </AppText>
+                <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 4 }}>
+                  No open to-dos right now. Tap + to add one.
+                </AppText>
+              </View>
+            );
+          }
+          return (
+            <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+              {shown.map((g) => (
+                <View key={g.key} style={{ marginBottom: spacing.lg }}>
+                  <View style={styles.taskGroupHead}>
+                    <View style={[styles.taskGroupDot, { backgroundColor: g.tone }]} />
+                    <AppText family="display" weight="bold" size={13} color={g.tone}>{g.label}</AppText>
+                    <AppText size={12} weight="bold" color={c.onSurfaceTertiary}>{g.items.length}</AppText>
+                  </View>
+                  {g.items.map((t) => {
+                    const high = t.priority === "high";
+                    return (
+                      <View
+                        key={t.item_id}
+                        style={[styles.taskRow, { backgroundColor: c.surface, borderColor: high ? c.error + "55" : c.border }, shadow(1)]}
+                        testID={`cal-task-${t.item_id}`}
+                      >
+                        <Pressable
+                          onPress={() => toggleTask(t)}
+                          hitSlop={8}
+                          style={[styles.taskCheck, { borderColor: c.borderStrong }]}
+                          testID={`cal-task-check-${t.item_id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Mark ${t.title} done`}
+                        >
+                          <Ionicons name="ellipse-outline" size={22} color={c.onSurfaceTertiary} />
+                        </Pressable>
+                        <View style={{ flex: 1 }}>
+                          <AppText size={14} weight="semibold" color={c.onSurface}>{t.title}</AppText>
+                          <View style={styles.taskMeta}>
+                            {high ? (
+                              <View style={[styles.taskTag, { backgroundColor: c.error + "1A" }]}>
+                                <Ionicons name="flag" size={11} color={c.error} />
+                                <AppText size={11} weight="bold" color={c.error}>High</AppText>
+                              </View>
+                            ) : null}
+                            {t.due_date ? (
+                              <View style={styles.taskMetaItem}>
+                                <Ionicons name="calendar-outline" size={12} color={t.overdue ? c.error : c.onSurfaceTertiary} />
+                                <AppText size={12} weight={t.overdue ? "bold" : "regular"} color={t.overdue ? c.error : c.onSurfaceTertiary}>
+                                  {dayjs(t.due_date).format("DD MMM")}
+                                </AppText>
+                              </View>
+                            ) : null}
+                            {t.list_name ? (
+                              <View style={styles.taskMetaItem}>
+                                <Ionicons name="list-outline" size={12} color={c.onSurfaceTertiary} />
+                                <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{t.list_name}</AppText>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                        {t.assignee ? (
+                          <View style={styles.taskAssignee}>
+                            <Avatar uri={t.assignee.photo_url} name={t.assignee.name} size={26} color={t.assignee.color} ring />
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          );
+        })() : null}
+
+        {(view === "month" || view === "day") ? (
         <>
         {/* agenda */}
         <View style={styles.agendaHeader}>
@@ -495,11 +624,11 @@ export default function Calendar() {
       </ScrollView>
 
       <Pressable
-        onPress={() => router.push(`/event/create?date=${selected}`)}
+        onPress={() => router.push(view === "task" ? "/todos" : `/event/create?date=${selected}`)}
         style={[styles.fab, { backgroundColor: c.brand }, shadow(3)]}
         testID="fab-create-event"
         accessibilityRole="button"
-        accessibilityLabel="Add event"
+        accessibilityLabel={view === "task" ? "Add task" : "Add event"}
       >
         <Ionicons name="add" size={30} color="#fff" />
       </Pressable>
@@ -550,6 +679,7 @@ const styles = StyleSheet.create({
   heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   heroNav: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
+  heroTaskIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
   heroToday: { borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.25)" },
   viewSwitch: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: radius.pill, padding: 3, marginTop: spacing.md, gap: 3 },
   viewSeg: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 7, borderRadius: radius.pill },
@@ -580,6 +710,14 @@ const styles = StyleSheet.create({
   rsvpPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
   awaitRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 6 },
   nudgeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
+  taskGroupHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm, paddingLeft: 2 },
+  taskGroupDot: { width: 8, height: 8, borderRadius: 4 },
+  taskRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.sm },
+  taskCheck: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  taskMeta: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 5, flexWrap: "wrap" },
+  taskMetaItem: { flexDirection: "row", alignItems: "center", gap: 3 },
+  taskTag: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
+  taskAssignee: { marginLeft: 2 },
   fab: { position: "absolute", right: spacing.lg, bottom: 90, width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   delCard: { width: "100%", maxWidth: 360, borderRadius: radius.lg, padding: spacing.xl },

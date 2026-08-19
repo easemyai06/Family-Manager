@@ -738,3 +738,24 @@ Shipped & tested (testing agent iteration_37: backend 5/5 pytest, all frontend f
 - Reset-password email: NOT a code bug — send_email matches the managed-Resend playbook and the proxy
   returns 202+id (live send to a real Gmail verified). User tests in PRODUCTION; delivery is a spam/inbox
   matter. Added the spam hint. Preview only for the UI — Publish to ship to production.
+
+## UX Polish Batch #39 — Calendar Task view (start of app-wide standardization) — June 2026
+Governing task: complete app-wide UI/UX standardization & professional polish. Kicked off with the
+flagship Calendar module, which the user requires to support Month, Week, Day AND Task views.
+- NEW backend GET /api/tasks/upcoming (family-scoped): all OPEN to-dos across every list sorted by
+  due_date (undated last), each with assignee member-card, priority, days_until_due, overdue, scope,
+  list_name, + can_manage. Reuses _member_card + _days_until.
+- Calendar 4th view "Tasks" (cal-view-task): groups open to-dos into Overdue / Due today / This week /
+  Later / No date with colored group headers + counts. Rows (cal-task-<id>) show a toggle circle
+  (cal-task-check-<id> -> POST /todos/items/{id}/toggle, optimistic), title, High-priority flag, due
+  date (red if overdue), list name, assignee avatar. Member filter row filters by assignee. Empty state
+  "All caught up!". FAB routes to /todos in Task view. Hero shows "Tasks" + open count (no prev/next).
+- Month-cell event pill font bumped 8->9 for readability.
+- Demo seeder: a few Family Tasks / Vacation Packing to-dos now get realistic due dates (overdue / today
+  / this-week) so the Task view demonstrates its grouping on fresh demos.
+- Verified: testing agent Batch #39 — backend 6/6 pytest (test_batch39_tasks_upcoming.py; 401 w/o token,
+  field shape, family-scoping, toggle removes from list) + frontend (4 segments, grouped tasks, toggle
+  removes row, member filter, Month/Week/Day regression clean). Preview only — Publish to ship.
+- REMAINING (app-wide polish backlog, not yet started): Home hierarchy, Family/Helpers, Chat/Care Team,
+  Shopping/Meals/Recipes/Wishlist, Memories/Timeline/Tree, Vault/Insurance, Emergency/Medical,
+  Notifications/Settings, Helper portal — plus optional shared primitives (EmptyState/SectionHeader/Chip).

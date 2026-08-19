@@ -2862,6 +2862,46 @@ async def nudge_overdue_tasks(user: dict = Depends(get_current_user)):
     return {"nudged": len(names), "tasks": len(overdue), "names": names}
 
 
+@api.get("/tasks/upcoming")
+async def upcoming_tasks(user: dict = Depends(get_current_user)):
+    """All open to-dos across every list (family-scoped) for the Calendar Task view.
+    Sorted by due date (undated tasks last). Carries assignee + overdue flags."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    my_id = mine.get("member_id") if mine else None
+    child_ids = {m["member_id"] for m in
+                 await db.members.find({"family_id": fid, "is_child": True}, {"member_id": 1, "_id": 0}).to_list(200)}
+    lists = await db.todo_lists.find({"family_id": fid}, {"_id": 0}).to_list(100)
+    list_names = {l["list_id"]: l.get("name") for l in lists}
+    mcache: dict = {}
+
+    async def mcard(mid):
+        if not mid:
+            return None
+        if mid not in mcache:
+            mcache[mid] = _member_card(await db.members.find_one({"member_id": mid, "family_id": fid}, {"_id": 0}))
+        return mcache[mid]
+
+    def scope(aid):
+        return "mine" if aid == my_id else ("kids" if aid in child_ids else "family")
+
+    out = []
+    for it in await db.todo_items.find(
+            {"family_id": fid, "done": {"$ne": True}}, {"_id": 0}).sort("due_date", 1).to_list(400):
+        aid = it.get("assignee_member_id")
+        du = _days_until(it.get("due_date")) if it.get("due_date") else None
+        out.append({
+            "item_id": it["item_id"], "list_id": it.get("list_id"),
+            "list_name": list_names.get(it.get("list_id")),
+            "title": it.get("title"), "priority": it.get("priority", "normal"),
+            "due_date": it.get("due_date"), "days_until_due": du,
+            "overdue": du is not None and du < 0,
+            "assignee": await mcard(aid), "scope": scope(aid),
+        })
+    return {"tasks": out, "can_manage": bool(mine and mine.get("role") in ("admin", "parent"))}
+
+
+
 # ---------------------------------------------------------------------------
 # Home dashboard
 # ---------------------------------------------------------------------------
@@ -5772,17 +5812,19 @@ async def seed_demo(user: dict = Depends(get_current_user)):
     packing = new_id("tdl_")
     await db.todo_lists.insert_one({"list_id": tasks, "family_id": fid, "name": "Family Tasks", "created_at": now_iso()})
     await db.todo_lists.insert_one({"list_id": packing, "family_id": fid, "name": "Vacation Packing", "created_at": now_iso()})
-    task_items = [("Book dentist for Anaya", "Priya", "high", False), ("Fix the garden gate", "Raj", "normal", False),
-                  ("Renew car insurance", "Raj", "high", True), ("Plan Grandma's party", "Priya", "high", False)]
-    for title, who, prio, done in task_items:
+    task_items = [("Book dentist for Anaya", "Priya", "high", False, -2), ("Fix the garden gate", "Raj", "normal", False, 3),
+                  ("Renew car insurance", "Raj", "high", True, None), ("Plan Grandma's party", "Priya", "high", False, 0)]
+    for title, who, prio, done, off in task_items:
+        due = (date.today() + timedelta(days=off)).isoformat() if off is not None else None
         await db.todo_items.insert_one({
             "item_id": new_id("tdi_"), "list_id": tasks, "family_id": fid, "title": title,
-            "assignee_member_id": mem_ids[who], "due_date": None, "priority": prio, "done": done, "created_at": now_iso(),
+            "assignee_member_id": mem_ids[who], "due_date": due, "priority": prio, "done": done, "created_at": now_iso(),
         })
-    for title in ["Sunscreen", "Swimsuits", "Chargers", "First-aid kit"]:
+    for title, off in [("Sunscreen", 6), ("Swimsuits", 6), ("Chargers", None), ("First-aid kit", None)]:
+        due = (date.today() + timedelta(days=off)).isoformat() if off is not None else None
         await db.todo_items.insert_one({
             "item_id": new_id("tdi_"), "list_id": packing, "family_id": fid, "title": title,
-            "assignee_member_id": None, "due_date": None, "priority": "normal", "done": False, "created_at": now_iso(),
+            "assignee_member_id": None, "due_date": due, "priority": "normal", "done": False, "created_at": now_iso(),
         })
 
     # affection to Raj (me)
