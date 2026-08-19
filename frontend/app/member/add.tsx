@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Pressable, Linking } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
@@ -12,6 +11,7 @@ import { Avatar } from "@/src/components/ui/Avatar";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, memberPalette } from "@/src/theme/tokens";
 import { api, uploadMedia } from "@/src/lib/api";
+import { choosePhoto } from "@/src/lib/pickImage";
 import { shareInvite, shareInviteWhatsApp } from "@/src/lib/invite";
 
 const ROLES = [
@@ -33,7 +33,6 @@ export default function AddMember() {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [permDenied, setPermDenied] = useState(false);
   const [invite, setInvite] = useState<any>(null);
   const [added, setAdded] = useState<string | null>(null);
 
@@ -43,19 +42,8 @@ export default function AddMember() {
       .catch(() => {});
   }, []);
 
-  const pickImage = async () => {
-    setPermDenied(false);
-    const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
-    let status = perm.status;
-    if (status !== "granted" && perm.canAskAgain) {
-      status = (await ImagePicker.requestMediaLibraryPermissionsAsync()).status;
-    }
-    if (status !== "granted") {
-      setPermDenied(true);
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
-    if (!result.canceled && result.assets?.[0]) setLocalUri(result.assets[0].uri);
+  const pickImage = () => {
+    choosePhoto("photo", (uri) => setLocalUri(uri), { allowsEditing: true, aspect: [1, 1] });
   };
 
   const save = async () => {
@@ -109,7 +97,7 @@ export default function AddMember() {
             {added} added to the family 🎉
           </AppText>
           <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginTop: 8, lineHeight: 20 }}>
-            Invite them to join so they can see everything. They'll appear as{" "}
+            Invite them to join so they can see everything. They’ll appear as{" "}
             <AppText size={14} weight="bold" color={c.warning}>
               Pending
             </AppText>{" "}
@@ -155,13 +143,6 @@ export default function AddMember() {
             <Ionicons name="camera" size={16} color="#fff" />
           </View>
         </Pressable>
-        {permDenied ? (
-          <Pressable onPress={() => Linking.openSettings()} style={{ alignSelf: "center" }}>
-            <AppText size={12} weight="bold" color={c.brand}>
-              Photo access needed · Open Settings
-            </AppText>
-          </Pressable>
-        ) : null}
 
         <View style={{ gap: spacing.lg, marginTop: spacing.xl }}>
           <TextField label="Name" icon="person-outline" placeholder="e.g. Aarav" value={name} onChangeText={setName} testID="member-name-input" />

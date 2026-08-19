@@ -72,6 +72,7 @@ export default function HelperDetail() {
   const [ePhone, setEPhone] = useState("");
   const [eAddr, setEAddr] = useState("");
   const [eId, setEId] = useState<string | null>(null);
+  const [eIdBack, setEIdBack] = useState<string | null>(null);
 
   const [ratings, setRatings] = useState<any[]>([]);
   const [ratingToday, setRatingToday] = useState<any>(null);
@@ -87,6 +88,7 @@ export default function HelperDetail() {
     setEPhone(helper?.phone || "");
     setEAddr(helper?.address || "");
     setEId(helper?.id_card_url || null);
+    setEIdBack(helper?.id_card_back_url || null);
     setProfileModal(true);
   };
 
@@ -95,7 +97,7 @@ export default function HelperDetail() {
     try {
       await api(`/helpers/${id}`, {
         method: "PATCH",
-        body: { photo_url: ePhoto, phone: ePhone.trim() || null, address: eAddr.trim() || null, id_card_url: eId },
+        body: { photo_url: ePhoto, phone: ePhone.trim() || null, address: eAddr.trim() || null, id_card_url: eId, id_card_back_url: eIdBack },
       });
       setProfileModal(false);
       flash("Profile updated");
@@ -328,8 +330,21 @@ export default function HelperDetail() {
           </View>
           <View style={{ marginTop: spacing.sm }}>
             <MiniLabel c={c}>ID card copy</MiniLabel>
-            {helper.id_card_url ? (
-              <SmartImage uri={helper.id_card_url} style={styles.idCardImg} contentFit="cover" />
+            {helper.id_card_url || helper.id_card_back_url ? (
+              <View style={styles.idCardRow}>
+                {helper.id_card_url ? (
+                  <View style={styles.idCardCol}>
+                    <AppText size={11} weight="bold" color={c.onSurfaceTertiary} style={{ marginBottom: 4 }}>FRONT</AppText>
+                    <SmartImage uri={helper.id_card_url} style={styles.idCardImg} contentFit="cover" />
+                  </View>
+                ) : null}
+                {helper.id_card_back_url ? (
+                  <View style={styles.idCardCol}>
+                    <AppText size={11} weight="bold" color={c.onSurfaceTertiary} style={{ marginBottom: 4 }}>BACK</AppText>
+                    <SmartImage uri={helper.id_card_back_url} style={styles.idCardImg} contentFit="cover" />
+                  </View>
+                ) : null}
+              </View>
             ) : (
               <AppText size={13} color={c.onSurfaceTertiary}>No ID card uploaded</AppText>
             )}
@@ -643,11 +658,13 @@ export default function HelperDetail() {
                 phone={ePhone}
                 address={eAddr}
                 idCardUrl={eId}
+                idCardBackUrl={eIdBack}
                 onChange={(p) => {
                   if (p.photo_url !== undefined) setEPhoto(p.photo_url);
                   if (p.phone !== undefined) setEPhone(p.phone);
                   if (p.address !== undefined) setEAddr(p.address);
                   if (p.id_card_url !== undefined) setEId(p.id_card_url);
+                  if (p.id_card_back_url !== undefined) setEIdBack(p.id_card_back_url);
                 }}
               />
               <Button label={busy ? "Saving…" : "Save changes"} onPress={saveProfile} loading={busy} disabled={busy} testID="profile-save" style={{ marginTop: spacing.lg }} />
@@ -687,7 +704,9 @@ const styles = StyleSheet.create({
   identityPhoto: { width: 52, height: 52, borderRadius: 26 },
   editLink: { flexDirection: "row", alignItems: "center", gap: 3 },
   contactRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 5 },
-  idCardImg: { width: "100%", height: 150, borderRadius: radius.sm },
+  idCardImg: { width: "100%", height: 110, borderRadius: radius.sm },
+  idCardRow: { flexDirection: "row", gap: spacing.md },
+  idCardCol: { flex: 1 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   smallBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 9 },

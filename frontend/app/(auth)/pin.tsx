@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
@@ -90,8 +89,11 @@ export default function PinUnlock() {
 
       {!selected ? (
         <View style={styles.pickWrap}>
-          <AppText family="display" weight="bold" size={26} center>
-            Who's this?
+          <View style={[styles.brandBadge, { backgroundColor: c.brandTertiary }]}>
+            <Ionicons name="heart" size={24} color={c.brandPrimary} />
+          </View>
+          <AppText family="display" weight="bold" size={26} center style={{ marginTop: spacing.md }}>
+            Who’s this?
           </AppText>
           <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginTop: 6, marginBottom: spacing.xl }}>
             Tap your photo and enter your PIN
@@ -123,7 +125,7 @@ export default function PinUnlock() {
             </Pressable>
             <Pressable onPress={() => router.replace("/helper-login")} style={[styles.altBtn, { borderColor: c.brandPrimary, backgroundColor: c.brandTertiary }]} testID="pin-helper-login">
               <Ionicons name="people-outline" size={18} color={c.onBrandTertiary} />
-              <AppText size={14} weight="bold" color={c.onBrandTertiary}>I'm a trusted helper</AppText>
+              <AppText size={14} weight="bold" color={c.onBrandTertiary}>I’m a trusted helper</AppText>
             </Pressable>
           </View>
         </View>
@@ -174,6 +176,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   pickWrap: { flex: 1, paddingTop: spacing.xl, paddingHorizontal: spacing.lg },
+  brandBadge: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.xl },
   person: { alignItems: "center", width: 92 },
   emptyBox: { alignItems: "center", marginTop: spacing.xl },

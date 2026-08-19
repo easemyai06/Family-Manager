@@ -1,10 +1,12 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, ScrollView, Alert, Linking } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, Alert, Linking, Modal } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { Avatar } from "@/src/components/ui/Avatar";
+import { Button } from "@/src/components/ui/Button";
+import { DateField } from "@/src/components/ui/DateTimeField";
 import { SmartImage } from "@/src/components/ui/SmartImage";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
@@ -18,6 +20,9 @@ export default function VaultItem() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [it, setIt] = useState<any>(null);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [newExpiry, setNewExpiry] = useState<string | null>(null);
+  const [renewBusy, setRenewBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!vaultSession.isUnlocked()) {
@@ -43,6 +48,24 @@ export default function VaultItem() {
     ]);
   };
 
+  const openRenew = () => {
+    setNewExpiry(null);
+    setRenewOpen(true);
+  };
+
+  const confirmRenew = async () => {
+    if (!newExpiry) return;
+    setRenewBusy(true);
+    try {
+      const updated = await api(`/vault/items/${id}/renew`, { method: "POST", body: { expiry_date: newExpiry } });
+      setIt(updated);
+      setRenewOpen(false);
+    } catch (e: any) {
+      Alert.alert("Couldn't update", e?.message || "Please try again.");
+    }
+    setRenewBusy(false);
+  };
+
   if (!it) return <View style={{ flex: 1, backgroundColor: c.surface }} />;
   const isIns = it.kind === "insurance";
   const days = it.days_until_expiry;
@@ -58,8 +81,8 @@ export default function VaultItem() {
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: c.surfaceSecondary }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: c.surface, borderBottomColor: c.border }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} testID="vault-item-back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
@@ -103,9 +126,15 @@ export default function VaultItem() {
         {days != null ? (
           <View style={[styles.expiryBanner, { backgroundColor: days <= 30 ? "#E8A33D22" : "#8AB07D22" }]}>
             <Ionicons name="alarm-outline" size={18} color={days <= 30 ? "#C57F1E" : "#6B8E5A"} />
-            <AppText size={13} weight="bold" color={days <= 30 ? "#C57F1E" : "#6B8E5A"}>
+            <AppText size={13} weight="bold" color={days <= 30 ? "#C57F1E" : "#6B8E5A"} style={{ flex: 1 }}>
               {days < 0 ? `Expired on ${formatDMY(it.expiry_date)}` : `Expires in ${days} day${days === 1 ? "" : "s"} · ${formatDMY(it.expiry_date)}`}
             </AppText>
+            {it.can_edit && days <= 30 ? (
+              <Pressable onPress={openRenew} style={[styles.renewBtn, { backgroundColor: c.brand }]} testID="vault-renew-btn">
+                <Ionicons name="refresh" size={14} color="#fff" />
+                <AppText size={12} weight="bold" color="#fff">Renew</AppText>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -185,13 +214,45 @@ export default function VaultItem() {
           </View>
         ) : null}
       </ScrollView>
+
+      <Modal visible={renewOpen} transparent animationType="fade" onRequestClose={() => setRenewOpen(false)}>
+        <Pressable style={styles.modalBg} onPress={() => setRenewOpen(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: c.surface }]} onPress={() => {}}>
+            <View style={[styles.renewIcon, { backgroundColor: c.brandTertiary }]}>
+              <Ionicons name="refresh" size={22} color={c.onBrandTertiary} />
+            </View>
+            <AppText family="display" weight="bold" size={18} center style={{ marginTop: spacing.sm }}>
+              Mark as renewed
+            </AppText>
+            <AppText size={13} color={c.onSurfaceTertiary} center style={{ marginTop: 4, marginBottom: spacing.lg }}>
+              Set the new expiry date. The reminder clears once it’s in the future.
+            </AppText>
+            <DateField label="New expiry date" value={newExpiry} onChange={setNewExpiry} placeholder="Select new expiry date" testID="vault-renew-date" />
+            <Button
+              label={renewBusy ? "Saving…" : "Save new expiry"}
+              onPress={confirmRenew}
+              loading={renewBusy}
+              disabled={renewBusy || !newExpiry}
+              testID="vault-renew-save"
+              style={{ marginTop: spacing.lg }}
+            />
+            <Pressable onPress={() => setRenewOpen(false)} style={{ paddingVertical: spacing.md, alignItems: "center" }}>
+              <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>Cancel</AppText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm, borderBottomWidth: 1 },
+  renewBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: spacing.xl },
+  modalCard: { borderRadius: radius.xl, padding: spacing.xl, alignItems: "stretch" },
+  renewIcon: { alignSelf: "center", width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, padding: spacing.md },
   icon: { width: 52, height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   expiryBanner: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },

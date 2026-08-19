@@ -2681,3 +2681,92 @@ frontend_batch42:
 agent_communication_batch42:
     -agent: "main"
     -message: "UX Batch #42. CREDS: protectdemo@fam.com/secret123 (expiring insurance -> vault reminder), storytester@fam.com/secret123 (family chat), helper sunita / PIN 1234 (family storytester). TEST BACKEND: GET /api/notifications as protectdemo returns a type=='vault_expiry' item ('... expires in N days') with route /vault/item/<id>; GET /api/notifications/unread reflects it; SECURITY: a child/non-authorized member must NOT receive vault_expiry items for vault docs they can't see (per-item visibility). TEST FRONTEND: (a) Settings screens (More -> Accessibility / Notifications / Storage) + Activity feed show a clean header bar w/ divider, no clipping; (b) Family Chat (tab-chat) shows centered Today/Yesterday day-divider pills above the first message of each day; Care Team chat (care-team) same; (c) Helper Portal (helper-login sunita/1234) 'Today's Work' card shows a progress bar. Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ Batch #43 — Camera option / ID front+back / Sign-in polish / Vault renew / Chat search ============
+backend_batch43:
+  - task: "Helper ID card front + back (id_card_back_url)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "HelperIn + HelperPatch gained id_card_back_url; create doc stores it; PATCH updates it (null clears); all 3 helper serializations (create response, GET /helpers/{id}, PATCH response) now include id_card_url (front) + id_card_back_url (back). id_card_url is treated as the FRONT. Parent-only; never exposed to helpers."
+  - task: "Vault renew endpoint POST /api/vault/items/{id}/renew"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New VaultRenewIn{expiry_date, issue_date?}. Endpoint requires _can_edit_secure; validates YYYY-MM-DD; sets new expiry_date + renewed_at; returns hydrated item. Setting a future expiry clears the vault_expiry Activity reminder automatically. 401 w/o token verified."
+frontend_batch43:
+  - task: "Live camera option for member + helper profile photos"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/lib/pickImage.ts, frontend/app/member/edit.tsx, frontend/app/member/add.tsx, frontend/src/components/HelperProfileFields.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "New shared src/lib/pickImage.ts: launchPicker(source,opts) + choosePhoto(label,onPick,opts) — presents native action sheet 'Take a photo' / 'Choose from library' (web falls back to library), with contextual camera/library permission handling + Open Settings on denial. Member add/edit + HelperProfileFields now use it (camera + library). NATIVE camera capture requires a device build; web preview uses library only."
+  - task: "Helper ID card: front + back upload/display"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/HelperProfileFields.tsx, frontend/app/helper/add.tsx, frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "HelperProfileFields now shows two ID slots (Front + Back) side by side, each upload/replace/remove (testIDs helper-idfront-pick/-replace/-remove, helper-idback-*). add.tsx + [id].tsx pass idCardBackUrl and save id_card_back_url. Helper detail shows FRONT + BACK images side by side (or 'No ID card uploaded')."
+  - task: "Sign-in polish (welcome/login/pin cohesive brand badge)"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(auth)/welcome.tsx, frontend/app/(auth)/login.tsx, frontend/app/(auth)/pin.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Login + PIN now open with a cohesive circular brand badge (heart on brandTertiary) above the title, matching helper-login's badge pattern. Removed unused Dimensions import on welcome, fixed apostrophe lint + duplicate RN import. Screenshot-verified login screen (brand badge + Welcome back)."
+  - task: "Vault 'Mark as renewed' quick action"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/vault/item/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Expiry banner (when can_edit && days<=30) shows a 'Renew' pill (vault-renew-btn) opening a modal with a DateField (vault-renew-date) + Save (vault-renew-save) -> POST /vault/items/{id}/renew. Also unified the vault item header bar. New future expiry updates the banner + clears the Activity reminder."
+  - task: "Chat search"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Header search toggle (chat-search-btn) reveals a search field (chat-search-input); filters the message list live by text, location label, file name, and keywords 'photo/image/pic' (media) or 'place/location/map' (location). Shows match count + a 'No matches' empty state (counter-flipped for inverted list). Clear (chat-search-clear) resets."
+
+agent_communication_batch43:
+    -agent: "main"
+    -message: "Batch #43 — 5 items. CREDS: parent storytester@fam.com/secret123; protectdemo@fam.com/secret123 (expiring insurance); helper sunita/1234. Demo helper in Sharma family: Sunita (help_c77a0a30120545bb). TEST BACKEND: (1) POST/PATCH /api/helpers with id_card_back_url persists & is returned by GET /api/helpers/{id} as both id_card_url + id_card_back_url; (2) POST /api/vault/items/{id}/renew with {expiry_date:'2027-01-01'} on protectdemo's Car Insurance updates expiry + a subsequent GET /api/notifications no longer lists that vault_expiry reminder; 401 w/o token; 403 if not editor. TEST FRONTEND (web = library picker; camera is native-only, just confirm the picker opens): (a) Member Add/Edit photo tap opens picker; (b) Helper Add + Helper detail edit show TWO ID slots Front/Back that upload & display; helper detail shows front+back; (c) Login + PIN show a heart brand badge; (d) Vault item with near expiry (protectdemo) shows 'Renew' -> modal -> pick date -> Save updates banner; (e) Family Chat search icon filters messages by text/photo/place with match count + no-results state, day dividers still work. Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ---- Batch #43 follow-up: fixed PATCH null-clear bug ----
+    -agent: "main"
+    -message: "Fixed the testing-agent-reported bug: PATCH /api/helpers/{id} now uses body.model_fields_set so explicit JSON null clears photo_url / id_card_url / id_card_back_url (Pydantic v2 was collapsing absent vs null). Curl-verified: set id_card_back_url then PATCH {id_card_back_url:null} -> GET returns null (cleared). The frontend Remove button (sends null) now works. Sunita demo data restored to clean state. Member PATCH has no null-remove UI path so left unchanged."

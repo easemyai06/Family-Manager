@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, Dimensions, Pressable } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -42,7 +42,7 @@ export default function Welcome() {
             Your family.{"\n"}Your memories.{"\n"}Your little world.
           </AppText>
           <AppText size={16} color="rgba(255,255,255,0.85)" style={{ marginTop: spacing.md, lineHeight: 24 }}>
-            One private place for everything your family needs today — and everything you'll want to remember tomorrow.
+            One private place for everything your family needs today — and everything you’ll want to remember tomorrow.
           </AppText>
 
           <View style={styles.actions}>
@@ -65,7 +65,7 @@ export default function Welcome() {
             <Pressable onPress={() => router.push("/helper-login")} testID="helper-portal-link" style={styles.helperBtn} hitSlop={8}>
               <Ionicons name="briefcase-outline" size={17} color="#FFFFFF" />
               <AppText size={15} weight="bold" color="#FFFFFF">
-                I'm a trusted helper
+                I’m a trusted helper
               </AppText>
             </Pressable>
           </View>

@@ -683,6 +683,11 @@ class VaultItemIn(BaseModel):
     covered_member_ids: List[str] = []
 
 
+class VaultRenewIn(BaseModel):
+    expiry_date: str                        # new expiry date YYYY-MM-DD
+    issue_date: Optional[str] = None        # optional new issue/renewal date
+
+
 class EmergencyContactIn(BaseModel):
     name: str
     relationship: Optional[str] = None       # relationship or organization
@@ -5028,6 +5033,27 @@ async def edit_vault_item(item_id: str, body: VaultItemIn, user: dict = Depends(
     return await hydrate_vault(item, viewer)
 
 
+@api.post("/vault/items/{item_id}/renew")
+async def renew_vault_item(item_id: str, body: VaultRenewIn, user: dict = Depends(get_current_user)):
+    """Quick 'Mark as renewed' — set a new expiry date so the expiry reminder clears."""
+    fid = require_family(user)
+    viewer = await member_for_user(user)
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _can_edit_secure(item, viewer):
+        raise HTTPException(status_code=403, detail="You can't update this")
+    new_exp = (body.expiry_date or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", new_exp):
+        raise HTTPException(status_code=400, detail="Enter a valid new expiry date")
+    updates = {"expiry_date": new_exp, "renewed_at": now_iso()}
+    if body.issue_date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", body.issue_date.strip()):
+        updates["issue_date"] = body.issue_date.strip()
+    await db.vault_items.update_one({"item_id": item_id}, {"$set": updates})
+    item = await db.vault_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    return await hydrate_vault(item, viewer)
+
+
 @api.delete("/vault/items/{item_id}")
 async def delete_vault_item(item_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
@@ -6193,6 +6219,7 @@ class HelperIn(BaseModel):
     photo_url: Optional[str] = None
     address: Optional[str] = None
     id_card_url: Optional[str] = None
+    id_card_back_url: Optional[str] = None
     assigned_all: bool = False
     assigned_member_ids: List[str] = []
     permissions: Optional[dict] = None      # {key: bool}; None => role defaults
@@ -6208,6 +6235,7 @@ class HelperPatch(BaseModel):
     photo_url: Optional[str] = None
     address: Optional[str] = None
     id_card_url: Optional[str] = None
+    id_card_back_url: Optional[str] = None
     assigned_all: Optional[bool] = None
     assigned_member_ids: Optional[List[str]] = None
     permissions: Optional[dict] = None
@@ -6536,6 +6564,7 @@ async def create_helper(body: HelperIn, request: Request, user: dict = Depends(g
         "role": body.role, "phone": (body.phone or "").strip() or None,
         "email": (body.email or "").strip().lower() or None, "photo_url": body.photo_url,
         "address": (body.address or "").strip() or None, "id_card_url": body.id_card_url,
+        "id_card_back_url": body.id_card_back_url,
         "assigned_all": bool(body.assigned_all), "assigned_member_ids": assigned,
         "permissions": _resolve_perms(body.role, body.permissions),
         "access": body.access.dict(), "status": "pending", "token_version": 0,
@@ -6562,6 +6591,7 @@ async def create_helper(body: HelperIn, request: Request, user: dict = Depends(g
     base = _public_base_url(request)
     pub = helper_public(doc)
     pub["id_card_url"] = doc.get("id_card_url")
+    pub["id_card_back_url"] = doc.get("id_card_back_url")
     return {"helper": pub, "invite_code": invite_code,
             "invite_link": f"{base}/helper-login?code={invite_code}" if invite_code else None}
 
@@ -6577,6 +6607,7 @@ async def get_helper(helper_id: str, user: dict = Depends(get_current_user)):
     pub["has_login"] = bool(h.get("username"))
     pub["invite_code"] = h.get("invite_code")
     pub["id_card_url"] = h.get("id_card_url")
+    pub["id_card_back_url"] = h.get("id_card_back_url")
     pub["unread_chat"] = await _helper_unread_for_parent(fid, helper_id)
     ci = await db.helper_checkins.find_one(
         {"helper_id": helper_id, "date": datetime.now(timezone.utc).date().isoformat()},
@@ -6593,16 +6624,19 @@ async def patch_helper(helper_id: str, body: HelperPatch, user: dict = Depends(g
     if not h:
         raise HTTPException(status_code=404, detail="Helper not found")
     updates = {}
+    fields_set = body.model_fields_set
     if body.name is not None:
         updates["name"] = body.name.strip()
     if body.phone is not None:
         updates["phone"] = body.phone.strip() or None
-    if body.photo_url is not None:
-        updates["photo_url"] = body.photo_url
+    if "photo_url" in fields_set:
+        updates["photo_url"] = body.photo_url or None
     if body.address is not None:
         updates["address"] = body.address.strip() or None
-    if body.id_card_url is not None:
+    if "id_card_url" in fields_set:
         updates["id_card_url"] = body.id_card_url or None
+    if "id_card_back_url" in fields_set:
+        updates["id_card_back_url"] = body.id_card_back_url or None
     role = body.role if body.role is not None else h.get("role")
     if body.role is not None:
         if body.role not in ROLE_MAP:
@@ -6627,6 +6661,7 @@ async def patch_helper(helper_id: str, body: HelperPatch, user: dict = Depends(g
     await _helper_audit(h2, "permissions_changed", "Parent updated helper access")
     pub = helper_public(h2)
     pub["id_card_url"] = h2.get("id_card_url")
+    pub["id_card_back_url"] = h2.get("id_card_back_url")
     pub["assigned_members"] = await _member_cards(fid, h2.get("assigned_member_ids") or [])
     return {"helper": pub}
 

@@ -31,6 +31,7 @@ export default function AddHelper() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [idCardUrl, setIdCardUrl] = useState<string | null>(null);
+  const [idCardBackUrl, setIdCardBackUrl] = useState<string | null>(null);
   const [assignedAll, setAssignedAll] = useState(true);
   const [assigned, setAssigned] = useState<string[]>([]);
   const [perms, setPerms] = useState<Record<string, boolean>>({});
@@ -102,7 +103,7 @@ export default function AddHelper() {
       const body: any = {
         name: name.trim(), role, assigned_all: assignedAll,
         photo_url: photoUrl, phone: phone.trim() || null,
-        address: address.trim() || null, id_card_url: idCardUrl,
+        address: address.trim() || null, id_card_url: idCardUrl, id_card_back_url: idCardBackUrl,
         assigned_member_ids: assignedAll ? [] : assigned,
         permissions: perms,
         access: {
@@ -139,7 +140,7 @@ export default function AddHelper() {
             {result.helper.name} is invited!
           </AppText>
           <AppText size={14} color={c.onSurfaceSecondary} center style={{ marginTop: spacing.sm, lineHeight: 20 }}>
-            Share this code with them. They'll open the app, tap “I'm a helper”, enter the code and set their own PIN.
+            Share this code with them. They’ll open the app, tap “I’m a helper”, enter the code and set their own PIN.
           </AppText>
           <View style={[styles.codeBox, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
             <AppText family="display" weight="bold" size={30} center style={{ letterSpacing: 4 }} testID="invite-code">
@@ -177,11 +178,13 @@ export default function AddHelper() {
           phone={phone}
           address={address}
           idCardUrl={idCardUrl}
+          idCardBackUrl={idCardBackUrl}
           onChange={(p) => {
             if (p.photo_url !== undefined) setPhotoUrl(p.photo_url);
             if (p.phone !== undefined) setPhone(p.phone);
             if (p.address !== undefined) setAddress(p.address);
             if (p.id_card_url !== undefined) setIdCardUrl(p.id_card_url);
+            if (p.id_card_back_url !== undefined) setIdCardBackUrl(p.id_card_back_url);
           }}
         />
 

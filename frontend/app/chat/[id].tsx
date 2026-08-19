@@ -67,6 +67,8 @@ export default function Conversation() {
   const [showAttach, setShowAttach] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [locBusy, setLocBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
   const typingRef = useRef(0);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recTimer = useRef<any>(null);
@@ -397,6 +399,20 @@ export default function Conversation() {
   };
 
   const ordered = [...messages].reverse();
+  const q = query.trim().toLowerCase();
+  const wantsPhoto = /\b(photo|image|pic|picture)s?\b/.test(q);
+  const wantsPlace = /\b(place|location|map|address)s?\b/.test(q);
+  const results = !q
+    ? ordered
+    : ordered.filter((m) => {
+        const text = (m.text || "").toLowerCase();
+        const loc = (m.location?.label || m.location?.name || "").toLowerCase();
+        const file = (m.file_name || "").toLowerCase();
+        if (text.includes(q) || loc.includes(q) || file.includes(q)) return true;
+        if (wantsPhoto && m.media?.length) return true;
+        if (wantsPlace && m.location) return true;
+        return false;
+      });
 
   const renderItem = ({ item, index }: { item: any; index: number }) => {
     const mine = item.sender_member_id === me?.member_id;
@@ -591,10 +607,41 @@ export default function Conversation() {
             <Ionicons name="settings-outline" size={22} color={c.onSurface} />
           </Pressable>
         ) : null}
+        <Pressable onPress={() => { setSearching((s) => !s); setQuery(""); }} hitSlop={10} testID="chat-search-btn" accessibilityRole="button" accessibilityLabel="Search messages">
+          <Ionicons name={searching ? "close" : "search"} size={22} color={c.onSurface} />
+        </Pressable>
         <Pressable onPress={() => setShowSettings(true)} hitSlop={10} testID="chat-options-btn" accessibilityRole="button" accessibilityLabel="Chat settings">
           <Ionicons name="ellipsis-vertical" size={22} color={c.onSurface} />
         </Pressable>
       </View>
+
+      {searching ? (
+        <View style={[styles.searchBar, { backgroundColor: c.surface, borderBottomColor: c.border }]}>
+          <View style={[styles.searchField, { backgroundColor: c.surfaceSecondary, borderColor: c.border }]}>
+            <Ionicons name="search" size={16} color={c.onSurfaceTertiary} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search messages, photos or places"
+              placeholderTextColor={c.onSurfaceTertiary}
+              style={[styles.searchInput, { color: c.onSurface }]}
+              autoFocus
+              returnKeyType="search"
+              testID="chat-search-input"
+            />
+            {query ? (
+              <Pressable onPress={() => setQuery("")} hitSlop={8} testID="chat-search-clear">
+                <Ionicons name="close-circle" size={16} color={c.onSurfaceTertiary} />
+              </Pressable>
+            ) : null}
+          </View>
+          {q ? (
+            <AppText size={11} color={c.onSurfaceTertiary} style={{ marginTop: 6, marginLeft: 4 }}>
+              {results.length} {results.length === 1 ? "match" : "matches"}
+            </AppText>
+          ) : null}
+        </View>
+      ) : null}
 
       {chat?.pinned_message ? (
         <Pressable onPress={unpin} style={[styles.pinBar, { backgroundColor: c.brandTertiary, borderBottomColor: c.border }]} testID="pinned-bar">
@@ -622,12 +669,25 @@ export default function Conversation() {
 
       <KeyboardAvoidingView behavior="translate-with-padding" keyboardVerticalOffset={0} style={{ flex: 1 }}>
         <FlatList
-          data={ordered}
+          data={results}
           keyExtractor={(m) => m.message_id}
           renderItem={renderItem}
           inverted
           contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.md }}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            searching && q ? (
+              <View style={styles.searchEmpty}>
+                <Ionicons name="search-outline" size={30} color={c.onSurfaceTertiary} />
+                <AppText size={14} weight="semibold" color={c.onSurface} center style={{ marginTop: spacing.sm }}>
+                  No matches
+                </AppText>
+                <AppText size={12} color={c.onSurfaceTertiary} center style={{ marginTop: 2 }}>
+                  Try a name, a word, “photo” or a place
+                </AppText>
+              </View>
+            ) : null
+          }
         />
 
         {typing.length > 0 ? (
@@ -860,6 +920,10 @@ const styles = StyleSheet.create({
   msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   dayDivider: { alignItems: "center", marginTop: spacing.xs, marginBottom: spacing.md },
   dayPill: { borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4 },
+  searchBar: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, paddingTop: spacing.xs, borderBottomWidth: 1 },
+  searchField: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 14, height: 42 },
+  searchInput: { flex: 1, fontSize: 14, height: "100%" },
+  searchEmpty: { alignItems: "center", paddingVertical: spacing["3xl"], transform: [{ scaleY: -1 }] },
   bubble: { borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 60 },
   replyPreview: { borderLeftWidth: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 },
   msgImage: { width: 210, height: 210, borderRadius: radius.sm, backgroundColor: "#EAE4D9" },

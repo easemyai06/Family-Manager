@@ -812,3 +812,21 @@ Verified: testing agent iteration_41 — backend 7/7 pytest + all frontend PASS;
   stray test messages.
 - REMAINING app-wide polish backlog (optional): auth/onboarding screens, detail/create sub-screens, shared
   <ScreenHeader> primitive extraction. Preview only — Publish to ship.
+
+## Batch #43 — Camera option / ID front+back / Sign-in polish / Vault renew / Chat search — June 2026
+Verified: testing agent iteration_42 (backend 10/10 after fix; frontend verified). 5 user requests:
+1. LIVE CAMERA for member + helper profile photos: new shared src/lib/pickImage.ts (launchPicker + choosePhoto
+   action sheet 'Take a photo'/'Choose from library', contextual permissions, Open Settings on denial; web
+   falls back to library). Adopted in member add/edit + HelperProfileFields. (Native camera = device build only.)
+2. HELPER ID CARD FRONT + BACK: backend id_card_back_url on HelperIn/HelperPatch + all serializations
+   (id_card_url = front). HelperProfileFields shows 2 slots (Front/Back) upload/replace/remove; helper detail
+   shows both side by side. Parent-only.
+3. SIGN-IN POLISH: cohesive circular heart brand badge on Welcome/Login/PIN (matches helper-login badge).
+4. VAULT 'MARK AS RENEWED': POST /api/vault/items/{id}/renew (editor-only, validates date, sets expiry +
+   renewed_at). Vault item shows a 'Renew' pill when can_edit && days<=30 -> modal date picker -> save; new
+   future expiry clears the vault_expiry Activity reminder. Vault item header unified too.
+5. CHAT SEARCH: header search toggle filters the message list live by text/location/file + 'photo'/'place'
+   keyword matching; match count + 'No matches' empty state; day dividers preserved.
+BUGFIX (testing agent): PATCH /api/helpers/{id} now uses model_fields_set so explicit null clears
+   photo_url/id_card_url/id_card_back_url (Pydantic v2 absent-vs-null). Remove button works. Curl-verified.
+Preview only — Publish to ship. Native camera/gallery still require a device build to fully validate.

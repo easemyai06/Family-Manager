@@ -1,9 +1,8 @@
 import React, { useCallback, useState } from "react";
-import { View, StyleSheet, Pressable, Linking } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@/src/components/ui/AppText";
 import { TextField } from "@/src/components/ui/TextField";
@@ -13,6 +12,7 @@ import { DateField } from "@/src/components/ui/DateTimeField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius } from "@/src/theme/tokens";
 import { api, uploadMedia } from "@/src/lib/api";
+import { choosePhoto } from "@/src/lib/pickImage";
 import { useAuth } from "@/src/auth/AuthContext";
 
 export default function EditProfile() {
@@ -29,7 +29,6 @@ export default function EditProfile() {
   const [color, setColor] = useState("#FF6B6B");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [permDenied, setPermDenied] = useState(false);
 
   const load = useCallback(async () => {
     if (!member) return;
@@ -50,19 +49,8 @@ export default function EditProfile() {
     }, [load])
   );
 
-  const pickImage = async () => {
-    setPermDenied(false);
-    const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
-    let status = perm.status;
-    if (status !== "granted" && perm.canAskAgain) {
-      status = (await ImagePicker.requestMediaLibraryPermissionsAsync()).status;
-    }
-    if (status !== "granted") {
-      setPermDenied(true);
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
-    if (!result.canceled && result.assets?.[0]) setLocalUri(result.assets[0].uri);
+  const pickImage = () => {
+    choosePhoto("photo", (uri) => setLocalUri(uri), { allowsEditing: true, aspect: [1, 1] });
   };
 
   const save = async () => {
@@ -109,13 +97,6 @@ export default function EditProfile() {
           <AppText size={13} color={c.onSurfaceTertiary} style={{ marginTop: spacing.sm }}>Tap to change photo</AppText>
         </View>
 
-        {permDenied ? (
-          <Pressable onPress={() => Linking.openSettings()} style={[styles.permRow, { backgroundColor: c.surface, borderColor: c.border }]} testID="edit-open-settings">
-            <Ionicons name="alert-circle" size={18} color={c.warning} />
-            <AppText size={13} color={c.onSurfaceSecondary} style={{ flex: 1 }}>Photo access is off. Tap to open Settings.</AppText>
-          </Pressable>
-        ) : null}
-
         <View style={{ gap: spacing.md, marginTop: spacing.lg }}>
           <TextField label="Name" icon="person-outline" value={name} onChangeText={setName} placeholder="Your name" testID="edit-name" />
           <TextField label="Phone" icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Phone number" keyboardType="phone-pad" testID="edit-phone" />
@@ -144,6 +125,5 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1 },
   avatarWrap: { alignItems: "center", marginTop: spacing.md },
   camBadge: { position: "absolute", bottom: 0, right: 0, width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", borderWidth: 3 },
-  permRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginTop: spacing.lg },
   readonly: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, borderWidth: 1.5, paddingHorizontal: spacing.lg, height: 54 },
 });

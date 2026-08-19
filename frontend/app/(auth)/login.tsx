@@ -55,11 +55,14 @@ export default function Login() {
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
 
+        <View style={[styles.brandBadge, { backgroundColor: c.brandTertiary }]}>
+          <Ionicons name="heart" size={26} color={c.brandPrimary} />
+        </View>
         <AppText family="display" weight="bold" size={30} style={{ marginTop: spacing.lg }}>
-          Welcome back ❤️
+          Welcome back
         </AppText>
         <AppText size={15} color={c.onSurfaceSecondary} style={{ marginTop: 6, marginBottom: spacing.xl }}>
-          Log in to your family's home
+          Log in to your family’s home
         </AppText>
 
         <View style={{ gap: spacing.lg }}>
@@ -139,6 +142,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { paddingHorizontal: spacing.xl },
   back: { width: 40, height: 40, justifyContent: "center" },
+  brandBadge: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginTop: spacing.md },
   forgot: { alignSelf: "flex-end", marginTop: spacing.sm, paddingVertical: 4 },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginVertical: spacing.lg },
   line: { flex: 1, height: 1 },
