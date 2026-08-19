@@ -58,13 +58,14 @@ type Props = {
   messages: CareMsg[];
   myType: "parent" | "helper";
   myId?: string;
+  highlightId?: string;
   onBack: () => void;
   onSend: (text: string) => Promise<void>;
   onSendPhoto?: (uri: string) => Promise<void>;
   onSendAudio?: (uri: string, durationMs: number) => Promise<void>;
 };
 
-export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onSend, onSendPhoto, onSendAudio }: Props) {
+export function CareTeamChatView({ subtitle, messages, myType, myId, highlightId, onBack, onSend, onSendPhoto, onSendAudio }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
@@ -77,11 +78,28 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onS
   const recTimer = useRef<any>(null);
   const cancelRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const msgY = useRef<Record<string, number>>({});
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [focusMode, setFocusMode] = useState<boolean>(!!highlightId);
 
   useEffect(() => {
+    if (focusMode) return;
     const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
     return () => clearTimeout(t);
-  }, [messages.length]);
+  }, [messages.length, focusMode]);
+
+  // Jump straight to a specific message (from an Alerts tap) + briefly highlight it.
+  useEffect(() => {
+    if (!highlightId || !messages.length) return;
+    const t = setTimeout(() => {
+      const y = msgY.current[highlightId];
+      if (y != null) scrollRef.current?.scrollTo({ y: Math.max(0, y - 60), animated: true });
+      setFlashId(highlightId);
+      setTimeout(() => setFlashId(null), 2600);
+      setTimeout(() => setFocusMode(false), 1200);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [highlightId, messages.length]);
 
   useEffect(() => () => { if (recTimer.current) clearInterval(recTimer.current); }, []);
 
@@ -215,7 +233,16 @@ export function CareTeamChatView({ subtitle, messages, myType, myId, onBack, onS
             messages.map((m) => {
               const isMine = m.sender_type === myType && m.sender_id === myId;
               return (
-                <View key={m.message_id} style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]} testID={`ctmsg-${m.message_id}`}>
+                <View
+                  key={m.message_id}
+                  onLayout={(e) => { msgY.current[m.message_id] = e.nativeEvent.layout.y; }}
+                  style={[
+                    styles.row,
+                    { justifyContent: isMine ? "flex-end" : "flex-start" },
+                    m.message_id === flashId && { backgroundColor: c.warning + "2E", borderRadius: radius.md, paddingVertical: 4 },
+                  ]}
+                  testID={`ctmsg-${m.message_id}`}
+                >
                   <View
                     style={[
                       styles.bubble,

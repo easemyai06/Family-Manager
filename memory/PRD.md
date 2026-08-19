@@ -680,3 +680,42 @@ Four user-requested changes, all shipped & tested (testing agent iteration_34: b
   Team messages from others, parent handover notes and family ratings/praise (GET /helper/notifications,
   POST /helper/notifications/read). SECURITY-verified: the feed contains NO normal Family Chat data;
   a no-chat-perm helper still sees handover/ratings but no chat/care-team items. Preview only — Publish to ship.
+
+## Batch #36 — Helper Alert Taps + Calendar Week/Day + Task Nudge (June 2026)
+Three user-selected follow-ups, shipped & tested (testing agent iteration_35: backend 6/6 pytest
+`backend/tests/test_batch36_task_nudge_helper_focus.py`, all 3 frontend flows pass):
+- Helper Alert Taps: helper Alerts feed items for Care Team / 1:1 chat now carry message_id and route
+  to /helper-portal/care-team?focus=<id> (or /chat?focus=<id>). CareTeamChatView reads highlightId,
+  measures each bubble (onLayout), scrolls to the target on open and briefly flashes it (~2.6s), then
+  re-enables auto-scroll-to-end. Care Team media still loads via the helper media token.
+- Calendar Month/Week/Day: added a segmented switch (cal-view-month/week/day) in the gradient hero.
+  Month = revamped grid + selected-day agenda. Week = scannable 7-day list (week-day-<ds>: weekday +
+  today-highlighted date + time/title event chips, "No events" when empty; tap a day -> Day view).
+  Day = single-day agenda. Hero prev/Today/next arrows are view-aware (month / 7-day / 1-day stepping);
+  member color filter (cal-member-<id>) applies across all views. Existing RSVP/recurring-delete/FAB kept.
+- Task Nudge: POST /todos/items/{id}/nudge — a parent (or the task owner) gently reminds the assignee
+  of an OPEN task: posts "⏰ Reminder from <me>: @<assignee>, please finish \"<title>\"" to family chat +
+  pushes the assignee (non-blocking). 400 if done, 404 if missing, 403 if a non-parent nudges another's
+  task. Home Family-tasks rows show a "Remind" pill (task-nudge-<id>) for parents on assigned tasks ->
+  bottom toast "⏰ Reminder sent to <name>". Preview only — Publish to ship to production.
+
+## Batch #37 — Helper profile+ID / Overdue Reminders / Week Heatmap / Helper Reply Chip (June 2026)
+Four user asks, shipped & tested (testing agent iteration_36: backend 7/8 pytest — 1 skipped child-403;
+all frontend flows pass):
+- Trusted Helper profile & documents (admin/parent only): HelperIn/HelperPatch gained address +
+  id_card_url (phone/photo_url already existed). New reusable HelperProfileFields (photo avatar picker
+  w/ camera+gallery + permission flow, phone, address, private ID-card image upload via uploadMedia) is
+  used in the Add-Helper form AND a parent-only Edit modal on the helper detail (helper-edit-profile ->
+  profile-save, PATCH /helpers/{id}). Detail shows a 'Contact & documents' card; identity header shows
+  the photo. SECURITY: id_card_url is returned ONLY by parent endpoints (POST/GET/PATCH /helpers) — NOT
+  by /helper/me or /helper/login; and a helper media token 404s the parent-owned id_card file. The
+  helper portal has no edit UI. (Editing stays with admin/parent.)
+- Overdue Reminders: POST /todos/nudge-overdue (parent/admin; 403 otherwise) reminds every assignee with
+  overdue OPEN tasks in one go — one family-chat message per person + push. Home Family-tasks shows a red
+  '<n> tasks overdue · Remind all' banner (task-nudge-overdue) -> toast '⏰ Reminded <names>'.
+- Calendar Week Heatmap: Week-view rows are shaded by event count (coral alpha ramp), show the count
+  under the date, and busy days (>=4 events) get a '🔥 Busy day · N events' caption + accent border;
+  re-shades with the member color filter.
+- Helper Reply Chip: Care Team alert rows in the helper Alerts feed have an 'On it 👍' chip
+  (helper-reply-<i>) that POSTs to /helper/care-team without navigating (chip -> 'Sent' + flash).
+  Preview only — Publish to ship to production.

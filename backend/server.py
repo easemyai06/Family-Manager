@@ -2756,6 +2756,103 @@ async def delete_todo_item(item_id: str, user: dict = Depends(get_current_user))
     return {"ok": True}
 
 
+@api.post("/todos/items/{item_id}/nudge")
+async def nudge_todo_item(item_id: str, user: dict = Depends(get_current_user)):
+    """Gently remind the member a task is assigned to (family chat post + push)."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
+    item = await db.todo_items.find_one({"item_id": item_id, "family_id": fid}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if item.get("done"):
+        raise HTTPException(status_code=400, detail="That task is already done")
+    aid = item.get("assignee_member_id")
+    is_owner_or_parent = mine.get("role") in ("admin", "parent") or aid == mine["member_id"]
+    if not is_owner_or_parent:
+        raise HTTPException(status_code=403, detail="Only a parent can send reminders")
+    assignee = await db.members.find_one({"member_id": aid, "family_id": fid}, {"_id": 0}) if aid else None
+    who = assignee.get("name") if assignee else "the family"
+    fam_chat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    if fam_chat:
+        mention = f"@{who}" if assignee else "everyone"
+        text = f"⏰ Reminder from {mine.get('name', 'a parent')}: {mention}, please finish \"{item.get('title')}\" 🙏"
+        now = now_iso()
+        await db.messages.insert_one({
+            "message_id": new_id("msg_"), "chat_id": fam_chat["chat_id"], "family_id": fid,
+            "sender_member_id": mine["member_id"], "text": text, "media": [], "type": "text", "created_at": now,
+        })
+        await db.chats.update_one({"chat_id": fam_chat["chat_id"]}, {"$set": {
+            "last_message": {"text": "⏰ Task reminder", "sender": mine.get("name"), "created_at": now, "type": "text"}}})
+    try:
+        if assignee and assignee.get("linked_user_id"):
+            await send_push([assignee["linked_user_id"]], {
+                "title": "⏰ Task reminder",
+                "message": f"{mine.get('name', 'A parent')}: please finish \"{item.get('title')}\".",
+                "action_url": "/todos",
+            }, idempotency_key=f"tasknudge_{item_id}_{now_iso()[:13]}")
+    except Exception as ex:
+        logger.warning(f"Task nudge push failed (non-blocking): {ex}")
+    return {"nudged": 1 if assignee else 0, "name": who}
+
+
+@api.post("/todos/nudge-overdue")
+async def nudge_overdue_tasks(user: dict = Depends(get_current_user)):
+    """Remind every assignee who has overdue open tasks — one message per person."""
+    fid = require_family(user)
+    mine = await member_for_user(user)
+    if not mine or mine.get("role") not in ("admin", "parent"):
+        raise HTTPException(status_code=403, detail="Only a parent can send reminders")
+    today = today_str()
+    overdue = await db.todo_items.find(
+        {"family_id": fid, "done": {"$ne": True}, "due_date": {"$lt": today, "$ne": None}},
+        {"_id": 0}).to_list(500)
+    if not overdue:
+        return {"nudged": 0, "tasks": 0, "names": []}
+    by_assignee: dict = {}
+    for it in overdue:
+        aid = it.get("assignee_member_id")
+        if aid:
+            by_assignee.setdefault(aid, []).append(it)
+    fam_chat = await db.chats.find_one({"family_id": fid, "type": "family"}, {"_id": 0})
+    now = now_iso()
+    names: list = []
+    push_users: list = []
+    msgs: list = []
+    for aid, items in by_assignee.items():
+        assignee = await db.members.find_one({"member_id": aid, "family_id": fid}, {"_id": 0})
+        if not assignee:
+            continue
+        names.append(assignee.get("name"))
+        titles = ", ".join(f"\"{i.get('title')}\"" for i in items[:4])
+        more = f" +{len(items) - 4} more" if len(items) > 4 else ""
+        n = len(items)
+        text = (f"⏰ Reminder from {mine.get('name', 'a parent')}: @{assignee.get('name')}, "
+                f"{n} overdue task{'s' if n > 1 else ''} — {titles}{more} 🙏")
+        if fam_chat:
+            msgs.append({
+                "message_id": new_id("msg_"), "chat_id": fam_chat["chat_id"], "family_id": fid,
+                "sender_member_id": mine["member_id"], "text": text, "media": [], "type": "text", "created_at": now,
+            })
+        if assignee.get("linked_user_id"):
+            push_users.append(assignee["linked_user_id"])
+    if msgs:
+        await db.messages.insert_many(msgs)
+        await db.chats.update_one({"chat_id": fam_chat["chat_id"]}, {"$set": {
+            "last_message": {"text": "⏰ Overdue task reminders", "sender": mine.get("name"), "created_at": now, "type": "text"}}})
+    try:
+        if push_users:
+            await send_push(push_users, {
+                "title": "⏰ Overdue task reminder",
+                "message": f"{mine.get('name', 'A parent')} reminded you about your overdue tasks.",
+                "action_url": "/todos",
+            }, idempotency_key=f"overduenudge_{fid}_{now[:13]}")
+    except Exception as ex:
+        logger.warning(f"Overdue nudge push failed (non-blocking): {ex}")
+    return {"nudged": len(names), "tasks": len(overdue), "names": names}
+
+
 # ---------------------------------------------------------------------------
 # Home dashboard
 # ---------------------------------------------------------------------------
@@ -6013,6 +6110,8 @@ class HelperIn(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     photo_url: Optional[str] = None
+    address: Optional[str] = None
+    id_card_url: Optional[str] = None
     assigned_all: bool = False
     assigned_member_ids: List[str] = []
     permissions: Optional[dict] = None      # {key: bool}; None => role defaults
@@ -6026,6 +6125,8 @@ class HelperPatch(BaseModel):
     role: Optional[str] = None
     phone: Optional[str] = None
     photo_url: Optional[str] = None
+    address: Optional[str] = None
+    id_card_url: Optional[str] = None
     assigned_all: Optional[bool] = None
     assigned_member_ids: Optional[List[str]] = None
     permissions: Optional[dict] = None
@@ -6298,6 +6399,7 @@ def helper_public(h: dict) -> dict:
         "helper_id": h["helper_id"], "family_id": h["family_id"], "name": h.get("name"),
         "role": h.get("role"), "role_label": role["label"], "role_icon": role["icon"],
         "phone": h.get("phone"), "photo_url": h.get("photo_url"), "status": h.get("status"),
+        "address": h.get("address"),
         "username": h.get("username"),
         "assigned_all": bool(h.get("assigned_all")), "assigned_member_ids": h.get("assigned_member_ids") or [],
         "permissions": perms, "access": h.get("access") or {},
@@ -6352,6 +6454,7 @@ async def create_helper(body: HelperIn, request: Request, user: dict = Depends(g
         "helper_id": hid, "family_id": fid, "name": body.name.strip(),
         "role": body.role, "phone": (body.phone or "").strip() or None,
         "email": (body.email or "").strip().lower() or None, "photo_url": body.photo_url,
+        "address": (body.address or "").strip() or None, "id_card_url": body.id_card_url,
         "assigned_all": bool(body.assigned_all), "assigned_member_ids": assigned,
         "permissions": _resolve_perms(body.role, body.permissions),
         "access": body.access.dict(), "status": "pending", "token_version": 0,
@@ -6376,7 +6479,9 @@ async def create_helper(body: HelperIn, request: Request, user: dict = Depends(g
                     "invite_expires": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()})
     await db.helpers.insert_one(doc)
     base = _public_base_url(request)
-    return {"helper": helper_public(doc), "invite_code": invite_code,
+    pub = helper_public(doc)
+    pub["id_card_url"] = doc.get("id_card_url")
+    return {"helper": pub, "invite_code": invite_code,
             "invite_link": f"{base}/helper-login?code={invite_code}" if invite_code else None}
 
 
@@ -6390,6 +6495,7 @@ async def get_helper(helper_id: str, user: dict = Depends(get_current_user)):
     pub["assigned_members"] = await _member_cards(fid, h.get("assigned_member_ids") or [])
     pub["has_login"] = bool(h.get("username"))
     pub["invite_code"] = h.get("invite_code")
+    pub["id_card_url"] = h.get("id_card_url")
     pub["unread_chat"] = await _helper_unread_for_parent(fid, helper_id)
     ci = await db.helper_checkins.find_one(
         {"helper_id": helper_id, "date": datetime.now(timezone.utc).date().isoformat()},
@@ -6412,6 +6518,10 @@ async def patch_helper(helper_id: str, body: HelperPatch, user: dict = Depends(g
         updates["phone"] = body.phone.strip() or None
     if body.photo_url is not None:
         updates["photo_url"] = body.photo_url
+    if body.address is not None:
+        updates["address"] = body.address.strip() or None
+    if body.id_card_url is not None:
+        updates["id_card_url"] = body.id_card_url or None
     role = body.role if body.role is not None else h.get("role")
     if body.role is not None:
         if body.role not in ROLE_MAP:
@@ -6435,6 +6545,7 @@ async def patch_helper(helper_id: str, body: HelperPatch, user: dict = Depends(g
     h2 = await db.helpers.find_one({"helper_id": helper_id, "family_id": fid}, {"_id": 0})
     await _helper_audit(h2, "permissions_changed", "Parent updated helper access")
     pub = helper_public(h2)
+    pub["id_card_url"] = h2.get("id_card_url")
     pub["assigned_members"] = await _member_cards(fid, h2.get("assigned_member_ids") or [])
     return {"helper": pub}
 
@@ -6952,7 +7063,8 @@ async def _helper_notifications(h: dict, limit: int = 40) -> list:
             preview = m.get("text") or ("📷 Photo" if m.get("photo_url") else "")
             items.append({"kind": "chat", "emoji": "💬",
                           "title": f"{m.get('sender_name') or 'Family'} sent you a message",
-                          "subtitle": preview, "route": "/helper-portal/chat",
+                          "subtitle": preview, "route": f"/helper-portal/chat?focus={m.get('message_id')}",
+                          "message_id": m.get("message_id"),
                           "created_at": m.get("created_at")})
         for m in await db.care_team_messages.find(
             {"family_id": fid, "sender_id": {"$ne": hid}}, {"_id": 0}
@@ -6961,7 +7073,8 @@ async def _helper_notifications(h: dict, limit: int = 40) -> list:
                                         else ("📷 Photo" if m.get("photo_url") else ""))
             items.append({"kind": "care_team", "emoji": "👥",
                           "title": f"{m.get('sender_name') or 'Care Team'} · Care Team",
-                          "subtitle": preview, "route": "/helper-portal/care-team",
+                          "subtitle": preview, "route": f"/helper-portal/care-team?focus={m.get('message_id')}",
+                          "message_id": m.get("message_id"),
                           "created_at": m.get("created_at")})
     for n in await db.helper_handovers.find(
         {"helper_id": hid, "family_id": fid, "by": "parent"}, {"_id": 0}

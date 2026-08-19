@@ -9,6 +9,7 @@ import { Button } from "@/src/components/ui/Button";
 import { TextField } from "@/src/components/ui/TextField";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { DateField, TimeField } from "@/src/components/ui/DateTimeField";
+import { HelperProfileFields } from "@/src/components/HelperProfileFields";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -26,6 +27,10 @@ export default function AddHelper() {
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("house_help");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [idCardUrl, setIdCardUrl] = useState<string | null>(null);
   const [assignedAll, setAssignedAll] = useState(true);
   const [assigned, setAssigned] = useState<string[]>([]);
   const [perms, setPerms] = useState<Record<string, boolean>>({});
@@ -96,6 +101,8 @@ export default function AddHelper() {
     try {
       const body: any = {
         name: name.trim(), role, assigned_all: assignedAll,
+        photo_url: photoUrl, phone: phone.trim() || null,
+        address: address.trim() || null, id_card_url: idCardUrl,
         assigned_member_ids: assignedAll ? [] : assigned,
         permissions: perms,
         access: {
@@ -162,6 +169,21 @@ export default function AddHelper() {
 
       <KeyboardAwareScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false} bottomOffset={20}>
         <TextField label="Helper's name" icon="person-outline" value={name} onChangeText={setName} placeholder="e.g. Sunita" testID="helper-name" />
+
+        <Label c={c}>Profile & contact</Label>
+        <HelperProfileFields
+          name={name}
+          photoUrl={photoUrl}
+          phone={phone}
+          address={address}
+          idCardUrl={idCardUrl}
+          onChange={(p) => {
+            if (p.photo_url !== undefined) setPhotoUrl(p.photo_url);
+            if (p.phone !== undefined) setPhone(p.phone);
+            if (p.address !== undefined) setAddress(p.address);
+            if (p.id_card_url !== undefined) setIdCardUrl(p.id_card_url);
+          }}
+        />
 
         <Label c={c}>Their role</Label>
         <View style={styles.roleGrid}>

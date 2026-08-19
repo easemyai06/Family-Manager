@@ -10,6 +10,7 @@ import { Button } from "@/src/components/ui/Button";
 import { TextField } from "@/src/components/ui/TextField";
 import { Avatar } from "@/src/components/ui/Avatar";
 import { SmartImage } from "@/src/components/ui/SmartImage";
+import { HelperProfileFields } from "@/src/components/HelperProfileFields";
 import { TimeField } from "@/src/components/ui/DateTimeField";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { spacing, radius, shadow } from "@/src/theme/tokens";
@@ -66,6 +67,12 @@ export default function HelperDetail() {
   const [pUser, setPUser] = useState("");
   const [pPin, setPPin] = useState("");
 
+  const [profileModal, setProfileModal] = useState(false);
+  const [ePhoto, setEPhoto] = useState<string | null>(null);
+  const [ePhone, setEPhone] = useState("");
+  const [eAddr, setEAddr] = useState("");
+  const [eId, setEId] = useState<string | null>(null);
+
   const [ratings, setRatings] = useState<any[]>([]);
   const [ratingToday, setRatingToday] = useState<any>(null);
   const [ratingNote, setRatingNote] = useState("");
@@ -73,6 +80,30 @@ export default function HelperDetail() {
   const flash = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(""), 2600);
+  };
+
+  const openProfile = () => {
+    setEPhoto(helper?.photo_url || null);
+    setEPhone(helper?.phone || "");
+    setEAddr(helper?.address || "");
+    setEId(helper?.id_card_url || null);
+    setProfileModal(true);
+  };
+
+  const saveProfile = async () => {
+    setBusy(true);
+    try {
+      await api(`/helpers/${id}`, {
+        method: "PATCH",
+        body: { photo_url: ePhoto, phone: ePhone.trim() || null, address: eAddr.trim() || null, id_card_url: eId },
+      });
+      setProfileModal(false);
+      flash("Profile updated");
+      load();
+    } catch {
+      flash("Couldn't save profile");
+    }
+    setBusy(false);
   };
 
   const load = useCallback(async () => {
@@ -212,9 +243,13 @@ export default function HelperDetail() {
         {/* identity */}
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }, shadow(1)]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-            <View style={[styles.roleIcon, { backgroundColor: c.brandTertiary }]}>
-              <AppText size={26}>{helper.role_icon}</AppText>
-            </View>
+            {helper.photo_url ? (
+              <SmartImage uri={helper.photo_url} style={styles.identityPhoto} />
+            ) : (
+              <View style={[styles.roleIcon, { backgroundColor: c.brandTertiary }]}>
+                <AppText size={26}>{helper.role_icon}</AppText>
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <AppText family="display" weight="bold" size={18}>{helper.name}</AppText>
               <AppText size={13} color={c.onSurfaceSecondary}>{helper.role_label}</AppText>
@@ -268,6 +303,37 @@ export default function HelperDetail() {
             <Ionicons name="clipboard-outline" size={20} color={c.brandPrimary} />
             <AppText size={13} weight="bold" color={c.onSurface}>Handover</AppText>
           </Pressable>
+        </View>
+
+        {/* contact & documents (admin/parent only view + edit) */}
+        <View style={styles.sectionHead}>
+          <SectionTitle c={c} noMargin>Contact & documents</SectionTitle>
+          <Pressable onPress={openProfile} hitSlop={8} style={styles.editLink} testID="helper-edit-profile">
+            <Ionicons name="create-outline" size={15} color={c.brandPrimary} />
+            <AppText size={13} weight="bold" color={c.brandPrimary}>Edit</AppText>
+          </Pressable>
+        </View>
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <View style={styles.contactRow}>
+            <Ionicons name="call-outline" size={17} color={c.onSurfaceTertiary} />
+            <AppText size={14} color={helper.phone ? c.onSurface : c.onSurfaceTertiary} style={{ flex: 1 }}>
+              {helper.phone || "No phone added"}
+            </AppText>
+          </View>
+          <View style={[styles.contactRow, { alignItems: "flex-start" }]}>
+            <Ionicons name="location-outline" size={17} color={c.onSurfaceTertiary} />
+            <AppText size={14} color={helper.address ? c.onSurface : c.onSurfaceTertiary} style={{ flex: 1 }}>
+              {helper.address || "No address added"}
+            </AppText>
+          </View>
+          <View style={{ marginTop: spacing.sm }}>
+            <MiniLabel c={c}>ID card copy</MiniLabel>
+            {helper.id_card_url ? (
+              <SmartImage uri={helper.id_card_url} style={styles.idCardImg} contentFit="cover" />
+            ) : (
+              <AppText size={13} color={c.onSurfaceTertiary}>No ID card uploaded</AppText>
+            )}
+          </View>
         </View>
 
         {/* assigned to */}
@@ -565,6 +631,34 @@ export default function HelperDetail() {
         </View>
       </Modal>
 
+      {/* edit profile modal */}
+      <Modal visible={profileModal} transparent animationType="slide" onRequestClose={() => setProfileModal(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.sheet, { backgroundColor: c.surface, paddingBottom: insets.bottom + spacing.md }]}>
+            <KeyboardAwareScrollView showsVerticalScrollIndicator={false} bottomOffset={20}>
+              <AppText family="display" weight="bold" size={18} center style={{ marginBottom: spacing.lg }}>Edit profile & contact</AppText>
+              <HelperProfileFields
+                name={helper.name}
+                photoUrl={ePhoto}
+                phone={ePhone}
+                address={eAddr}
+                idCardUrl={eId}
+                onChange={(p) => {
+                  if (p.photo_url !== undefined) setEPhoto(p.photo_url);
+                  if (p.phone !== undefined) setEPhone(p.phone);
+                  if (p.address !== undefined) setEAddr(p.address);
+                  if (p.id_card_url !== undefined) setEId(p.id_card_url);
+                }}
+              />
+              <Button label={busy ? "Saving…" : "Save changes"} onPress={saveProfile} loading={busy} disabled={busy} testID="profile-save" style={{ marginTop: spacing.lg }} />
+              <Pressable onPress={() => setProfileModal(false)} style={{ paddingVertical: spacing.md, alignItems: "center" }}>
+                <AppText size={15} weight="semibold" color={c.onSurfaceSecondary}>Cancel</AppText>
+              </Pressable>
+            </KeyboardAwareScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {toast ? (
         <View style={[styles.toast, { backgroundColor: c.surfaceInverse, bottom: insets.bottom + 30 }]} testID="helper-detail-toast">
           <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>{toast}</AppText>
@@ -590,6 +684,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg, marginBottom: spacing.sm },
   roleIcon: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
+  identityPhoto: { width: 52, height: 52, borderRadius: 26 },
+  editLink: { flexDirection: "row", alignItems: "center", gap: 3 },
+  contactRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 5 },
+  idCardImg: { width: "100%", height: 150, borderRadius: radius.sm },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   smallBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 9 },

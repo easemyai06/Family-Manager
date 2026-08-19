@@ -59,6 +59,7 @@ export default function Home() {
   const [bdayNudge, setBdayNudge] = useState<any>(null);
   const [taskFilter, setTaskFilter] = useState<"mine" | "kids" | "family">("family");
   const [celebrating, setCelebrating] = useState(false);
+  const [toast, setToast] = useState("");
 
   // status editor
   const [statusOpen, setStatusOpen] = useState(false);
@@ -209,6 +210,17 @@ export default function Home() {
     }
   };
 
+  const nudgeTask = async (task: any) => {
+    setToast(task.assignee ? `⏰ Reminder sent to ${task.assignee.name}` : "⏰ Reminder posted to Family Chat");
+    setTimeout(() => setToast(""), 2600);
+    try {
+      await api(`/todos/items/${task.item_id}/nudge`, { method: "POST" });
+    } catch {
+      setToast("Couldn't send the reminder");
+      setTimeout(() => setToast(""), 2600);
+    }
+  };
+
   const me = home?.me;
   const persona = personaOf(me);
   const compact = !!prefs.compact;
@@ -234,6 +246,20 @@ export default function Home() {
     if (taskFilter === "family") return all;
     return all.filter((t: any) => t.scope === taskFilter);
   }, [home, taskFilter, persona]);
+
+  const overdueCount = useMemo(() => (home?.tasks || []).filter((t: any) => t.overdue).length, [home]);
+
+  const nudgeOverdue = async () => {
+    setToast("⏰ Reminding everyone with overdue tasks…");
+    setTimeout(() => setToast(""), 2600);
+    try {
+      const r: any = await api("/todos/nudge-overdue", { method: "POST" });
+      setToast(r?.nudged ? `⏰ Reminded ${r.names.join(", ")}` : "No one to remind right now");
+    } catch {
+      setToast("Couldn't send reminders");
+    }
+    setTimeout(() => setToast(""), 2600);
+  };
 
   const openChat = useCallback(async () => {
     let id = familyChatId;
@@ -284,7 +310,7 @@ export default function Home() {
       case "today":
         return <TodaySection {...p} events={home?.events_today || []} />;
       case "tasks":
-        return <TasksSection {...p} tasks={filteredTasks} done={filteredDone} filter={taskFilter} setFilter={setTaskFilter} />;
+        return <TasksSection {...p} tasks={filteredTasks} done={filteredDone} filter={taskFilter} setFilter={setTaskFilter} canNudge={persona === "parent"} onNudge={nudgeTask} overdueCount={overdueCount} onNudgeOverdue={nudgeOverdue} />;
       case "mytasks":
         return <MyTasksSection {...p} tasks={filteredTasks} />;
       case "kids":
@@ -408,6 +434,12 @@ export default function Home() {
       </ScrollView>
 
       {celebrating ? <StarBurst onDone={() => setCelebrating(false)} /> : null}
+
+      {toast ? (
+        <View style={[styles.toast, { backgroundColor: c.surfaceInverse }, shadow(3)]} testID="home-toast">
+          <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>{toast}</AppText>
+        </View>
+      ) : null}
 
       {incoming ? (
         <AffectionAnimation
@@ -596,7 +628,7 @@ function TodaySection({ events, go, c, compact }: any) {
   );
 }
 
-function TasksSection({ tasks, done, filter, setFilter, go, c, compact }: any) {
+function TasksSection({ tasks, done, filter, setFilter, go, c, compact, canNudge, onNudge, overdueCount, onNudgeOverdue }: any) {
   const filters: any[] = [
     { k: "family", label: "All" },
     { k: "mine", label: "Mine" },
@@ -625,21 +657,39 @@ function TasksSection({ tasks, done, filter, setFilter, go, c, compact }: any) {
           </View>
         ) : null}
       </View>
+      {canNudge && overdueCount > 0 ? (
+        <Pressable onPress={onNudgeOverdue} style={[styles.overdueBtn, { backgroundColor: c.error + "14", borderColor: c.error + "40" }]} testID="task-nudge-overdue">
+          <Ionicons name="alarm-outline" size={16} color={c.error} />
+          <AppText size={13} weight="bold" color={c.error} style={{ flex: 1 }}>
+            {`${overdueCount} task${overdueCount > 1 ? "s" : ""} overdue`}
+          </AppText>
+          <View style={[styles.overduePill, { backgroundColor: c.error }]}>
+            <AppText size={11} weight="bold" color="#fff">Remind all</AppText>
+          </View>
+        </Pressable>
+      ) : null}
       <Card c={c}>
         {tasks.length ? (
           <View style={{ gap: spacing.md }}>
             {tasks.slice(0, compact ? 3 : 5).map((t: any) => (
-              <Pressable key={t.item_id} style={styles.taskRow} onPress={() => go("/todos")} testID={`home-task-${t.item_id}`}>
-                <Ionicons name="ellipse-outline" size={18} color={t.overdue ? c.error : c.onSurfaceTertiary} />
-                <View style={{ flex: 1 }}>
-                  <AppText size={14} weight="semibold" numberOfLines={1}>{t.title}</AppText>
-                  <AppText size={11} color={t.overdue ? c.error : c.onSurfaceTertiary} numberOfLines={1}>
-                    {t.assignee ? t.assignee.name : t.list_name || "Family"}
-                    {t.due_date ? ` · ${t.overdue ? "overdue" : t.days_until_due === 0 ? "due today" : formatDate(t.due_date, "D MMM")}` : ""}
-                  </AppText>
-                </View>
-                {t.priority === "high" ? <View style={[styles.pri, { backgroundColor: c.error }]} /> : null}
-              </Pressable>
+              <View key={t.item_id} style={styles.taskRow}>
+                <Pressable style={styles.taskRow} onPress={() => go("/todos")} testID={`home-task-${t.item_id}`}>
+                  <Ionicons name="ellipse-outline" size={18} color={t.overdue ? c.error : c.onSurfaceTertiary} />
+                  <View style={{ flex: 1 }}>
+                    <AppText size={14} weight="semibold" numberOfLines={1}>{t.title}</AppText>
+                    <AppText size={11} color={t.overdue ? c.error : c.onSurfaceTertiary} numberOfLines={1}>
+                      {t.assignee ? t.assignee.name : t.list_name || "Family"}
+                      {t.due_date ? ` · ${t.overdue ? "overdue" : t.days_until_due === 0 ? "due today" : formatDate(t.due_date, "D MMM")}` : ""}
+                    </AppText>
+                  </View>
+                </Pressable>
+                {canNudge && t.assignee ? (
+                  <Pressable onPress={() => onNudge(t)} style={[styles.remindBtn, { backgroundColor: c.brandTertiary }]} testID={`task-nudge-${t.item_id}`} accessibilityRole="button" accessibilityLabel={`Remind ${t.assignee.name}`}>
+                    <Ionicons name="notifications-outline" size={12} color={c.onBrandTertiary} />
+                    <AppText size={11} weight="bold" color={c.onBrandTertiary}>Remind</AppText>
+                  </Pressable>
+                ) : t.priority === "high" ? <View style={[styles.pri, { backgroundColor: c.error }]} /> : null}
+              </View>
             ))}
           </View>
         ) : (
@@ -1209,7 +1259,11 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   chip: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 6, borderWidth: 1 },
   taskRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  remindBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
+  overdueBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: 10, marginBottom: spacing.sm },
+  overduePill: { borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
   doneByPill: { flexDirection: "row", alignItems: "center", gap: 5 },
+  toast: { position: "absolute", alignSelf: "center", bottom: 96, maxWidth: "88%", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
   pri: { width: 8, height: 8, borderRadius: 4 },
 
   kidRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },

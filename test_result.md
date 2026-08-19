@@ -2347,3 +2347,142 @@ frontend_batch35:
 agent_communication_batch35:
     -agent: "main"
     -message: "Batch #35 = 4 user asks. CREDS parent storytester@fam.com/secret123; helper sunita/1234. TEST BACKEND: (1) /api/home returns tasks_done_today[] with done_by, and kids[].chores[].done_by; toggling a todo records done_by/done_at and it appears in tasks_done_today; completing a chore records completed_by_member_id; uncomplete clears. (2) /helper/notifications returns aggregated items + unread; /helper/notifications/read zeroes unread; dashboard.notif_unread present; a no-chat helper still gets the feed (handover/ratings) but no chat/care-team items; feed never contains Family Chat data. TEST FRONTEND: (a) Family tab NO LONGER shows 'Love This Week'. (b) Calendar tab: gradient header, member avatars filter the grid (tap cal-member-<id>), event pills in day cells, tap a day -> agenda; RSVP + delete + FAB still work. (c) Home Family tasks shows 'n done · n to do' + a COMPLETED TODAY list with who ticked it; Kids & chores done chips show the completer's mini-avatar. (d) Helper portal (sunita/1234): header bell (helper-notif-btn) with unread badge -> opens Alerts feed; items show; badge clears after viewing. Native mic/camera/GPS remain device-only. Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ Feature Batch #36 (Helper Alert Taps / Calendar Week&Day views / Home Task Nudge) ============
+backend_batch36:
+  - task: "Task Nudge: POST /todos/items/{item_id}/nudge"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New endpoint: parent/admin (or task owner) sends a gentle reminder for an OPEN task. Posts a '⏰ Reminder from <me>: @<assignee>, please finish \"<title>\"' message to the family chat and pushes the assignee's linked user (non-blocking). 404 if task missing, 400 if already done, 403 if a non-parent tries to nudge someone else's task. Returns {nudged, name}. Curl-verified: {\"nudged\":1,\"name\":\"Priya\"}."
+  - task: "Helper notification focus routing (message_id + ?focus= route)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "_helper_notifications now includes message_id and encodes route=/helper-portal/care-team?focus=<id> (and /helper-portal/chat?focus=<id>) so tapping an alert jumps to the exact message. Curl-verified routes contain ?focus=ctm_..."
+
+frontend_batch36:
+  - task: "Helper Alert Taps -> jump to exact Care Team message"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/CareTeamChatView.tsx, frontend/app/helper-portal/care-team.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "helper-portal/care-team reads ?focus route param and passes highlightId to CareTeamChatView. The view measures each message y (onLayout), scrolls to the target on mount, and briefly flashes the bubble (warning tint ~2.6s), then re-enables auto-scroll-to-end. Parent care-team.tsx unaffected (highlightId optional)."
+  - task: "Calendar Month/Week/Day views"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Added a segmented Month | Week | Day switch (cal-view-month/week/day) in the hero. Month = existing grid + agenda. Week = scannable 7-day list (week-day-<ds> rows: weekday+date circle with today highlight, time+title event chips, 'No events' when empty; tapping a day opens Day view). Day = single-day agenda. Hero prev/Today/next arrows are view-aware (month/week/day stepping) and the hero label/subtitle adapt. Screenshot-confirmed all three views render (16–22 Aug week list, Wed 19 Aug day)."
+  - task: "Home Task Nudge (Remind button)"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Family tasks rows now show a 'Remind' pill (task-nudge-<id>) for parents on tasks that have an assignee; tapping calls /todos/items/{id}/nudge and shows a bottom toast '⏰ Reminder sent to <name>'. Screenshot-confirmed: 3 Remind buttons + toast 'Reminder sent to Priya'."
+
+agent_communication_batch36:
+    -agent: "main"
+    -message: "Batch #36 = 3 user-selected follow-ups. CREDS parent storytester@fam.com/secret123, helper sunita/1234. TEST BACKEND: (1) POST /todos/items/{id}/nudge — parent nudging an assigned OPEN task returns {nudged:1,name}, posts a reminder to family chat, pushes assignee (non-blocking); 400 if already done; 404 if missing; 403 if a NON-parent (e.g. a child member) nudges someone else's task. (2) /helper/notifications care_team/chat items carry message_id and route ends with ?focus=<message_id>. TEST FRONTEND: (a) Calendar Month/Week/Day switch (cal-view-*): Week shows 7-day list (week-day-<ds>), tapping a day opens Day view; prev/next arrows step by month/week/day respectively; Today resets. Existing agenda RSVP/delete/FAB still work in Month & Day. (b) Home Family tasks: parent sees Remind (task-nudge-<id>) on assigned tasks -> toast on tap. (c) Helper portal (sunita/1234) -> bell -> Alerts feed -> tap a Care Team alert -> opens Care Team and scrolls to + briefly highlights that exact message (helper media token loads the media). Do NOT run destructive cleanup; keep Sunita + demo data. Native mic/camera/GPS remain device-only."
+
+# ============ Feature Batch #37 (Helper profile fields / Overdue Reminders / Week Heatmap / Helper Reply Chip) ============
+backend_batch37:
+  - task: "Helper profile fields: address + id_card_url (admin/parent only, edit-restricted)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "HelperIn/HelperPatch gained address + id_card_url (phone+photo_url already existed). create_helper/patch_helper persist them; helper_public exposes address (harmless) but NOT id_card_url. Parent-only endpoints (POST /helpers, GET /helpers/{id}, PATCH /helpers/{id}) return id_card_url; helper-facing /helper/me and /helper/login do NOT. Curl-verified: patch sets address+id_card_url; /helper/me has NO id_card_url key. SECURITY: id_card is owned by the parent uploader; a helper media token 404s it (not own/care-team/helper-msg)."
+  - task: "Overdue Reminders: POST /todos/nudge-overdue"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Parent/admin only (403 otherwise). Finds all OPEN tasks with due_date < today, groups by assignee, posts ONE '⏰ Reminder ...' family-chat message per assignee (listing up to 4 titles + '+N more') and pushes each assignee (non-blocking). Returns {nudged: <people>, tasks: <total overdue>, names: [...]}. Curl-verified: with 1 overdue -> {nudged:1,tasks:1,names:['Priya']}; with none -> {nudged:0,tasks:0}."
+
+frontend_batch37:
+  - task: "Helper profile & documents in Add + Edit (photo/phone/address/ID card)"
+    implemented: true
+    working: true
+    file: "frontend/src/components/HelperProfileFields.tsx, frontend/app/helper/add.tsx, frontend/app/helper/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "New reusable HelperProfileFields (photo avatar w/ camera+gallery picker + permission flow, phone, address, private ID-card image upload via uploadMedia). Add-helper form (helper/add.tsx) includes it under 'Profile & contact' and sends photo_url/phone/address/id_card_url. Helper detail (helper/[id].tsx) shows a 'Contact & documents' card (phone/address/ID thumbnail) with an Edit link (helper-edit-profile) opening a modal (profile-save) that PATCHes. Identity header shows the photo when set. Screenshot-confirmed: contact card + edit modal render (phone/address/ID upload). Editing is parent-only (helper portal has no such screen)."
+  - task: "Home Overdue Reminders banner (Remind all)"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Family tasks section shows a red '<n> tasks overdue · Remind all' banner (task-nudge-overdue) for parents when overdueCount>0; tap calls /todos/nudge-overdue and shows a bottom toast '⏰ Reminded <names>'."
+  - task: "Calendar Week Heatmap"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/calendar.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Week view rows are now tinted by event count (coral alpha ramp 0..4+), show the count under the date, and busy days (>=4) get a '🔥 Busy day · N events' caption + accent border. Uses the member-filtered byDate so filtering re-shades."
+  - task: "Helper Reply Chip: one-tap 'On it 👍' on Care Team alerts"
+    implemented: true
+    working: true
+    file: "frontend/app/helper-portal/notifications.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Care Team alert rows in the helper Alerts feed have an 'On it 👍' chip (helper-reply-<i>) that POSTs to /helper/care-team without navigating (stopPropagation); shows 'Sent' + a bottom flash. Non-care-team rows have no chip."
+
+agent_communication_batch37:
+    -agent: "main"
+    -message: "Batch #37 = 4 user asks. CREDS parent storytester@fam.com/secret123, helper sunita/1234 (help_c77a0a30120545bb; demo now has phone +91 98765 43210 + a Bengaluru address, no ID card). TEST BACKEND: (1) PATCH /helpers/{id} with address+id_card_url persists & GET /helpers/{id} returns them; /helper/me (helper token) must NOT contain id_card_url; a helper media token must 404 the id_card file. (2) POST /todos/nudge-overdue as parent -> {nudged,tasks,names}, posts per-assignee family-chat msgs; 403 for a non-parent. TEST FRONTEND: (a) Add Helper form has Profile & contact (photo/phone/address/ID upload) and creates a helper with them; Helper detail 'Contact & documents' shows them with an Edit modal (helper-edit-profile -> profile-save) that saves; editing is parent-only. (b) Home parent sees a 'Remind all overdue' banner (task-nudge-overdue) when tasks are overdue -> toast. (c) Calendar Week view rows are shaded by busyness (heatmap) with 🔥 on packed days. (d) Helper portal (sunita/1234) -> bell -> Alerts -> a Care Team row shows 'On it 👍' (helper-reply-<i>); tapping posts to Care Team + shows 'Sent' without navigating away. Do NOT run destructive cleanup; keep Sunita + demo data. Native camera/gallery/mic remain device-only (web picker may be limited)."

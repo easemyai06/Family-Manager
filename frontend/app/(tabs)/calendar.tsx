@@ -32,6 +32,7 @@ export default function Calendar() {
   const [events, setEvents] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [memberFilter, setMemberFilter] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"month" | "week" | "day">("month");
   const [pendingDelete, setPendingDelete] = useState<any>(null);
   const [toast, setToast] = useState("");
 
@@ -88,6 +89,52 @@ export default function Calendar() {
       else next.add(id);
       return next;
     });
+  };
+
+  const weekDays = useMemo(() => {
+    const start = dayjs(selected).startOf("week");
+    return Array.from({ length: 7 }, (_, i) => start.add(i, "day"));
+  }, [selected]);
+
+  const goPrev = () => {
+    if (view === "month") {
+      setMonth((m) => m.subtract(1, "month"));
+    } else {
+      const d = dayjs(selected).subtract(view === "week" ? 7 : 1, "day");
+      setSelected(d.format("YYYY-MM-DD"));
+      setMonth(d.startOf("month"));
+    }
+  };
+
+  const goNext = () => {
+    if (view === "month") {
+      setMonth((m) => m.add(1, "month"));
+    } else {
+      const d = dayjs(selected).add(view === "week" ? 7 : 1, "day");
+      setSelected(d.format("YYYY-MM-DD"));
+      setMonth(d.startOf("month"));
+    }
+  };
+
+  const goToday = () => {
+    const t = dayjs();
+    setMonth(t);
+    setSelected(t.format("YYYY-MM-DD"));
+  };
+
+  const heroLabel = () => {
+    if (view === "month") return month.format("MMMM");
+    if (view === "week") {
+      const s = dayjs(selected).startOf("week");
+      const e = dayjs(selected).endOf("week");
+      return s.month() === e.month() ? `${s.format("D")}–${e.format("D MMM")}` : `${s.format("D MMM")}–${e.format("D MMM")}`;
+    }
+    return dayjs(selected).format("ddd, D MMM");
+  };
+
+  const heroSub = () => {
+    if (view === "day") return dayjs(selected).format("MMMM YYYY");
+    return (view === "week" ? dayjs(selected) : month).format("YYYY");
   };
 
   const selectedEvents = (byDate[selected] || []).sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
@@ -152,30 +199,39 @@ export default function Calendar() {
         <View style={styles.heroTop}>
           <View>
             <AppText size={12} weight="bold" color="rgba(255,255,255,0.85)">
-              {month.format("YYYY")}
+              {heroSub()}
             </AppText>
             <AppText family="display" weight="bold" size={26} color="#fff">
-              {month.format("MMMM")}
+              {heroLabel()}
             </AppText>
           </View>
           <View style={styles.headerBtns}>
-            <Pressable onPress={() => setMonth((m) => m.subtract(1, "month"))} hitSlop={8} style={styles.heroNav} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous month">
+            <Pressable onPress={goPrev} hitSlop={8} style={styles.heroNav} testID="cal-prev" accessibilityRole="button" accessibilityLabel="Previous">
               <Ionicons name="chevron-back" size={20} color="#fff" />
             </Pressable>
-            <Pressable
-              onPress={() => {
-                setMonth(dayjs());
-                setSelected(dayjs().format("YYYY-MM-DD"));
-              }}
-              style={styles.heroToday}
-              testID="cal-today"
-            >
+            <Pressable onPress={goToday} style={styles.heroToday} testID="cal-today">
               <AppText size={12} weight="bold" color="#fff">Today</AppText>
             </Pressable>
-            <Pressable onPress={() => setMonth((m) => m.add(1, "month"))} hitSlop={8} style={styles.heroNav} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next month">
+            <Pressable onPress={goNext} hitSlop={8} style={styles.heroNav} testID="cal-next" accessibilityRole="button" accessibilityLabel="Next">
               <Ionicons name="chevron-forward" size={20} color="#fff" />
             </Pressable>
           </View>
+        </View>
+
+        {/* view switch */}
+        <View style={styles.viewSwitch}>
+          {(["month", "week", "day"] as const).map((v) => (
+            <Pressable
+              key={v}
+              onPress={() => setView(v)}
+              style={[styles.viewSeg, view === v && { backgroundColor: "#fff" }]}
+              testID={`cal-view-${v}`}
+            >
+              <AppText size={12} weight="bold" color={view === v ? c.brandPrimary : "#fff"}>
+                {v === "month" ? "Month" : v === "week" ? "Week" : "Day"}
+              </AppText>
+            </Pressable>
+          ))}
         </View>
 
         {/* member color filter */}
@@ -208,6 +264,7 @@ export default function Calendar() {
         showsVerticalScrollIndicator={false}
       >
         {/* month grid */}
+        {view === "month" ? (
         <View style={[styles.calCard, { backgroundColor: c.surface, borderColor: c.border }, shadow(2)]}>
           <View style={styles.weekRow}>
             {WEEKDAYS.map((d, i) => (
@@ -267,7 +324,64 @@ export default function Calendar() {
             })}
           </View>
         </View>
+        ) : null}
 
+        {/* week view */}
+        {view === "week" ? (
+          <View style={styles.weekList}>
+            {weekDays.map((day) => {
+              const ds = day.format("YYYY-MM-DD");
+              const isSel = ds === selected;
+              const isToday = ds === dayjs().format("YYYY-MM-DD");
+              const dayEvents = byDate[ds] || [];
+              const heat = dayEvents.length;
+              const HEAT = ["", "16", "26", "3A", "4D"]; // alpha for 0..4+ events
+              const heatBg = heat === 0 ? c.surface : c.brandPrimary + HEAT[Math.min(heat, 4)];
+              return (
+                <Pressable
+                  key={ds}
+                  onPress={() => { setSelected(ds); setView("day"); }}
+                  style={[styles.weekDayRow, { backgroundColor: heatBg, borderColor: isSel ? c.brandPrimary : heat >= 4 ? c.brandPrimary + "66" : c.border }, shadow(1)]}
+                  testID={`week-day-${ds}`}
+                >
+                  <View style={styles.weekDayLeft}>
+                    <AppText size={10} weight="bold" color={isToday ? c.brandPrimary : c.onSurfaceTertiary}>
+                      {day.format("ddd").toUpperCase()}
+                    </AppText>
+                    <View style={[styles.weekDateCircle, isToday && { backgroundColor: c.brandPrimary }]}>
+                      <AppText size={16} weight="bold" color={isToday ? "#fff" : c.onSurface}>{day.date()}</AppText>
+                    </View>
+                    {heat > 0 ? (
+                      <AppText size={9} weight="bold" color={heat >= 4 ? c.brandPrimary : c.onSurfaceTertiary}>
+                        {heat >= 4 ? "🔥" : ""}{heat}
+                      </AppText>
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    {heat >= 4 ? (
+                      <AppText size={11} weight="bold" color={c.brandPrimary}>Busy day · {heat} events</AppText>
+                    ) : null}
+                    {dayEvents.length === 0 ? (
+                      <AppText size={12} color={c.onSurfaceTertiary}>No events</AppText>
+                    ) : (
+                      dayEvents.map((e, i) => (
+                        <View key={i} style={[styles.weekChip, { backgroundColor: (e.color || c.brandPrimary) + "1F", borderLeftColor: e.color || c.brandPrimary }]}>
+                          <AppText size={11} weight="bold" color={c.onSurfaceSecondary} style={{ width: 52 }}>
+                            {e.all_day ? "All day" : e.start_time || "—"}
+                          </AppText>
+                          <AppText size={13} weight="semibold" numberOfLines={1} style={{ flex: 1 }}>{e.title}</AppText>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {view !== "week" ? (
+        <>
         {/* agenda */}
         <View style={styles.agendaHeader}>
           <AppText family="display" weight="bold" size={17}>
@@ -376,6 +490,8 @@ export default function Calendar() {
           ))
         )}
         </View>
+        </>
+        ) : null}
       </ScrollView>
 
       <Pressable
@@ -435,6 +551,8 @@ const styles = StyleSheet.create({
   headerBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   heroNav: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
   heroToday: { borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "rgba(255,255,255,0.25)" },
+  viewSwitch: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.2)", borderRadius: radius.pill, padding: 3, marginTop: spacing.md, gap: 3 },
+  viewSeg: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 7, borderRadius: radius.pill },
   memberRow: { marginTop: spacing.md },
   memberChip: { alignItems: "center", gap: 4, width: 56 },
   memberCheck: { position: "absolute", bottom: 0, right: 2, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#fff" },
@@ -447,6 +565,11 @@ const styles = StyleSheet.create({
   pillWrap: { marginTop: 2, gap: 2, width: "100%" },
   eventPill: { borderRadius: 4, borderLeftWidth: 3, paddingHorizontal: 3, paddingVertical: 1.5 },
   agendaHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  weekList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
+  weekDayRow: { flexDirection: "row", gap: spacing.md, borderRadius: radius.md, borderWidth: 1, padding: spacing.md, alignItems: "flex-start" },
+  weekDayLeft: { alignItems: "center", width: 40, gap: 2 },
+  weekDateCircle: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  weekChip: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderRadius: 8, borderLeftWidth: 3, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   agendaCount: { minWidth: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   emptyDay: { alignItems: "center", paddingVertical: spacing["2xl"] },
   eventCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, marginBottom: spacing.md },

@@ -49,6 +49,22 @@ export default function HelperNotifications() {
     setRefreshing(false);
   };
 
+  const [replied, setReplied] = useState<Record<number, boolean>>({});
+  const [flash, setFlash] = useState("");
+
+  const quickReply = async (idx: number) => {
+    setReplied((p) => ({ ...p, [idx]: true }));
+    setFlash("Sent “On it 👍” to the Care Team");
+    setTimeout(() => setFlash(""), 2400);
+    try {
+      await helperApi("/helper/care-team", { method: "POST", body: { text: "On it 👍" } });
+    } catch {
+      setReplied((p) => ({ ...p, [idx]: false }));
+      setFlash("Couldn't send — try again");
+      setTimeout(() => setFlash(""), 2400);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: c.surfaceSecondary, paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -94,6 +110,19 @@ export default function HelperNotifications() {
                       <AppText size={13} color={c.onSurfaceSecondary} numberOfLines={2} style={{ marginTop: 2 }}>{it.subtitle}</AppText>
                     ) : null}
                     <AppText size={11} color={c.onSurfaceTertiary} style={{ marginTop: 3 }}>{timeAgo(it.created_at)}</AppText>
+                    {it.kind === "care_team" ? (
+                      <Pressable
+                        onPress={(e) => { e.stopPropagation?.(); if (!replied[i]) quickReply(i); }}
+                        disabled={replied[i]}
+                        style={[styles.replyChip, { backgroundColor: replied[i] ? c.success + "22" : c.brandPrimary, borderColor: replied[i] ? c.success : c.brandPrimary }]}
+                        testID={`helper-reply-${i}`}
+                      >
+                        <Ionicons name={replied[i] ? "checkmark" : "hand-right-outline"} size={14} color={replied[i] ? c.success : "#fff"} />
+                        <AppText size={12} weight="bold" color={replied[i] ? c.success : "#fff"}>
+                          {replied[i] ? "Sent" : "On it 👍"}
+                        </AppText>
+                      </Pressable>
+                    ) : null}
                   </View>
                   {unread ? <View style={[styles.dot, { backgroundColor: c.brandPrimary }]} /> : null}
                 </Pressable>
@@ -102,6 +131,11 @@ export default function HelperNotifications() {
           </View>
         )}
       </ScrollView>
+      {flash ? (
+        <View style={[styles.flash, { backgroundColor: c.surfaceInverse }, shadow(3)]} testID="helper-reply-flash">
+          <AppText size={13} weight="semibold" color={c.onSurfaceInverse} center>{flash}</AppText>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -114,4 +148,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1 },
   emojiWrap: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   dot: { width: 9, height: 9, borderRadius: 4.5 },
+  replyChip: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6, marginTop: 8 },
+  flash: { position: "absolute", alignSelf: "center", bottom: 40, maxWidth: "88%", borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
 });

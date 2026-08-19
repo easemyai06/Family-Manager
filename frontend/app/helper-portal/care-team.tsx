@@ -1,10 +1,11 @@
 import React, { useCallback, useRef, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { CareTeamChatView, CareMsg } from "@/src/components/CareTeamChatView";
 import { helperApi, helperUpload, setHelperToken } from "@/src/lib/helperApi";
 
 export default function HelperPortalCareTeam() {
   const router = useRouter();
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [messages, setMessages] = useState<CareMsg[]>([]);
   const [me, setMe] = useState<string | undefined>(undefined);
   const timer = useRef<any>(null);
@@ -55,6 +56,7 @@ export default function HelperPortalCareTeam() {
       messages={messages}
       myType="helper"
       myId={me}
+      highlightId={focus}
       onBack={() => router.back()}
       onSend={onSend}
       onSendPhoto={onSendPhoto}
