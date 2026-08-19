@@ -719,3 +719,22 @@ all frontend flows pass):
 - Helper Reply Chip: Care Team alert rows in the helper Alerts feed have an 'On it 👍' chip
   (helper-reply-<i>) that POSTs to /helper/care-team without navigating (chip -> 'Sent' + flash).
   Preview only — Publish to ship to production.
+
+## Batch #38 — Medical info revamp + Login redesign + Reset-email note (June 2026)
+Shipped & tested (testing agent iteration_37: backend 5/5 pytest, all frontend flows pass):
+- Emergency/Medical revamp: blood group is an 8-option chip selector; allergies are tap-to-pick popular
+  pills + an 'Other' custom entry (removable tags); Doctor split into name + phone (tap-to-call in view);
+  Insurance profile with 4 types — Health, Critical illness, Term life, Vehicle — each provider + policy
+  number + optional phone. Backend MedicalCardIn gained doctor_phone + insurance:[InsuranceEntryIn];
+  _MEDICAL_DETAIL_FIELDS includes doctor_phone + insurance so they're stripped for viewers without
+  medical-detail permission (blood_group + allergies stay family-visible). Helper Care-Team medical view
+  still exposes ONLY allergies/blood_group/doctor/hospital/emergency_contact — no doctor_phone/insurance
+  leak (security-verified). Edit restricted to self or admin/parent.
+- Login redesign: AuthContext computes hasQuickSignin at bootstrap; the root gate opens the PIN "Who's
+  this?" picker first for returning families (else Welcome). PIN picker has an always-visible bottom
+  area: 'Sign in with email & password' + a prominent 'I'm a trusted helper' button; back returns to
+  Welcome. Welcome's trusted-helper is now a clearly visible outlined button. login.tsx simplified
+  (or-divider before Google/Apple, PIN moved to a light link). forgot.tsx shows a 'check Spam/Junk' hint.
+- Reset-password email: NOT a code bug — send_email matches the managed-Resend playbook and the proxy
+  returns 202+id (live send to a real Gmail verified). User tests in PRODUCTION; delivery is a spam/inbox
+  matter. Added the spam hint. Preview only for the UI — Publish to ship to production.

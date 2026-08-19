@@ -718,6 +718,13 @@ class FamilyPlanIn(BaseModel):
     notes: Optional[str] = None
 
 
+class InsuranceEntryIn(BaseModel):
+    type: str                                # health | critical | term | vehicle
+    provider: Optional[str] = None
+    policy_number: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class MedicalCardIn(BaseModel):
     member_id: str
     blood_group: Optional[str] = None
@@ -725,9 +732,11 @@ class MedicalCardIn(BaseModel):
     medication: Optional[str] = None
     conditions: Optional[str] = None
     doctor: Optional[str] = None
+    doctor_phone: Optional[str] = None
     hospital: Optional[str] = None
     insurance_provider: Optional[str] = None
     policy_reference: Optional[str] = None
+    insurance: List[InsuranceEntryIn] = []
     emergency_contact: Optional[str] = None
 
 
@@ -4779,8 +4788,8 @@ async def _secure_viewer(user: dict) -> Optional[dict]:
     return viewer
 
 
-_MEDICAL_DETAIL_FIELDS = ("medication", "conditions", "doctor", "hospital",
-                          "insurance_provider", "policy_reference", "emergency_contact")
+_MEDICAL_DETAIL_FIELDS = ("medication", "conditions", "doctor", "doctor_phone", "hospital",
+                          "insurance_provider", "policy_reference", "insurance", "emergency_contact")
 
 
 def _can_view_medical_detail(viewer: Optional[dict], member_id: str) -> bool:

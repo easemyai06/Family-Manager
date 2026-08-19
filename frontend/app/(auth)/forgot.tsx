@@ -82,6 +82,15 @@ export default function ForgotPassword() {
             : `We emailed a 6-digit code to ${email.trim()}. Enter it below with your new password.`}
         </AppText>
 
+        {phase === "verify" ? (
+          <View style={[styles.spamNote, { backgroundColor: c.brandTertiary }]}>
+            <Ionicons name="information-circle-outline" size={18} color={c.onBrandTertiary} />
+            <AppText size={13} color={c.onBrandTertiary} style={{ flex: 1, lineHeight: 19 }}>
+              Can't find it? Check your <AppText size={13} weight="bold" color={c.onBrandTertiary}>Spam / Junk</AppText> folder — the code can take a minute to arrive.
+            </AppText>
+          </View>
+        ) : null}
+
         {phase === "request" ? (
           <View style={{ gap: spacing.lg }}>
             <TextField
@@ -147,4 +156,5 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.xl },
   back: { width: 40, height: 40, justifyContent: "center" },
   resend: { alignItems: "center", marginTop: spacing.lg },
+  spamNote: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, borderRadius: 14, padding: spacing.md, marginBottom: spacing.lg },
 });

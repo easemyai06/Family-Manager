@@ -42,7 +42,7 @@ if (Platform.OS === "android") {
 }
 
 function RootNav() {
-  const { user, initializing } = useAuth();
+  const { user, initializing, hasQuickSignin } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const { scheme } = useTheme();
@@ -52,13 +52,14 @@ function RootNav() {
     const seg0 = segments[0];
     const helperRoute = seg0 === "helper-login" || seg0 === "helper-portal" || seg0 === "helper-join";
     if (!user) {
-      if (seg0 !== "(auth)" && !helperRoute) router.replace("/(auth)/welcome");
+      // Returning families with saved quick-sign-ins land on the PIN picker first.
+      if (seg0 !== "(auth)" && !helperRoute) router.replace(hasQuickSignin ? "/(auth)/pin" : "/(auth)/welcome");
     } else if (!user.family_id) {
       if (seg0 !== "onboarding") router.replace("/onboarding/create-family");
     } else if (seg0 === "(auth)" || seg0 === "onboarding" || seg0 === undefined) {
       router.replace("/(tabs)");
     }
-  }, [user, initializing, segments]);
+  }, [user, initializing, segments, hasQuickSignin]);
 
   // Register for push once the user is known (re-runs per user, tokens rotate).
   useEffect(() => {

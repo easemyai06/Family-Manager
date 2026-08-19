@@ -16,7 +16,7 @@ export default function Login() {
   const { c } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, hasQuickSignin } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,7 +51,7 @@ export default function Login() {
         bottomOffset={24}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back} testID="back-btn">
+        <Pressable onPress={() => router.replace(hasQuickSignin ? "/(auth)/pin" : "/(auth)/welcome")} hitSlop={12} style={styles.back} testID="back-btn">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
 
@@ -97,11 +97,17 @@ export default function Login() {
         ) : null}
 
         <Button label="Log In" onPress={submit} loading={loading} style={{ marginTop: spacing.xl }} testID="login-submit-btn" />
+
+        <View style={styles.dividerRow}>
+          <View style={[styles.line, { backgroundColor: c.border }]} />
+          <AppText size={12} color={c.onSurfaceTertiary}>or continue with</AppText>
+          <View style={[styles.line, { backgroundColor: c.border }]} />
+        </View>
+
         <Button
-          label="Continue with Google"
+          label="Google"
           variant="secondary"
           onPress={loginWithGoogle}
-          style={{ marginTop: spacing.md }}
           testID="login-google-btn"
           icon={<Ionicons name="logo-google" size={18} color={c.onSurface} />}
         />
@@ -109,9 +115,9 @@ export default function Login() {
           <AppleSignInButton variant="black" onError={setError} />
         </View>
 
-        <Pressable onPress={() => router.push("/(auth)/pin")} style={[styles.pinBtn, { borderColor: c.border }]} testID="login-pin-btn">
-          <Ionicons name="keypad-outline" size={18} color={c.onSurface} />
-          <AppText size={14} weight="semibold">
+        <Pressable onPress={() => router.replace("/(auth)/pin")} style={styles.pinLink} testID="login-pin-btn" hitSlop={8}>
+          <Ionicons name="keypad-outline" size={16} color={c.brand} />
+          <AppText size={14} weight="bold" color={c.brand}>
             Family member? Sign in with a PIN
           </AppText>
         </Pressable>
@@ -134,6 +140,8 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.xl },
   back: { width: 40, height: 40, justifyContent: "center" },
   forgot: { alignSelf: "flex-end", marginTop: spacing.sm, paddingVertical: 4 },
-  pinBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.lg, paddingVertical: spacing.md, borderRadius: 14, borderWidth: 1 },
-  switch: { alignItems: "center", marginTop: spacing.xl },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginVertical: spacing.lg },
+  line: { flex: 1, height: 1 },
+  pinLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: spacing.lg, paddingVertical: spacing.sm },
+  switch: { alignItems: "center", marginTop: spacing.lg },
 });

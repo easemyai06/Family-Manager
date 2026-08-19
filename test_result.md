@@ -2486,3 +2486,56 @@ frontend_batch37:
 agent_communication_batch37:
     -agent: "main"
     -message: "Batch #37 = 4 user asks. CREDS parent storytester@fam.com/secret123, helper sunita/1234 (help_c77a0a30120545bb; demo now has phone +91 98765 43210 + a Bengaluru address, no ID card). TEST BACKEND: (1) PATCH /helpers/{id} with address+id_card_url persists & GET /helpers/{id} returns them; /helper/me (helper token) must NOT contain id_card_url; a helper media token must 404 the id_card file. (2) POST /todos/nudge-overdue as parent -> {nudged,tasks,names}, posts per-assignee family-chat msgs; 403 for a non-parent. TEST FRONTEND: (a) Add Helper form has Profile & contact (photo/phone/address/ID upload) and creates a helper with them; Helper detail 'Contact & documents' shows them with an Edit modal (helper-edit-profile -> profile-save) that saves; editing is parent-only. (b) Home parent sees a 'Remind all overdue' banner (task-nudge-overdue) when tasks are overdue -> toast. (c) Calendar Week view rows are shaded by busyness (heatmap) with 🔥 on packed days. (d) Helper portal (sunita/1234) -> bell -> Alerts -> a Care Team row shows 'On it 👍' (helper-reply-<i>); tapping posts to Care Team + shows 'Sent' without navigating away. Do NOT run destructive cleanup; keep Sunita + demo data. Native camera/gallery/mic remain device-only (web picker may be limited)."
+
+# ============ Feature Batch #38 (Medical fields revamp / Login redesign / Reset-email deliverability) ============
+backend_batch38:
+  - task: "Medical card: doctor_phone + structured insurance (4 types), detail-gated"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "MedicalCardIn gained doctor_phone + insurance: List[InsuranceEntryIn] (type/provider/policy_number/phone). _MEDICAL_DETAIL_FIELDS now includes doctor_phone + insurance so they are stripped for viewers without medical-detail permission (helper Care-Team medical view already selects only allergies/blood_group/doctor/emergency_contact so no leak). blood_group + allergies remain family-visible strings. Curl-verified: PUT saves doctor_phone + insurance list; GET (admin) returns them."
+  - task: "Reset-password email deliverability (managed Resend)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "No code change needed — send_email matches the managed-Resend playbook and the proxy returns 202 + id (verified a live send to happytoconnect@gmail.com -> 202, id e75231a7...). Issue is spam/inbox delivery, not a bug. Added a 'check Spam/Junk' hint on the forgot verify screen. User was testing in PRODUCTION (can't be reached from preview); code path is identical."
+
+frontend_batch38:
+  - task: "Medical/Emergency editor: blood-group dropdown, allergy chips + Other, doctor name+phone, insurance types"
+    implemented: true
+    working: true
+    file: "frontend/app/emergency/medical/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Edit mode: 8 blood-group selector chips (bg-<grp>), COMMON_ALLERGIES multi-select pills (allergy-<name>) + custom 'Other' input (allergy-custom-input/allergy-add) with removable custom tags, Doctor name (medcard-doctor) + phone (medcard-doctor_phone), 4 insurance cards Health/Critical/Term/Vehicle (ins-<type>-provider/policy/phone), plus medication/conditions/hospital/emergency_contact text fields. View mode: blood/allergy big cards (allergies as tags), Doctor row with tap-to-call (call-doctor), Insurance list with per-entry call, other fields. Edit restricted to self or admin/parent (canEdit)."
+  - task: "Login redesign: PIN-first, visible trusted-helper button, simplified login, spam hint"
+    implemented: true
+    working: true
+    file: "frontend/app/(auth)/pin.tsx, welcome.tsx, login.tsx, forgot.tsx, _layout.tsx, src/auth/AuthContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "AuthContext computes hasQuickSignin (from REMEMBER_KEY pin_set + ROSTER_KEY members) at bootstrap; root gate now sends logged-out returning families to /(auth)/pin first (else welcome). PIN 'Who's this?' picker gained an always-visible bottom action area: 'Sign in with email & password' (pin-email-login) + prominent 'I'm a trusted helper' (pin-helper-login); back at picker goes to welcome. welcome.tsx: trusted-helper is now a clearly visible outlined button (screenshot-confirmed). login.tsx simplified (or-divider before Google/Apple, PIN moved to a light link login-pin-btn, back respects hasQuickSignin). forgot.tsx shows a 'check Spam/Junk' note on the verify step."
+
+agent_communication_batch38:
+    -agent: "main"
+    -message: "Batch #38 = medical revamp + login redesign + reset-email note. CREDS parent storytester@fam.com/secret123 (parent member mem_e8380cf812624082 now has demo medical: O+, allergies Peanuts/Dust/Kiwi, Dr. Mehta +91 90000 11111, Health+Vehicle insurance). Helper sunita/1234. LOGIN NOTE: fresh web browser has NO saved profiles so the gate opens /(auth)/welcome; 'I already have an account' -> login.tsx; login-pin-btn -> pin picker. On a device with saved PINs the app opens the PIN picker first. TEST BACKEND: PUT /emergency/medical/{member_id} accepts doctor_phone + insurance[]; GET returns them for admin; a viewer WITHOUT medical-detail permission must NOT see doctor_phone/insurance/medication/conditions (blood_group+allergies OK); helper Care-Team medical view still only exposes allergies/blood_group/doctor/emergency_contact (no doctor_phone/insurance leak). TEST FRONTEND: (a) Medical editor (open a member -> Medical info -> edit): blood-group chips, allergy pills + custom Other, doctor name+phone, 4 insurance type cards; Save persists; view mode shows tap-to-call doctor + insurance list. (b) Login: welcome shows a clear 'I'm a trusted helper' button; login page simplified with a 'Family member? Sign in with a PIN' link -> PIN picker which shows 'Sign in with email & password' + 'I'm a trusted helper' buttons. (c) forgot password verify step shows a Spam/Junk hint. Do NOT run destructive cleanup; keep Sunita + demo data. Native camera/mic remain device-only."

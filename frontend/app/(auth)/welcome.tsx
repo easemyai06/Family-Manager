@@ -62,9 +62,9 @@ export default function Welcome() {
               testID="login-link-btn"
               style={{ backgroundColor: "transparent" }}
             />
-            <Pressable onPress={() => router.push("/helper-login")} testID="helper-portal-link" style={styles.helperLink} hitSlop={8}>
-              <Ionicons name="briefcase-outline" size={15} color="rgba(255,255,255,0.85)" />
-              <AppText size={14} weight="semibold" color="rgba(255,255,255,0.85)">
+            <Pressable onPress={() => router.push("/helper-login")} testID="helper-portal-link" style={styles.helperBtn} hitSlop={8}>
+              <Ionicons name="briefcase-outline" size={17} color="#FFFFFF" />
+              <AppText size={15} weight="bold" color="#FFFFFF">
                 I'm a trusted helper
               </AppText>
             </Pressable>
@@ -82,5 +82,5 @@ const styles = StyleSheet.create({
   logoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   bottom: {},
   actions: { marginTop: spacing["2xl"], gap: spacing.md },
-  helperLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: spacing.sm },
+  helperBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: spacing.md, borderRadius: 999, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.5)", marginTop: spacing.xs },
 });

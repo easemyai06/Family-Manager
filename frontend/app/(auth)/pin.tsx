@@ -83,7 +83,7 @@ export default function PinUnlock() {
   return (
     <View style={[styles.container, { backgroundColor: c.surface, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Pressable onPress={() => (selected ? (setSelected(null), setPin(""), setError("")) : router.back())} hitSlop={12} testID="pin-back" accessibilityRole="button" accessibilityLabel="Go back">
+        <Pressable onPress={() => (selected ? (setSelected(null), setPin(""), setError("")) : router.replace("/(auth)/welcome"))} hitSlop={12} testID="pin-back" accessibilityRole="button" accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={26} color={c.onSurface} />
         </Pressable>
       </View>
@@ -102,9 +102,6 @@ export default function PinUnlock() {
               <AppText size={14} color={c.onSurfaceTertiary} center style={{ marginTop: spacing.sm, paddingHorizontal: spacing.xl, lineHeight: 21 }}>
                 No quick sign-ins saved on this device yet. Sign in once and set a PIN to unlock faster next time.
               </AppText>
-              <Pressable onPress={() => router.replace("/(auth)/login")} style={{ marginTop: spacing.lg }} testID="pin-use-password">
-                <AppText size={15} weight="bold" color={c.brand}>Sign in with email &amp; password</AppText>
-              </Pressable>
             </View>
           ) : (
             <View style={styles.grid}>
@@ -118,6 +115,17 @@ export default function PinUnlock() {
               ))}
             </View>
           )}
+
+          <View style={[styles.altActions, { paddingBottom: insets.bottom + spacing.md }]}>
+            <Pressable onPress={() => router.replace("/(auth)/login")} style={[styles.altBtn, { borderColor: c.border, backgroundColor: c.surface }]} testID="pin-email-login">
+              <Ionicons name="mail-outline" size={18} color={c.onSurface} />
+              <AppText size={14} weight="bold" color={c.onSurface}>Sign in with email &amp; password</AppText>
+            </Pressable>
+            <Pressable onPress={() => router.replace("/helper-login")} style={[styles.altBtn, { borderColor: c.brandPrimary, backgroundColor: c.brandTertiary }]} testID="pin-helper-login">
+              <Ionicons name="people-outline" size={18} color={c.onBrandTertiary} />
+              <AppText size={14} weight="bold" color={c.onBrandTertiary}>I'm a trusted helper</AppText>
+            </Pressable>
+          </View>
         </View>
       ) : (
         <View style={styles.pinWrap}>
@@ -169,6 +177,8 @@ const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.xl },
   person: { alignItems: "center", width: 92 },
   emptyBox: { alignItems: "center", marginTop: spacing.xl },
+  altActions: { marginTop: "auto", gap: spacing.sm },
+  altBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderRadius: radius.pill, borderWidth: 1.5, paddingVertical: spacing.md },
   pinWrap: { flex: 1, alignItems: "center", paddingTop: spacing.lg, paddingHorizontal: spacing.lg },
   dots: { flexDirection: "row", gap: 14, marginTop: spacing.xl, minHeight: 20 },
   dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2 },

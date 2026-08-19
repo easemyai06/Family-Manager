@@ -39,6 +39,7 @@ type AuthContextValue = {
   initializing: boolean;
   pinSet: boolean;
   familyChatId: string | null;
+  hasQuickSignin: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
@@ -63,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initializing, setInitializing] = useState(true);
   const [pinSet, setPinSet] = useState(false);
   const [familyChatId, setFamilyChatId] = useState<string | null>(null);
+  const [hasQuickSignin, setHasQuickSignin] = useState(false);
 
   const applyMe = useCallback(async () => {
     const data = await api<{ user: User; member: Member; media_token?: string; pin_set?: boolean; family_chat_id?: string | null }>("/auth/me");
@@ -100,6 +102,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(null);
         await storage.secureRemove(TOKEN_KEY);
       }
+    } else {
+      // No session: detect saved quick-sign-in profiles so the gate can open the
+      // PIN "Who's this?" picker first for returning families.
+      try {
+        let count = 0;
+        const rraw = await storage.getItem<string>(REMEMBER_KEY, "");
+        const rem = rraw ? JSON.parse(rraw as string) : null;
+        if (rem?.user_id && rem?.pin_set) count += 1;
+        const roraw = await storage.getItem<string>(ROSTER_KEY, "");
+        const roster = roraw ? JSON.parse(roraw as string) : null;
+        count += (roster?.members || []).length;
+        setHasQuickSignin(count > 0);
+      } catch {}
     }
     setInitializing(false);
   }, [applyMe]);
@@ -296,7 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, member, initializing, pinSet, familyChatId, login, register, loginWithGoogle, loginWithApple, loginWithPin, loginWithMemberPin, setPin, clearPin, forgotPassword, resetPassword, linkWithApple, logout, refresh: applyMe }}
+      value={{ user, member, initializing, pinSet, familyChatId, hasQuickSignin, login, register, loginWithGoogle, loginWithApple, loginWithPin, loginWithMemberPin, setPin, clearPin, forgotPassword, resetPassword, linkWithApple, logout, refresh: applyMe }}
     >
       {children}
     </AuthContext.Provider>
