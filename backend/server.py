@@ -1848,8 +1848,8 @@ async def get_post(post_id: str, user: dict = Depends(get_current_user)):
 async def delete_post(post_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.posts.delete_one({"post_id": post_id, "family_id": fid})
-    await db.reactions.delete_many({"post_id": post_id})
-    await db.comments.delete_many({"post_id": post_id})
+    await db.reactions.delete_many({"post_id": post_id, "family_id": fid})
+    await db.comments.delete_many({"post_id": post_id, "family_id": fid})
     return {"ok": True}
 
 
@@ -1859,6 +1859,8 @@ async def react_post(post_id: str, body: ReactIn, user: dict = Depends(get_curre
     mine = await member_for_user(user)
     if not mine:
         raise HTTPException(status_code=400, detail="No family profile")
+    if not await db.posts.find_one({"post_id": post_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Post not found")
     await db.reactions.update_one(
         {"post_id": post_id, "member_id": mine["member_id"]},
         {"$set": {"type": body.type, "created_at": now_iso(), "family_id": fid}},
@@ -1872,17 +1874,19 @@ async def unreact_post(post_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
     if mine:
-        await db.reactions.delete_one({"post_id": post_id, "member_id": mine["member_id"]})
+        await db.reactions.delete_one({"post_id": post_id, "member_id": mine["member_id"], "family_id": fid})
     return await get_post(post_id, user)
 
 
 @api.get("/posts/{post_id}/comments")
 async def list_comments(post_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    comments = await db.comments.find({"post_id": post_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    fid = require_family(user)
+    if not await db.posts.find_one({"post_id": post_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Post not found")
+    comments = await db.comments.find({"post_id": post_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(500)
     out = []
     for c in comments:
-        author = await db.members.find_one({"member_id": c["member_id"]}, {"_id": 0})
+        author = await db.members.find_one({"member_id": c["member_id"], "family_id": fid}, {"_id": 0})
         c["author"] = author
         out.append(c)
     return out
@@ -1894,6 +1898,8 @@ async def add_comment(post_id: str, body: CommentIn, user: dict = Depends(get_cu
     mine = await member_for_user(user)
     if not mine:
         raise HTTPException(status_code=400, detail="No family profile")
+    if not await db.posts.find_one({"post_id": post_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Post not found")
     c = {
         "comment_id": new_id("cmt_"), "post_id": post_id, "family_id": fid,
         "member_id": mine["member_id"], "text": body.text, "created_at": now_iso(),
@@ -3892,9 +3898,13 @@ async def set_typing(chat_id: str, user: dict = Depends(get_current_user)):
 async def react_message(message_id: str, body: MsgReactIn, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     mine = await member_for_user(user)
+    if not mine:
+        raise HTTPException(status_code=400, detail="No family profile")
     msg = await db.messages.find_one({"message_id": message_id, "family_id": fid}, {"_id": 0})
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    # Only members of the conversation may react.
+    await _require_chat(msg["chat_id"], fid, mine)
     existing = await db.msg_reactions.find_one({"message_id": message_id, "member_id": mine["member_id"]}, {"_id": 0})
     if existing and existing["emoji"] == body.emoji:
         await db.msg_reactions.delete_one({"message_id": message_id, "member_id": mine["member_id"]})
@@ -4093,10 +4103,12 @@ async def react_timeline(timeline_id: str, user: dict = Depends(get_current_user
 
 @api.get("/timeline/{timeline_id}/comments")
 async def list_timeline_comments(timeline_id: str, user: dict = Depends(get_current_user)):
-    require_family(user)
-    comments = await db.timeline_comments.find({"timeline_id": timeline_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
+    fid = require_family(user)
+    if not await db.timeline.find_one({"timeline_id": timeline_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    comments = await db.timeline_comments.find({"timeline_id": timeline_id, "family_id": fid}, {"_id": 0}).sort("created_at", 1).to_list(500)
     for c in comments:
-        c["author"] = await db.members.find_one({"member_id": c["member_id"]}, {"_id": 0})
+        c["author"] = await db.members.find_one({"member_id": c["member_id"], "family_id": fid}, {"_id": 0})
     return comments
 
 
@@ -4106,6 +4118,8 @@ async def add_timeline_comment(timeline_id: str, body: CommentIn, user: dict = D
     mine = await member_for_user(user)
     if not mine:
         raise HTTPException(status_code=400, detail="No family profile")
+    if not await db.timeline.find_one({"timeline_id": timeline_id, "family_id": fid}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Memory not found")
     c = {
         "comment_id": new_id("tcmt_"), "timeline_id": timeline_id, "family_id": fid,
         "member_id": mine["member_id"], "text": body.text, "created_at": now_iso(),
@@ -4120,8 +4134,8 @@ async def add_timeline_comment(timeline_id: str, body: CommentIn, user: dict = D
 async def delete_timeline(timeline_id: str, user: dict = Depends(get_current_user)):
     fid = require_family(user)
     await db.timeline.delete_one({"timeline_id": timeline_id, "family_id": fid})
-    await db.timeline_reactions.delete_many({"timeline_id": timeline_id})
-    await db.timeline_comments.delete_many({"timeline_id": timeline_id})
+    await db.timeline_reactions.delete_many({"timeline_id": timeline_id, "family_id": fid})
+    await db.timeline_comments.delete_many({"timeline_id": timeline_id, "family_id": fid})
     return {"ok": True}
 
 

@@ -1,0 +1,32 @@
+{
+  "summary": "Verified BOLA fix for post/timeline comments+reactions and cross-family message reaction. All 15 pytest cases pass: 9 security assertions (cross-family GET/POST comments, reactions, and unreact all return 404 for both posts and timeline; cross-family message reaction returns 404) plus 5 same-family regressions (post comments/list/react/unreact, timeline comments/list/react toggle, message react toggle) plus data-leak checks that verify NO comment/reaction was actually written cross-family (family A's own view still shows reaction_total=0 and no leaked comment text). Test file created and reusable at backend/tests/test_bola_posts_timeline_reactions.py.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bola_posts_timeline_reactions.py",
+    "/app/test_reports/pytest/pytest_bola_posts_timeline.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:1872 delete_post cascades delete_many on reactions/comments WITHOUT family_id filter. Since post ownership is already verified by delete_one({'post_id', 'family_id'}), the extra deletes only fire after the owner-scoped delete, so no cross-family data can be reached — but the delete_many themselves are unscoped. Not exploitable given current call sites, but hardening to include family_id in those cascade filters would follow defense-in-depth.",
+    "server.py:1872 unreact_post has no explicit existence guard; safety comes from the follow-up get_post() call which returns 404 for a cross-family post_id. Tested and confirmed correct. Consider mirroring react_post's explicit guard for symmetry.",
+    "Same-family non-member chat-reaction case was NOT directly exercised because create_chat auto-adds the caller to member_ids (server.py:3650) and the storytester family has only one auth user (Raj/admin). Cross-family (family_id filter) message reaction test passed; the same-chat regression passed. Code inspection of react_message (server.py:3897-3915) shows the explicit `await _require_chat(msg['chat_id'], fid, mine)` gate which returns 404 for non-members within the same family — logic is correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bola_posts_timeline_reactions.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "N/A (backend-only request)"},
+  "seed_data_creation": "Created 1 test post (post_...) and 1 test timeline (tl_...) under storytester's family; deleted in fixture teardown. One TEST_BOLA_msg_... text message left in storytester's family chat (no message deletion API available) — inert.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reusable BOLA regression suite for posts/timeline/messages lives at backend/tests/test_bola_posts_timeline_reactions.py. Uses storytester@fam.com (family A) and protectdemo@fam.com (family B), both password secret123. Non-member same-family chat reaction is documented as untestable via API because create_chat forces the caller into member_ids and storytester has only one auth user. If a multi-auth family is later seeded, extend TestCrossFamilyMessageReactionBOLA with a same-family non-member case.",
+  "rca_of_issue": "Original BOLA vector was that list_comments/add_comment (posts and timeline) and the react endpoints looked up parent posts/timelines by post_id/timeline_id alone, or the same query without ensuring the parent belonged to the caller's family, letting another family read comments or write comments/reactions against a foreign parent id. Fix (verified in server.py:1856,1872,1881,1895,4083,4104,4115) adds an owner-scoped existence check `db.<coll>.find_one({..., 'family_id': fid})` before any read/write and raises 404 otherwise, plus message reaction pipeline enforces family_id at the message query and then a `_require_chat` membership gate (server.py:3903,3907). Confirmed by test_no_cross_family_data_leak_side_effect (posts) and test_no_cross_family_timeline_leak that no state actually mutates when a cross-family caller attempts the write."
+}

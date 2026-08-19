@@ -2770,3 +2770,25 @@ agent_communication_batch43:
 # ---- Batch #43 follow-up: fixed PATCH null-clear bug ----
     -agent: "main"
     -message: "Fixed the testing-agent-reported bug: PATCH /api/helpers/{id} now uses body.model_fields_set so explicit JSON null clears photo_url / id_card_url / id_card_back_url (Pydantic v2 was collapsing absent vs null). Curl-verified: set id_card_back_url then PATCH {id_card_back_url:null} -> GET returns null (cleared). The frontend Remove button (sends null) now works. Sunita demo data restored to clean state. Member PATCH has no null-remove UI path so left unchanged."
+
+# ============ Security Audit Batch #44 — cross-family authorization fixes ============
+backend_batch44:
+  - task: "SEC-001 fix: family scoping on post & timeline comments/reactions"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Security audit found MEDIUM cross-family BOLA: /posts/{id}/comments (GET+POST) and /timeline/{id}/comments (GET+POST) queried by id WITHOUT verifying the parent object's family_id. FIX: each now loads the parent post/timeline scoped by family_id and returns 404 if not in the caller's family; comment queries + author lookups are family-scoped. Also hardened react_post/unreact_post (verify post in family) and react_message (added _require_chat membership check so a family member can't react in a conversation they're not part of). No API shape change for legitimate same-family use."
+
+agent_communication_batch44:
+    -agent: "main"
+    -message: "Security fixes from the audit. TEST BACKEND ONLY (regression + security). CREDS: two DIFFERENT families — storytester@fam.com/secret123 (family A) and protectdemo@fam.com/secret123 (family B). VERIFY: (1) As family A, create a post (POST /api/posts) and a timeline memory (POST /api/timeline) and note their ids. (2) As family B, GET /api/posts/{A_post_id}/comments and POST a comment -> MUST be 404 (was leaking before). Same for /api/timeline/{A_timeline_id}/comments GET+POST -> 404. (3) As family B, POST /api/posts/{A_post_id}/react and /api/timeline/{A_timeline_id}/react -> 404. (4) REGRESSION: as family A, listing + adding a comment on its OWN post and timeline still works; reacting to its own post/timeline still works. (5) Chat reactions: as family A, react to a message in a conversation the caller IS a member of -> ok; reacting to a message in a chat the caller is NOT a member of -> 404 (family family-chat everyone is a member, so to test create a direct/group chat between two other members and have a third non-member try). Clean up any created posts/timelines/comments afterward. Do NOT wipe Sunita or seeded demo data."
+
+# ---- Batch #44 follow-up: family-scope the cascade deletes ----
+    -agent: "main"
+    -message: "Testing agent flagged delete_post/delete_timeline cascade delete_many ran by post_id/timeline_id WITHOUT family_id — a family B user calling DELETE on family A's id would destroy family A's comments/reactions even though the scoped delete_one no-ops. FIXED: cascade delete_many now includes family_id. TEST BACKEND: as family B (protectdemo) DELETE /api/posts/{A_post_id} and /api/timeline/{A_timeline_id} (family A = storytester) must NOT delete family A's comments/reactions (A can still list them afterward). REGRESSION: family A deleting its OWN post/timeline still removes it + its comments/reactions. Clean up created data."

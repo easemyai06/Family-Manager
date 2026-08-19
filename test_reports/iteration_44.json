@@ -1,0 +1,31 @@
+{
+  "summary": "Verified fix for cross-family cascade-delete BOLA on DELETE /api/posts/{id} and DELETE /api/timeline/{id}. Created /app/backend/tests/test_delete_cascade_bola.py with 4 tests covering (a) family B deleting family A's post does not wipe A's comments/reactions, (b) same for timeline, (c) owner post delete still cascades, (d) owner timeline delete still cascades. All 4 tests PASSED. Code review confirms both endpoints (server.py:1847-1853 and 4133-4139) now include family_id in delete_many for reactions/comments.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_delete_cascade_bola.py",
+    "/app/test_reports/pytest/pytest_delete_cascade_bola.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix looks correct: db.reactions.delete_many and db.comments.delete_many in delete_post now filter by {post_id, family_id}; similarly for delete_timeline with {timeline_id, family_id}. Because family B's caller sets family_id=fb, and A's reactions/comments have family_id=fa, the cascade delete_many matches 0 documents for cross-family requests.",
+    "delete_post and delete_timeline still return {\"ok\": True} even when the parent row didn't exist for the caller's family (idempotent-style). This is acceptable since no data leaks, but consider returning 404 for improved API semantics — not a security issue."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_delete_cascade_bola.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only task)"},
+  "seed_data_creation": "Each test creates its own TEST_CASCADE_-prefixed post/timeline + comment + reaction under family A (storytester@fam.com) and cleans up in finally / by owner-delete. No seeded demo data modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Cascade-delete BOLA is fixed and covered by test_delete_cascade_bola.py. Prior BOLA test file (test_bola_posts_timeline_reactions.py) still relevant for cross-family GET/POST 404 checks.",
+  "rca_of_issue": "Original bug: delete_post/delete_timeline first ran a scoped delete_one({parent_id, family_id}) but then ran delete_many({parent_id}) on reactions and comments WITHOUT family_id. Because parent_id (post_id/timeline_id) is globally unique across families, a family-B DELETE with family A's id would silently succeed and wipe family A's reactions+comments. Fix: added family_id filter to both delete_many calls. Verified by writing negative test: create post+comment+reaction in family A, DELETE from family B, confirm A's comment and reaction_total still present. Also verified regression: owner delete still cascades (subsequent GET returns 404)."
+}

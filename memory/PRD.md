@@ -830,3 +830,22 @@ Verified: testing agent iteration_42 (backend 10/10 after fix; frontend verified
 BUGFIX (testing agent): PATCH /api/helpers/{id} now uses model_fields_set so explicit null clears
    photo_url/id_card_url/id_card_back_url (Pydantic v2 absent-vs-null). Remove button works. Curl-verified.
 Preview only — Publish to ship. Native camera/gallery still require a device build to fully validate.
+
+## Security Audit + fixes — Batch #44 — June 2026
+Ran read-only security_audit_agent: verdict CONDITIONAL PASS — strong, consistent tenant/role/helper
+controls; no Critical/High. One actionable MEDIUM (BOLA) + P3 hardening items.
+FIXED & testing-agent-verified (19 tests total across 2 suites, all pass):
+- SEC-001 (MEDIUM BOLA): /posts/{id}/comments + /timeline/{id}/comments (GET+POST) now verify the parent
+  object's family_id (404 cross-family); comment/author queries family-scoped.
+- Hardened react_post/unreact_post (verify post in family) and react_message (added _require_chat
+  membership gate so a member can't react in a conversation they're not in).
+- Cascade-delete BOLA: delete_post/delete_timeline cascade delete_many now include family_id (a cross-family
+  DELETE could previously wipe another family's comments/reactions). Verified.
+DOCUMENTED (P3 hardening, NOT changed to avoid launch-time regression on delicate paths):
+- /files accepts a long-lived account JWT via ?token= (a 7-day scoped media token also exists) — recommend
+  restricting /files to media-scoped tokens (aligns with the scoped-media invariant).
+- Family media serve has no per-type gate (helper ID cards protected by URL secrecy since helper_public omits
+  them) — consider marking sensitive media parent-only at the serve layer.
+- Wildcard CORS allow_origins=["*"] (credentials disabled, bearer auth) — scope origins for defense-in-depth.
+- /families/join lets an invite-code holder claim a pending parent-role profile (intended flow).
+Note: audit is source-level (source==deployed). Object-storage backend + runtime token-leakage not runtime-verified.
