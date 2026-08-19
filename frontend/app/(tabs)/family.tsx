@@ -262,8 +262,8 @@ export default function Family() {
                     <AppText size={22}>{h.role_icon}</AppText>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <AppText size={15} weight="bold">{h.name}</AppText>
-                    <AppText size={12} color={c.onSurfaceSecondary}>
+                    <AppText size={15} weight="bold" numberOfLines={1}>{h.name}</AppText>
+                    <AppText size={12} color={c.onSurfaceSecondary} numberOfLines={2}>
                       {h.role_label}
                       {h.status === "active" && h.tasks_total ? ` · ${h.tasks_done}/${h.tasks_total} tasks today` : ""}
                     </AppText>
@@ -321,7 +321,7 @@ export default function Family() {
                 Send Some Love ❤️
               </AppText>
               <AppText size={13} color="rgba(255,255,255,0.9)" style={{ marginTop: 4 }}>
-                A hug, a kiss, or a "proud of you" — brighten someone's day
+                A hug, a kiss, or a “proud of you” — brighten someone’s day
               </AppText>
             </View>
             <View style={styles.loveArrow}>
@@ -495,9 +495,9 @@ const styles = StyleSheet.create({
   roleIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
   helperStatus: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   helperUnread: { flexDirection: "row", alignItems: "center", gap: 3, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
-  careTeamCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.sm },
+  careTeamCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: "transparent", padding: spacing.md, marginTop: spacing.sm },
   inviteCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, marginTop: spacing.xs },
-  inviteIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  inviteIcon: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
   loveCard: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, padding: spacing.xl },
   loveArrow: { width: 46, height: 46, borderRadius: 23, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center" },
 

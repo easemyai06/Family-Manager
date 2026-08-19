@@ -2570,3 +2570,43 @@ frontend_batch39:
 agent_communication_batch39:
     -agent: "main"
     -message: "UX Batch #39 (start of app-wide polish pass) = added the missing Calendar Task view. CREDS parent storytester@fam.com/secret123. TEST BACKEND: GET /api/tasks/upcoming (auth required; 401 without token) returns {tasks:[...], can_manage:bool}; each task has item_id/title/priority/due_date/days_until_due/overdue/assignee/scope/list_name; family-scoped (no cross-family leak). Toggling via POST /todos/items/{id}/toggle marks done. TEST FRONTEND: Calendar tab -> tap 'Tasks' segment (cal-view-task) -> grouped open to-dos render; tapping a task's circle (cal-task-check-<id>) removes it (marked done); member filter row filters by assignee; switching back to Month/Week/Day still works (no regression). Do NOT run destructive cleanup; keep Sunita + demo data."
+
+# ============ UX Polish Batch #40 — Home / Family & Helpers / Chat polish ============
+frontend_batch40:
+  - task: "Home: urgent items pinned to top + prominent Needs Attention"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "order memo now always floats 'attention' to the top (renders nothing when empty) and floats 'emergency' above it on active SOS / expiring vault. SectionHead gained an optional count badge; Needs Attention shows the item count. Attention rows restyled with a tone-colored left-accent border (4px) + subtle tinted border + icon chip so urgency is glanceable (red SOS, amber expiry, green shopping, etc.). Screenshot-verified with protectdemo@fam.com (Active SOS floats top, Needs your attention '5' badge, colored accent rows)."
+  - task: "Family & Helpers: consistent card style"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/(tabs)/family.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Unified leading-icon circles to 46px across invite/empty/helper cards; helper name numberOfLines=1 + role numberOfLines=2 so the right-side unread+status cluster never collides on narrow screens; Care Team CTA given a matching (transparent) border for cohesion. Fixed a pre-existing unescaped-quote lint error in the Send Love subtitle. Lint clean."
+  - task: "Chat: calmer, easier-to-read message bubbles"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/chat/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Other-person bubbles now carry a 1px c.border (they were borderless surfaceSecondary on a near-white surface bg = low definition), matching the Care Team view; text lineHeight 20->21 for comfier reading. Own bubbles unchanged (brand). Screenshot-verified chat renders (own bubbles, file + location bubbles intact)."
+
+agent_communication_batch40:
+    -agent: "main"
+    -message: "UX Batch #40 = pure visual/layout polish on 3 screens (no API/logic changes). CREDS: protectdemo@fam.com/secret123 (has active SOS + expiring vault -> populated Needs Attention), storytester@fam.com/secret123 (seeded family chat). TEST FRONTEND ONLY: (a) Home renders; 'Needs your attention' section sits near the top with a red count badge and tone-colored left-accent rows; active SOS card floats above it; tapping an attention row still routes correctly; customize/reorder still works; child/grandparent personas still render. (b) Family tab: member grid + Joined/Pending pills, Trusted Helpers cards, invite card, Care Team CTA all render cleanly with no text overflow at 320/390; Manage member actions modal (role/remove/credentials) still works. (c) Family Chat (Chat tab): other-person message bubbles have a subtle border and are readable; own bubbles coral; sending a text message still works; Care Team chat view unchanged. NOTE: storytester family chat contains stale TEST_* marker messages from earlier test runs (harmless). Do NOT run destructive cleanup; keep Sunita + demo data."

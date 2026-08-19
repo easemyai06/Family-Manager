@@ -405,7 +405,7 @@ export default function Conversation() {
                 {item.sender?.name}
               </AppText>
             ) : null}
-            <View style={[styles.bubble, { backgroundColor: mine ? c.brand : c.surfaceSecondary, borderBottomRightRadius: mine ? 4 : radius.md, borderBottomLeftRadius: mine ? radius.md : 4 }]}>
+            <View style={[styles.bubble, { backgroundColor: mine ? c.brand : c.surfaceSecondary, borderWidth: mine ? 0 : 1, borderColor: c.border, borderBottomRightRadius: mine ? 4 : radius.md, borderBottomLeftRadius: mine ? radius.md : 4 }]}>
               {item.reply_preview ? (
                 <View style={[styles.replyPreview, { borderLeftColor: mine ? "rgba(255,255,255,0.6)" : c.brand, backgroundColor: mine ? "rgba(255,255,255,0.15)" : c.surfaceTertiary }]}>
                   <AppText size={11} weight="bold" color={mine ? "#fff" : c.brand}>
@@ -503,7 +503,7 @@ export default function Conversation() {
                   ) : null}
                 </View>
               ) : (
-                <AppText size={15} color={mine ? "#fff" : c.onSurface} style={{ lineHeight: 20 }}>
+                <AppText size={15} color={mine ? "#fff" : c.onSurface} style={{ lineHeight: 21 }}>
                   {item.text}
                 </AppText>
               )}

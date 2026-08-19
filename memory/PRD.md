@@ -759,3 +759,21 @@ flagship Calendar module, which the user requires to support Month, Week, Day AN
 - REMAINING (app-wide polish backlog, not yet started): Home hierarchy, Family/Helpers, Chat/Care Team,
   Shopping/Meals/Recipes/Wishlist, Memories/Timeline/Tree, Vault/Insurance, Emergency/Medical,
   Notifications/Settings, Helper portal — plus optional shared primitives (EmptyState/SectionHeader/Chip).
+
+## UX Polish Batch #40 — Home / Family & Helpers / Chat polish — June 2026
+Continued the app-wide polish pass (pure visual/layout; no API/logic changes). Verified: testing agent
+iteration_39 — all frontend checks PASS on the 3 touched screens; no blocking issues.
+- Home: the "Needs Attention" section always floats to the top (renders nothing when empty) and an active
+  SOS / expiring vault floats Emergency above it. Section header shows a red count badge; attention rows
+  restyled with a tone-colored 4px left-accent border + tinted icon chip (glanceable urgency). SectionHead
+  gained an optional badge prop.
+- Family & Helpers: unified leading-icon circles to 46px across invite/empty/helper cards; helper name
+  numberOfLines=1 + role numberOfLines=2 (no right-cluster collision on narrow screens); Care Team CTA got
+  a matching border for cohesion; fixed a pre-existing unescaped-quote lint error.
+- Chat: other-person bubbles now carry a 1px border (were borderless surfaceSecondary on a near-white bg)
+  matching the Care Team view; message text lineHeight 20->21. Own bubbles unchanged (coral brand).
+- Housekeeping: pruned 31 stale TEST_* marker messages (27 family chat + 3 care-team + 1 helper) left by
+  earlier test runs, for a cleaner demo.
+- REMAINING app-wide polish backlog: Shopping/Meals/Recipes/Wishlist, Memories/Timeline/Tree,
+  Vault/Insurance, Emergency/Medical, Notifications/Settings, Helper portal + detail, Auth/onboarding;
+  optional shared primitives (EmptyState/SectionHeader/Chip/Badge). Preview only — Publish to ship.

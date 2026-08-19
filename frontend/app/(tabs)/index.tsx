@@ -227,7 +227,9 @@ export default function Home() {
   const order = useMemo(() => {
     if (!home) return [];
     let o = applyPrefs(ORDER[persona], prefs);
-    // Auto-pin the Emergency card to the top when something needs attention.
+    // Urgent-first: Needs Attention always floats to the top (it renders nothing
+    // when empty), and an active SOS / expiring doc floats Emergency above it.
+    if (o.includes("attention")) o = ["attention", ...o.filter((k) => k !== "attention")];
     const urgent = (home.active_sos?.length || 0) > 0 || (home.vault_expiring?.length || 0) > 0;
     if (urgent) o = ["emergency", ...o.filter((k) => k !== "emergency")];
     return o;
@@ -524,10 +526,17 @@ function HeaderIcon({ icon, onPress, c, badge, testID, label }: any) {
   );
 }
 
-function SectionHead({ title, action, onAction, c }: any) {
+function SectionHead({ title, action, onAction, c, badge }: any) {
   return (
     <View style={styles.secHead}>
-      <AppText family="display" weight="bold" size={18}>{title}</AppText>
+      <View style={styles.secHeadLeft}>
+        <AppText family="display" weight="bold" size={18}>{title}</AppText>
+        {badge ? (
+          <View style={[styles.secBadge, { backgroundColor: c.error }]}>
+            <AppText size={11} weight="bold" color="#fff">{badge}</AppText>
+          </View>
+        ) : null}
+      </View>
       {action ? (
         <Pressable onPress={onAction} hitSlop={8}>
           <AppText size={13} weight="semibold" color={c.brand}>{action}</AppText>
@@ -575,14 +584,14 @@ function AttentionSection({ items, go, c, compact }: any) {
   if (!items.length) return null;
   return (
     <SectionShell compact={compact}>
-      <SectionHead title="Needs your attention" c={c} />
+      <SectionHead title="Needs your attention" c={c} badge={items.length} />
       <View style={{ gap: spacing.sm }}>
         {items.map((it: any) => {
           const color = TONE_MAP[it.tone] || c.brand;
           return (
             <Pressable key={it.key} onPress={() => go(it.route)} testID={`attn-${it.key}`}>
-              <Card c={c} style={styles.attnRow}>
-                <View style={[styles.attnIcon, { backgroundColor: color + "22" }]}>
+              <View style={[styles.attnRow, { backgroundColor: c.surface, borderColor: color + "40", borderLeftColor: color }, shadow(1)]}>
+                <View style={[styles.attnIcon, { backgroundColor: color + "1F" }]}>
                   <Ionicons name={it.icon} size={20} color={color} />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -590,7 +599,7 @@ function AttentionSection({ items, go, c, compact }: any) {
                   {it.subtitle ? <AppText size={12} color={c.onSurfaceTertiary} numberOfLines={1}>{it.subtitle}</AppText> : null}
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={c.onSurfaceTertiary} />
-              </Card>
+              </View>
             </Pressable>
           );
         })}
@@ -1247,9 +1256,11 @@ const styles = StyleSheet.create({
   statusDot: { position: "absolute", bottom: -2, right: -2, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2 },
 
   secHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  secHeadLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
+  secBadge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: spacing.lg },
 
-  attnRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  attnRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderLeftWidth: 4 },
   attnIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 
   eventRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
